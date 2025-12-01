@@ -8,21 +8,22 @@ import (
 	"firebase.google.com/go/v4/auth"
 )
 
-type Middleware struct {
+type authMiddleware struct {
 	AuthClient *auth.Client
 }
 
-func NewMiddleware(client *auth.Client) *Middleware {
-	return &Middleware{AuthClient: client}
+func NewMiddleware(client *auth.Client) *authMiddleware {
+	return &authMiddleware{AuthClient: client}
 }
 
 // context key
 type contextKey string
 
 const UIDKey contextKey = "uid"
+const EmailKey contextKey = "email"
 
 // Main middleware
-func (m *Middleware) FirebaseAuth(next http.Handler) http.Handler {
+func (m *authMiddleware) FirebaseAuth(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 
 		header := r.Header.Get("Authorization")
@@ -46,8 +47,10 @@ func (m *Middleware) FirebaseAuth(next http.Handler) http.Handler {
 			return
 		}
 
-		// Add UID to context
+		// Add UID and email to context
+		email, _ := token.Claims["email"].(string)
 		ctx := context.WithValue(r.Context(), UIDKey, token.UID)
+		ctx = context.WithValue(ctx, EmailKey, email)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
@@ -55,5 +58,11 @@ func (m *Middleware) FirebaseAuth(next http.Handler) http.Handler {
 // Helper to extract UID
 func UID(ctx context.Context) string {
 	uid, _ := ctx.Value(UIDKey).(string)
+	return uid
+}
+
+// Helper to extract Email
+func Email(ctx context.Context) string {
+	uid, _ := ctx.Value(EmailKey).(string)
 	return uid
 }

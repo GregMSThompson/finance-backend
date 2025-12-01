@@ -8,17 +8,12 @@ import (
 	"time"
 )
 
-func New(level slog.Level) *slog.Logger {
-	handler := NewCloudRunHandler(level)
-	return slog.New(handler)
-}
-
 // CloudRunHandler implements slog.Handler
 type CloudRunHandler struct {
 	level slog.Level
 }
 
-func NewCloudRunHandler(level slog.Level) *CloudRunHandler {
+func NewCloudRunHandler(level slog.Level) slog.Handler {
 	return &CloudRunHandler{level: level}
 }
 
@@ -72,7 +67,6 @@ func (h *CloudRunHandler) WithGroup(_ string) slog.Handler {
 }
 
 // ---- Helpers ----
-
 func mapSeverity(level slog.Level) string {
 	switch level {
 	case slog.LevelDebug:
