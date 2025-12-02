@@ -24,7 +24,7 @@ func NewUserService(log *slog.Logger, store UserStore) *userService {
 	}
 }
 
-func (s *userService) Register(ctx context.Context, uid, email, first, last string) error {
+func (s *userService) CreateUser(ctx context.Context, uid, email, first, last string) error {
 	user := &models.User{
 		UID:       uid,
 		Email:     email,
