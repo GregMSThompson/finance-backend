@@ -2,10 +2,15 @@ package router
 
 import (
 	"github.com/go-chi/chi/v5"
+
+	"github.com/GregMSThompson/finance-backend/internal/handlers"
 )
 
-func NewRouter() *chi.Mux {
+func NewRouter(deps *handlers.Deps) chi.Router {
 	r := chi.NewRouter()
 
-	r.Mount("/users")
+	ush := handlers.NewUserHandlers(deps)
+
+	r.Mount("/users", ush.UserRoutes())
+	return r
 }

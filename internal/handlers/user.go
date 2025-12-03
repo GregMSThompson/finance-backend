@@ -7,7 +7,8 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/GregMSThompson/finance-backend/internal/errs"
+	"github.com/GregMSThompson/finance-backend/internal/middleware"
+	"github.com/GregMSThompson/finance-backend/internal/response"
 )
 
 type UserService interface {
@@ -15,18 +16,18 @@ type UserService interface {
 }
 
 type userHandlers struct {
-	ErrorHander errs.ErrorHandler
-	UserSvc     UserService
+	ResponseHandler response.ResponseHandler
+	UserSvc         UserService
 }
 
 func NewUserHandlers(deps *Deps) *userHandlers {
 	return &userHandlers{
-		ErrorHander: deps.ErrorHandler,
-		UserSvc:     deps.UserSvc,
+		ResponseHandler: deps.ResponseHandler,
+		UserSvc:         deps.UserSvc,
 	}
 }
 
-func (h *userHandlers) Routes() chi.Router {
+func (h *userHandlers) UserRoutes() chi.Router {
 	r := chi.NewRouter()
 	r.Post("/", h.CreateUser)
 	return r
@@ -38,9 +39,21 @@ func (h *userHandlers) CreateUser(w http.ResponseWriter, r *http.Request) {
 		LastName  string `json:"lastname"`
 	}
 
+	ctx := r.Context()
+	uid := middleware.UID(ctx)
+	email := middleware.Email(ctx)
+
 	err := json.NewDecoder(r.Body).Decode(&body)
 	if err != nil {
-		h.ErrorHander.HandleError(w, err)
+		h.ResponseHandler.HandleError(w, err)
 		return
 	}
+
+	err = h.UserSvc.CreateUser(r.Context(), uid, email, body.FirstName, body.LastName)
+	if err != nil {
+		h.ResponseHandler.HandleError(w, err)
+		return
+	}
+
+	h.ResponseHandler.WriteSuccess(w, 200, nil)
 }

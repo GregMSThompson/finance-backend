@@ -18,21 +18,19 @@ type Bootstrap struct {
 }
 
 func Run(cfg *config.Config) (*Bootstrap, error) {
+	var err error
 	applicationCtx := context.Background()
+	bs := new(Bootstrap)
 
-	log := logger.New(cfg.LogLevel, logger.NewCloudRunHandler)
-	fs, err := InitFirestore(applicationCtx, cfg.ProjectID)
+	bs.Log = logger.New(cfg.LogLevel, logger.NewCloudRunHandler)
+	bs.Firestore, err = InitFirestore(applicationCtx, cfg.ProjectID)
 	if err != nil {
-		return nil, err
+		return bs, err
 	}
-	fb, err := InitFirebase(applicationCtx)
+	bs.Firebase, err = InitFirebase(applicationCtx)
 	if err != nil {
-		return nil, err
+		return bs, err
 	}
 
-	return &Bootstrap{
-		Log:       log,
-		Firestore: fs,
-		Firebase:  fb,
-	}, nil
+	return bs, nil
 }

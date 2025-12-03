@@ -9,7 +9,9 @@ import (
 )
 
 type UserStore interface {
-	Create(ctx context.Context, user *models.User) error
+	CreateUser(ctx context.Context, user *models.User) error
+	UpdateUser(ctx context.Context, user *models.User) error
+	GetUser(ctx context.Context, uid string) (*models.User, error)
 }
 
 type userService struct {
@@ -37,5 +39,5 @@ func (s *userService) CreateUser(ctx context.Context, uid, email, first, last st
 	s.Log.Info("User created", "id", user.UID)
 	s.Log.Debug("User created", slog.Any("user", user))
 
-	return s.Store.Create(ctx, user)
+	return s.Store.CreateUser(ctx, user)
 }

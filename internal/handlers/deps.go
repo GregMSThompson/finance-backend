@@ -1,10 +1,13 @@
 package handlers
 
 import (
-	"github.com/GregMSThompson/finance-backend/internal/errs"
+	"log/slog"
+
+	"github.com/GregMSThompson/finance-backend/internal/response"
 )
 
 type Deps struct {
-	ErrorHandler errs.ErrorHandler
-	UserSvc      UserService
+	Log             *slog.Logger
+	ResponseHandler response.ResponseHandler
+	UserSvc         UserService
 }
