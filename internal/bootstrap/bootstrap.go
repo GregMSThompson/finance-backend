@@ -2,32 +2,35 @@ package bootstrap
 
 import (
 	"context"
+	"log/slog"
 
 	"cloud.google.com/go/firestore"
 	"firebase.google.com/go/v4/auth"
 
 	"github.com/GregMSThompson/finance-backend/internal/config"
+	"github.com/GregMSThompson/finance-backend/pkg/logger"
 )
 
 type Bootstrap struct {
+	Log       *slog.Logger
 	Firestore *firestore.Client
 	Firebase  *auth.Client
 }
 
 func Run(cfg *config.Config) (*Bootstrap, error) {
-	startupCtx := context.Background()
+	var err error
+	applicationCtx := context.Background()
+	bs := new(Bootstrap)
 
-	fs, err := InitFirestore(startupCtx, cfg.ProjectID)
+	bs.Log = logger.New(cfg.LogLevel, logger.NewCloudRunHandler)
+	bs.Firestore, err = InitFirestore(applicationCtx, cfg.ProjectID)
 	if err != nil {
-		return nil, err
+		return bs, err
 	}
-	fb, err := InitFirebase(startupCtx)
+	bs.Firebase, err = InitFirebase(applicationCtx)
 	if err != nil {
-		return nil, err
+		return bs, err
 	}
 
-	return &Bootstrap{
-		Firestore: fs,
-		Firebase:  fb,
-	}, nil
+	return bs, nil
 }
