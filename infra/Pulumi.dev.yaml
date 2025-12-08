@@ -1,0 +1,3 @@
+config:
+  gcp:project: finance-app-479321
+  gcp:region: us-central1
