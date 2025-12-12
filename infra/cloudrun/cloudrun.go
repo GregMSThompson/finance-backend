@@ -1,8 +1,15 @@
 package cloudrun
 
 import (
+	"fmt"
+	"strconv"
+
 	"github.com/pulumi/pulumi-docker/sdk/v4/go/docker"
+	"github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/cloudrun"
+	"github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/projects"
+	"github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/serviceaccount"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
+	"github.com/pulumi/pulumi/sdk/v3/go/pulumi/config"
 )
 
 func SetupCloudRun(ctx *pulumi.Context) error {
@@ -10,15 +17,120 @@ func SetupCloudRun(ctx *pulumi.Context) error {
 	if err != nil {
 		return err
 	}
+
+	apiSA, err := createServiceAccount(ctx)
+	if err != nil {
+		return err
+	}
+
+	svc, err := createCloudRunService(ctx, img, apiSA)
+	if err != nil {
+		return err
+	}
 }
 
 func buildApiImage(ctx *pulumi.Context) (*docker.Image, error) {
+	cfg := config.New(ctx, "")
+	projectID := cfg.Require("gcp:project")
+	region := cfg.Require("region")
+
 	return docker.NewImage(ctx, "apiImage", &docker.ImageArgs{
 		Build: docker.DockerBuildArgs{
 			Platform:   pulumi.String("linux/amd64"),
 			Context:    pulumi.String("./"),
 			Dockerfile: pulumi.String("./cmd/api/Dockerfile"),
 		},
-		ImageName: pulumi.String("us-central1-docker.pkg.dev/finance-backend/api:latest"),
+		ImageName: pulumi.String(fmt.Sprintf("%s-docker.pkg.dev/%s/api:latest", region, projectID)),
+	})
+}
+
+func createServiceAccount(ctx *pulumi.Context) (*serviceaccount.Account, error) {
+	cfg := config.New(ctx, "")
+	projectID := cfg.Require("gcp:project")
+
+	apiSA, err := serviceaccount.NewAccount(ctx, "apiServiceAccount", &serviceaccount.AccountArgs{
+		AccountId:   pulumi.String("api-service"),
+		DisplayName: pulumi.String("API Service Account"),
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	_, err = projects.NewIAMMember(ctx, "firestoreAccess", &projects.IAMMemberArgs{
+		Role: pulumi.String("roles/datastore.user"), // Firestore read/write
+		Member: apiSA.Email.ApplyT(func(email string) string {
+			return fmt.Sprintf("serviceAccount:%s", email)
+		}).(pulumi.StringOutput),
+		Project: pulumi.String(projectID),
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return apiSA, nil
+}
+
+func createCloudRunService(ctx *pulumi.Context, img *docker.Image, apiSA *serviceaccount.Account) (*cloudrun.Service, error) {
+	cfg := config.New(ctx, "")
+	region := cfg.Require("region")
+	minScale := cfg.Require("cloudrun:minScale")
+	maxScale := cfg.Require("cloudrun:maxScale")
+	cpu := cfg.Require("cloudrun:cpu")
+	memory := cfg.Require("cloudrun:memory")
+	concurrency := cfg.Require("cloudrun:concurreny")
+	projectID := cfg.Require("gcp:project")
+	logLevel := cfg.Require("logLevel")
+	timeout, _ := strconv.Atoi(cfg.Require("cloudrun:timeout"))
+
+	return cloudrun.NewService(ctx, "apiService", &cloudrun.ServiceArgs{
+		Location: pulumi.String(region),
+
+		Template: &cloudrun.ServiceTemplateArgs{
+
+			Metadata: &cloudrun.ServiceTemplateMetadataArgs{
+				// ---- AUTOSCALING + INSTANCE SIZE ----
+				Annotations: pulumi.StringMap{
+					// Autoscaling bounds
+					"autoscaling.knative.dev/minScale": pulumi.String(minScale),
+					"autoscaling.knative.dev/maxScale": pulumi.String(maxScale),
+
+					// Instance sizing
+					"run.googleapis.com/cpu":    pulumi.String(cpu),
+					"run.googleapis.com/memory": pulumi.String(memory),
+
+					// Allow throttling when idle (reduces cost)
+					"run.googleapis.com/cpu-throttling": pulumi.String("true"),
+
+					// Set the number of concurrent requests per container
+					"run.googleapis.com/container-concurrency": pulumi.String(concurrency),
+				},
+			},
+
+			Spec: &cloudrun.ServiceTemplateSpecArgs{
+				ServiceAccountName: apiSA.Email,
+				TimeoutSeconds:     pulumi.Int(timeout),
+
+				Containers: cloudrun.ServiceTemplateSpecContainerArray{
+					&cloudrun.ServiceTemplateSpecContainerArgs{
+						Image: img.ImageName,
+						Ports: cloudrun.ServiceTemplateSpecContainerPortArray{
+							&cloudrun.ServiceTemplateSpecContainerPortArgs{
+								ContainerPort: pulumi.Int(8080),
+							},
+						},
+						Envs: cloudrun.ServiceTemplateSpecContainerEnvArray{
+							&cloudrun.ServiceTemplateSpecContainerEnvArgs{
+								Name:  pulumi.String("PROJECTID"),
+								Value: pulumi.String(projectID),
+							},
+							&cloudrun.ServiceTemplateSpecContainerEnvArgs{
+								Name:  pulumi.String("LOGLEVEL"),
+								Value: pulumi.String(logLevel),
+							},
+						},
+					},
+				},
+			},
+		},
 	})
 }
