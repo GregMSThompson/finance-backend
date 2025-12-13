@@ -10,6 +10,8 @@ import (
 	"github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/serviceaccount"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi/config"
+
+	"github.com/GregMSThompson/finance-backend/infra/common"
 )
 
 func SetupCloudRun(ctx *pulumi.Context) error {
@@ -27,6 +29,13 @@ func SetupCloudRun(ctx *pulumi.Context) error {
 	if err != nil {
 		return err
 	}
+
+	err = setIAMAccessPolicy(ctx, svc)
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func buildApiImage(ctx *pulumi.Context) (*docker.Image, error) {
@@ -34,13 +43,18 @@ func buildApiImage(ctx *pulumi.Context) (*docker.Image, error) {
 	projectID := cfg.Require("gcp:project")
 	region := cfg.Require("region")
 
+	hash, err := common.GenerateHash("../")
+	if err != nil {
+		return nil, err
+	}
+
 	return docker.NewImage(ctx, "apiImage", &docker.ImageArgs{
 		Build: docker.DockerBuildArgs{
 			Platform:   pulumi.String("linux/amd64"),
-			Context:    pulumi.String("./"),
+			Context:    pulumi.String("../"),
 			Dockerfile: pulumi.String("./cmd/api/Dockerfile"),
 		},
-		ImageName: pulumi.String(fmt.Sprintf("%s-docker.pkg.dev/%s/api:latest", region, projectID)),
+		ImageName: pulumi.String(fmt.Sprintf("%s-docker.pkg.dev/%s/api:%s", region, projectID, hash)),
 	})
 }
 
@@ -90,6 +104,11 @@ func createCloudRunService(ctx *pulumi.Context, img *docker.Image, apiSA *servic
 			Metadata: &cloudrun.ServiceTemplateMetadataArgs{
 				// ---- AUTOSCALING + INSTANCE SIZE ----
 				Annotations: pulumi.StringMap{
+					// Enable Identity Platform (Firebase) authentication
+					"run.googleapis.com/launch-stage":      pulumi.String("BETA"),
+					"run.googleapis.com/identity":          pulumi.String("true"),
+					"run.googleapis.com/identity-provider": pulumi.String("firebase"),
+
 					// Autoscaling bounds
 					"autoscaling.knative.dev/minScale": pulumi.String(minScale),
 					"autoscaling.knative.dev/maxScale": pulumi.String(maxScale),
@@ -133,4 +152,25 @@ func createCloudRunService(ctx *pulumi.Context, img *docker.Image, apiSA *servic
 			},
 		},
 	})
+}
+
+func setIAMAccessPolicy(ctx *pulumi.Context, svc *cloudrun.Service) error {
+	cfg := config.New(ctx, "")
+	region := cfg.Require("region")
+
+	_, err := cloudrun.NewIamMember(ctx, "denyUnauthenticated", &cloudrun.IamMemberArgs{
+		Service:  svc.Name,
+		Location: pulumi.String(region),
+		Role:     pulumi.String("roles/run.invoker"),
+
+		// Block unauthenticated IAM invocation
+		Member: pulumi.String("allUsers"),
+
+		// Condition = false → binding ignored → public users denied
+		Condition: &cloudrun.IamMemberConditionArgs{
+			Title:      pulumi.String("DenyUnauthenticated"),
+			Expression: pulumi.String("false"),
+		},
+	})
+	return err
 }

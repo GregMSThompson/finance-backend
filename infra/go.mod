@@ -1,4 +1,4 @@
-module finance
+module github.com/GregMSThompson/finance-backend/infra
 
 go 1.24.0
 
