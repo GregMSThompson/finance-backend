@@ -14,34 +14,34 @@ import (
 	"github.com/GregMSThompson/finance-backend/infra/common"
 )
 
-func SetupCloudRun(ctx *pulumi.Context) error {
+func SetupCloudRun(ctx *pulumi.Context) (*serviceaccount.Account, error) {
 	img, err := buildApiImage(ctx)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	apiSA, err := createServiceAccount(ctx)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	svc, err := createCloudRunService(ctx, img, apiSA)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	err = setIAMAccessPolicy(ctx, svc)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	return nil
+	return apiSA, nil
 }
 
 func buildApiImage(ctx *pulumi.Context) (*docker.Image, error) {
 	cfg := config.New(ctx, "")
 	projectID := cfg.Require("gcp:project")
-	region := cfg.Require("region")
+	region := cfg.Require("gcp:region")
 
 	hash, err := common.GenerateHash("../")
 	if err != nil {
@@ -86,14 +86,14 @@ func createServiceAccount(ctx *pulumi.Context) (*serviceaccount.Account, error) 
 
 func createCloudRunService(ctx *pulumi.Context, img *docker.Image, apiSA *serviceaccount.Account) (*cloudrun.Service, error) {
 	cfg := config.New(ctx, "")
-	region := cfg.Require("region")
+	projectID := cfg.Require("gcp:project")
+	region := cfg.Require("gcp:region")
 	minScale := cfg.Require("cloudrun:minScale")
 	maxScale := cfg.Require("cloudrun:maxScale")
 	cpu := cfg.Require("cloudrun:cpu")
 	memory := cfg.Require("cloudrun:memory")
-	concurrency := cfg.Require("cloudrun:concurreny")
-	projectID := cfg.Require("gcp:project")
-	logLevel := cfg.Require("logLevel")
+	concurrency := cfg.Require("cloudrun:concurrency")
+	logLevel := cfg.Require("cloudrun:logLevel")
 	timeout, _ := strconv.Atoi(cfg.Require("cloudrun:timeout"))
 
 	return cloudrun.NewService(ctx, "apiService", &cloudrun.ServiceArgs{

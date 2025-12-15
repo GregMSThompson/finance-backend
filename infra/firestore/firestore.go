@@ -29,7 +29,7 @@ func enableFireStore(ctx *pulumi.Context) error {
 func createDatabase(ctx *pulumi.Context) error {
 	cfg := config.New(ctx, "")
 	projectID := cfg.Require("gcp:project")
-	region := cfg.Require(("region"))
+	region := cfg.Require(("gcp:region"))
 
 	_, err := firestore.NewDatabase(ctx, "firestoreDatabase", &firestore.DatabaseArgs{
 		Project:    pulumi.String(projectID),
