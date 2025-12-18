@@ -14,8 +14,8 @@ import (
 	"github.com/GregMSThompson/finance-backend/infra/common"
 )
 
-func SetupCloudRun(ctx *pulumi.Context) (*serviceaccount.Account, error) {
-	img, err := buildApiImage(ctx)
+func SetupCloudRun(ctx *pulumi.Context, res ...pulumi.Resource) (*serviceaccount.Account, error) {
+	img, err := buildApiImage(ctx, res...)
 	if err != nil {
 		return nil, err
 	}
@@ -38,10 +38,10 @@ func SetupCloudRun(ctx *pulumi.Context) (*serviceaccount.Account, error) {
 	return apiSA, nil
 }
 
-func buildApiImage(ctx *pulumi.Context) (*docker.Image, error) {
-	cfg := config.New(ctx, "")
-	projectID := cfg.Require("gcp:project")
-	region := cfg.Require("gcp:region")
+func buildApiImage(ctx *pulumi.Context, res ...pulumi.Resource) (*docker.Image, error) {
+	gcpCfg := config.New(ctx, "gcp")
+	projectID := gcpCfg.Require("project")
+	region := gcpCfg.Require("region")
 
 	hash, err := common.GenerateHash("../")
 	if err != nil {
@@ -51,16 +51,18 @@ func buildApiImage(ctx *pulumi.Context) (*docker.Image, error) {
 	return docker.NewImage(ctx, "apiImage", &docker.ImageArgs{
 		Build: docker.DockerBuildArgs{
 			Platform:   pulumi.String("linux/amd64"),
-			Context:    pulumi.String("../"),
-			Dockerfile: pulumi.String("./cmd/api/Dockerfile"),
+			Context:    pulumi.String(".."),                    // build from repo root
+			Dockerfile: pulumi.String("../cmd/api/Dockerfile"), // Dockerfile path relative to repo root
 		},
 		ImageName: pulumi.String(fmt.Sprintf("%s-docker.pkg.dev/%s/api:%s", region, projectID, hash)),
-	})
+	},
+		pulumi.DependsOn(res),
+	)
 }
 
 func createServiceAccount(ctx *pulumi.Context) (*serviceaccount.Account, error) {
-	cfg := config.New(ctx, "")
-	projectID := cfg.Require("gcp:project")
+	gcpCfg := config.New(ctx, "gcp")
+	projectID := gcpCfg.Require("project")
 
 	apiSA, err := serviceaccount.NewAccount(ctx, "apiServiceAccount", &serviceaccount.AccountArgs{
 		AccountId:   pulumi.String("api-service"),
@@ -85,16 +87,18 @@ func createServiceAccount(ctx *pulumi.Context) (*serviceaccount.Account, error) 
 }
 
 func createCloudRunService(ctx *pulumi.Context, img *docker.Image, apiSA *serviceaccount.Account) (*cloudrun.Service, error) {
-	cfg := config.New(ctx, "")
-	projectID := cfg.Require("gcp:project")
-	region := cfg.Require("gcp:region")
-	minScale := cfg.Require("cloudrun:minScale")
-	maxScale := cfg.Require("cloudrun:maxScale")
-	cpu := cfg.Require("cloudrun:cpu")
-	memory := cfg.Require("cloudrun:memory")
-	concurrency := cfg.Require("cloudrun:concurrency")
-	logLevel := cfg.Require("cloudrun:logLevel")
-	timeout, _ := strconv.Atoi(cfg.Require("cloudrun:timeout"))
+	gcpCfg := config.New(ctx, "gcp")
+	crCfg := config.New(ctx, "cloudrun")
+
+	projectID := gcpCfg.Require("project")
+	region := gcpCfg.Require("region")
+	minScale := crCfg.Require("minScale")
+	maxScale := crCfg.Require("maxScale")
+	cpu := crCfg.Require("cpu")
+	memory := crCfg.Require("memory")
+	concurrency := crCfg.Require("concurrency")
+	logLevel := crCfg.Require("logLevel")
+	timeout, _ := strconv.Atoi(crCfg.Require("timeout"))
 
 	return cloudrun.NewService(ctx, "apiService", &cloudrun.ServiceArgs{
 		Location: pulumi.String(region),
@@ -155,8 +159,8 @@ func createCloudRunService(ctx *pulumi.Context, img *docker.Image, apiSA *servic
 }
 
 func setIAMAccessPolicy(ctx *pulumi.Context, svc *cloudrun.Service) error {
-	cfg := config.New(ctx, "")
-	region := cfg.Require("region")
+	gcpCfg := config.New(ctx, "gcp")
+	region := gcpCfg.Require("region")
 
 	_, err := cloudrun.NewIamMember(ctx, "denyUnauthenticated", &cloudrun.IamMemberArgs{
 		Service:  svc.Name,

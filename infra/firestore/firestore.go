@@ -8,33 +8,35 @@ import (
 )
 
 func SetupFirestore(ctx *pulumi.Context) error {
-	if err := enableFireStore(ctx); err != nil {
+	svc, err := enableFireStore(ctx)
+	if err != nil {
 		return err
 	}
 
-	if err := createDatabase(ctx); err != nil {
+	if err := createDatabase(ctx, svc); err != nil {
 		return err
 	}
 
 	return nil
 }
 
-func enableFireStore(ctx *pulumi.Context) error {
-	_, err := projects.NewService(ctx, "firestore", &projects.ServiceArgs{
+func enableFireStore(ctx *pulumi.Context) (*projects.Service, error) {
+	return projects.NewService(ctx, "firestore", &projects.ServiceArgs{
 		Service: pulumi.String("firestore.googleapis.com"),
 	})
-	return err
 }
 
-func createDatabase(ctx *pulumi.Context) error {
-	cfg := config.New(ctx, "")
-	projectID := cfg.Require("gcp:project")
-	region := cfg.Require(("gcp:region"))
+func createDatabase(ctx *pulumi.Context, res ...pulumi.Resource) error {
+	gcpCfg := config.New(ctx, "gcp")
+	projectID := gcpCfg.Require("project")
+	region := gcpCfg.Require(("region"))
 
 	_, err := firestore.NewDatabase(ctx, "firestoreDatabase", &firestore.DatabaseArgs{
 		Project:    pulumi.String(projectID),
 		LocationId: pulumi.String(region),
 		Type:       pulumi.String("FIRESTORE_NATIVE"),
-	})
+	},
+		pulumi.DependsOn(res),
+	)
 	return err
 }
