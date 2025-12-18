@@ -20,12 +20,17 @@ func SetupCloudRun(ctx *pulumi.Context, res ...pulumi.Resource) (*serviceaccount
 		return nil, err
 	}
 
+	srv, err := enableCloudRun(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	apiSA, err := createServiceAccount(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	svc, err := createCloudRunService(ctx, img, apiSA)
+	svc, err := createCloudRunService(ctx, img, apiSA, srv)
 	if err != nil {
 		return nil, err
 	}
@@ -54,10 +59,16 @@ func buildApiImage(ctx *pulumi.Context, res ...pulumi.Resource) (*docker.Image, 
 			Context:    pulumi.String(".."),                    // build from repo root
 			Dockerfile: pulumi.String("../cmd/api/Dockerfile"), // Dockerfile path relative to repo root
 		},
-		ImageName: pulumi.String(fmt.Sprintf("%s-docker.pkg.dev/%s/api:%s", region, projectID, hash)),
+		ImageName: pulumi.String(fmt.Sprintf("%s-docker.pkg.dev/%s/api/finance-api:%s", region, projectID, hash)),
 	},
 		pulumi.DependsOn(res),
 	)
+}
+
+func enableCloudRun(ctx *pulumi.Context) (*projects.Service, error) {
+	return projects.NewService(ctx, "cloudRunService", &projects.ServiceArgs{
+		Service: pulumi.String("run.googleapis.com"),
+	})
 }
 
 func createServiceAccount(ctx *pulumi.Context) (*serviceaccount.Account, error) {
@@ -86,7 +97,7 @@ func createServiceAccount(ctx *pulumi.Context) (*serviceaccount.Account, error) 
 	return apiSA, nil
 }
 
-func createCloudRunService(ctx *pulumi.Context, img *docker.Image, apiSA *serviceaccount.Account) (*cloudrun.Service, error) {
+func createCloudRunService(ctx *pulumi.Context, img *docker.Image, apiSA *serviceaccount.Account, res ...pulumi.Resource) (*cloudrun.Service, error) {
 	gcpCfg := config.New(ctx, "gcp")
 	crCfg := config.New(ctx, "cloudrun")
 
@@ -155,7 +166,9 @@ func createCloudRunService(ctx *pulumi.Context, img *docker.Image, apiSA *servic
 				},
 			},
 		},
-	})
+	},
+		pulumi.DependsOn(res),
+	)
 }
 
 func setIAMAccessPolicy(ctx *pulumi.Context, svc *cloudrun.Service) error {
