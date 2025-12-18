@@ -25,18 +25,18 @@ func main() {
 		}
 
 		// enable firestore and create a database for the project
-		err = firestore.SetupFirestore(ctx)
+		err = firestore.SetupFirestore(ctx, prov)
 		if err != nil {
 			return err
 		}
 
 		// create docker repo
-		repo, err := docker.CreateCloudrunRepo(ctx)
+		repo, err := docker.CreateCloudrunRepo(ctx, prov)
 		if err != nil {
 			return err
 		}
 
-		_, err = cloudrun.SetupCloudRun(ctx, ident, repo)
+		_, err = cloudrun.SetupCloudRun(ctx, prov, ident, repo)
 		if err != nil {
 			return err
 		}

@@ -5,6 +5,7 @@ import (
 	"strconv"
 
 	"github.com/pulumi/pulumi-docker/sdk/v4/go/docker"
+	"github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp"
 	"github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/cloudrun"
 	"github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/projects"
 	"github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/serviceaccount"
@@ -14,28 +15,28 @@ import (
 	"github.com/GregMSThompson/finance-backend/infra/common"
 )
 
-func SetupCloudRun(ctx *pulumi.Context, res ...pulumi.Resource) (*serviceaccount.Account, error) {
+func SetupCloudRun(ctx *pulumi.Context, prov *gcp.Provider, res ...pulumi.Resource) (*serviceaccount.Account, error) {
 	img, err := buildApiImage(ctx, res...)
 	if err != nil {
 		return nil, err
 	}
 
-	srv, err := enableCloudRun(ctx)
+	srv, err := enableCloudRun(ctx, prov)
 	if err != nil {
 		return nil, err
 	}
 
-	apiSA, err := createServiceAccount(ctx)
+	apiSA, err := createServiceAccount(ctx, prov)
 	if err != nil {
 		return nil, err
 	}
 
-	svc, err := createCloudRunService(ctx, img, apiSA, srv)
+	svc, err := createCloudRunService(ctx, img, apiSA, prov, srv)
 	if err != nil {
 		return nil, err
 	}
 
-	err = setIAMAccessPolicy(ctx, svc)
+	err = setIAMAccessPolicy(ctx, svc, prov)
 	if err != nil {
 		return nil, err
 	}
@@ -65,20 +66,24 @@ func buildApiImage(ctx *pulumi.Context, res ...pulumi.Resource) (*docker.Image, 
 	)
 }
 
-func enableCloudRun(ctx *pulumi.Context) (*projects.Service, error) {
+func enableCloudRun(ctx *pulumi.Context, prov *gcp.Provider) (*projects.Service, error) {
 	return projects.NewService(ctx, "cloudRunService", &projects.ServiceArgs{
 		Service: pulumi.String("run.googleapis.com"),
-	})
+	},
+		pulumi.Provider(prov),
+	)
 }
 
-func createServiceAccount(ctx *pulumi.Context) (*serviceaccount.Account, error) {
+func createServiceAccount(ctx *pulumi.Context, prov *gcp.Provider) (*serviceaccount.Account, error) {
 	gcpCfg := config.New(ctx, "gcp")
 	projectID := gcpCfg.Require("project")
 
 	apiSA, err := serviceaccount.NewAccount(ctx, "apiServiceAccount", &serviceaccount.AccountArgs{
 		AccountId:   pulumi.String("api-service"),
 		DisplayName: pulumi.String("API Service Account"),
-	})
+	},
+		pulumi.Provider(prov),
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -89,7 +94,9 @@ func createServiceAccount(ctx *pulumi.Context) (*serviceaccount.Account, error) 
 			return fmt.Sprintf("serviceAccount:%s", email)
 		}).(pulumi.StringOutput),
 		Project: pulumi.String(projectID),
-	})
+	},
+		pulumi.Provider(prov),
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -97,7 +104,7 @@ func createServiceAccount(ctx *pulumi.Context) (*serviceaccount.Account, error) 
 	return apiSA, nil
 }
 
-func createCloudRunService(ctx *pulumi.Context, img *docker.Image, apiSA *serviceaccount.Account, res ...pulumi.Resource) (*cloudrun.Service, error) {
+func createCloudRunService(ctx *pulumi.Context, img *docker.Image, apiSA *serviceaccount.Account, prov *gcp.Provider, res ...pulumi.Resource) (*cloudrun.Service, error) {
 	gcpCfg := config.New(ctx, "gcp")
 	crCfg := config.New(ctx, "cloudrun")
 
@@ -121,7 +128,6 @@ func createCloudRunService(ctx *pulumi.Context, img *docker.Image, apiSA *servic
 				Annotations: pulumi.StringMap{
 					// Enable Identity Platform (Firebase) authentication
 					"run.googleapis.com/launch-stage":      pulumi.String("BETA"),
-					"run.googleapis.com/identity":          pulumi.String("true"),
 					"run.googleapis.com/identity-provider": pulumi.String("firebase"),
 
 					// Autoscaling bounds
@@ -167,11 +173,12 @@ func createCloudRunService(ctx *pulumi.Context, img *docker.Image, apiSA *servic
 			},
 		},
 	},
+		pulumi.Provider(prov),
 		pulumi.DependsOn(res),
 	)
 }
 
-func setIAMAccessPolicy(ctx *pulumi.Context, svc *cloudrun.Service) error {
+func setIAMAccessPolicy(ctx *pulumi.Context, svc *cloudrun.Service, prov *gcp.Provider) error {
 	gcpCfg := config.New(ctx, "gcp")
 	region := gcpCfg.Require("region")
 
@@ -180,14 +187,10 @@ func setIAMAccessPolicy(ctx *pulumi.Context, svc *cloudrun.Service) error {
 		Location: pulumi.String(region),
 		Role:     pulumi.String("roles/run.invoker"),
 
-		// Block unauthenticated IAM invocation
+		// Allow requests to reach Identity Platform (Firebase) auth
 		Member: pulumi.String("allUsers"),
-
-		// Condition = false → binding ignored → public users denied
-		Condition: &cloudrun.IamMemberConditionArgs{
-			Title:      pulumi.String("DenyUnauthenticated"),
-			Expression: pulumi.String("false"),
-		},
-	})
+	},
+		pulumi.Provider(prov),
+	)
 	return err
 }
