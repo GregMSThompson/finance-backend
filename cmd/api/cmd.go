@@ -8,6 +8,7 @@ import (
 	"github.com/GregMSThompson/finance-backend/internal/bootstrap"
 	"github.com/GregMSThompson/finance-backend/internal/config"
 	"github.com/GregMSThompson/finance-backend/internal/handlers"
+	"github.com/GregMSThompson/finance-backend/internal/response"
 	"github.com/GregMSThompson/finance-backend/internal/router"
 	"github.com/GregMSThompson/finance-backend/internal/services"
 	"github.com/GregMSThompson/finance-backend/internal/store"
@@ -32,10 +33,14 @@ func main() {
 	// services
 	userv := services.NewUserService(bs.Log, ustore)
 
+	// handler
+	rh := response.New(bs.Log)
+
 	// dependancies
 	deps := new(handlers.Deps)
 	deps.Log = bs.Log
 	deps.UserSvc = userv
+	deps.ResponseHandler = rh
 
 	// router
 	r := router.NewRouter(deps)
