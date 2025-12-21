@@ -7,14 +7,14 @@ import (
 
 type ResponseHandler interface {
 	WriteSuccess(w http.ResponseWriter, status int, data any)
-	ErrorWrite(w http.ResponseWriter, status int, code, message string)
+	WriteError(w http.ResponseWriter, status int, code, message string)
 	HandleError(w http.ResponseWriter, err error)
 }
 
 type responseHandler struct {
-	Log slog.Logger
+	Log *slog.Logger
 }
 
-func New(log slog.Logger) *responseHandler {
+func New(log *slog.Logger) *responseHandler {
 	return &responseHandler{Log: log}
 }
