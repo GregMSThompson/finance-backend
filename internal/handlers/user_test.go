@@ -53,7 +53,7 @@ func (s *stubResponseHandler) WriteSuccess(w http.ResponseWriter, status int, da
 	w.Write([]byte(`{"success":true}`))
 }
 
-func (s *stubResponseHandler) WriteError(w http.ResponseWriter, status int, code, message string) {
+func (s *stubResponseHandler) WriteError(w http.ResponseWriter, status int, code, message string, err error) {
 	s.errorWriteCalled = true
 	s.errorWriteStatus = status
 	s.errorWriteCode = code

@@ -35,9 +35,12 @@ func (s *userService) CreateUser(ctx context.Context, uid, email, first, last st
 		CreatedAt: time.Now(),
 		UpdatedAt: time.Now(),
 	}
+	err := s.Store.CreateUser(ctx, user)
+	if err != nil {
+		return err
+	}
 
 	s.Log.Info("User created", "id", user.UID)
 	s.Log.Debug("User created", slog.Any("user", user))
-
-	return s.Store.CreateUser(ctx, user)
+	return nil
 }

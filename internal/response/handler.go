@@ -7,7 +7,7 @@ import (
 
 type ResponseHandler interface {
 	WriteSuccess(w http.ResponseWriter, status int, data any)
-	WriteError(w http.ResponseWriter, status int, code, message string)
+	WriteError(w http.ResponseWriter, status int, code, message string, err error)
 	HandleError(w http.ResponseWriter, err error)
 }
 
