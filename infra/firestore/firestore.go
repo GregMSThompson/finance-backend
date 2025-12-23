@@ -35,6 +35,7 @@ func createDatabase(ctx *pulumi.Context, prov *gcp.Provider, res ...pulumi.Resou
 	region := gcpCfg.Require(("region"))
 
 	_, err := firestore.NewDatabase(ctx, "firestoreDatabase", &firestore.DatabaseArgs{
+		Name:       pulumi.String("(default)"),
 		Project:    pulumi.String(projectID),
 		LocationId: pulumi.String(region),
 		Type:       pulumi.String("FIRESTORE_NATIVE"),

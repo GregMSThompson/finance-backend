@@ -41,6 +41,7 @@ func main() {
 	deps.Log = bs.Log
 	deps.UserSvc = userv
 	deps.ResponseHandler = rh
+	deps.Firebase = bs.Firebase
 
 	// router
 	r := router.NewRouter(deps)
