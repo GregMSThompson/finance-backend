@@ -11,6 +11,8 @@ import (
 type Deps struct {
 	Log             *slog.Logger
 	ResponseHandler response.ResponseHandler
-	UserSvc         UserService
 	Firebase        *auth.Client
+	UserSvc         userService
+	PlaidSvc        plaidService
+	BankSvc         bankService
 }

@@ -11,13 +11,13 @@ import (
 	"github.com/GregMSThompson/finance-backend/internal/response"
 )
 
-type UserService interface {
+type userService interface {
 	CreateUser(ctx context.Context, uid, email, first, last string) error
 }
 
 type userHandlers struct {
 	ResponseHandler response.ResponseHandler
-	UserSvc         UserService
+	UserSvc         userService
 }
 
 func NewUserHandlers(deps *Deps) *userHandlers {

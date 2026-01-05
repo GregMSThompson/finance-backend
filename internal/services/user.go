@@ -8,7 +8,7 @@ import (
 	"github.com/GregMSThompson/finance-backend/internal/models"
 )
 
-type UserStore interface {
+type userUSStore interface {
 	CreateUser(ctx context.Context, user *models.User) error
 	UpdateUser(ctx context.Context, user *models.User) error
 	GetUser(ctx context.Context, uid string) (*models.User, error)
@@ -16,10 +16,10 @@ type UserStore interface {
 
 type userService struct {
 	Log   *slog.Logger
-	Store UserStore
+	Store userUSStore
 }
 
-func NewUserService(log *slog.Logger, store UserStore) *userService {
+func NewUserService(log *slog.Logger, store userUSStore) *userService {
 	return &userService{
 		Log:   log,
 		Store: store,
