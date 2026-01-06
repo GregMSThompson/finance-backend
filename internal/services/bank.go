@@ -7,22 +7,22 @@ import (
 	"github.com/GregMSThompson/finance-backend/internal/models"
 )
 
-type bankStore interface {
+type bankBSStore interface {
 	List(ctx context.Context, uid string) ([]*models.Bank, error)
 	Delete(ctx context.Context, uid, bankID string) error
 }
 
-type plaidSecrets interface {
+type plaidBSSecrets interface {
 	DeletePlaidToken(ctx context.Context, uid, itemID string) error
 }
 
 type bankService struct {
 	log     *slog.Logger
-	banks   bankStore
-	secrets plaidSecrets
+	banks   bankBSStore
+	secrets plaidBSSecrets
 }
 
-func NewBankService(log *slog.Logger, banks bankStore, secrets plaidSecrets) *bankService {
+func NewBankService(log *slog.Logger, banks bankBSStore, secrets plaidBSSecrets) *bankService {
 	return &bankService{
 		log:     log,
 		banks:   banks,

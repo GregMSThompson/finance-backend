@@ -11,28 +11,28 @@ import (
 
 // --- Dependencies (minimal interfaces scoped to this service) ---
 
-// BankStore is the slice of methods Plaid needs; Firestore impl just has to satisfy this.
-type BankStore interface {
+// bankPSStore is the slice of methods Plaid needs; Firestore impl just has to satisfy this.
+type bankPSStore interface {
 	Create(ctx context.Context, uid string, bank *models.Bank) error
 	List(ctx context.Context, uid string) ([]*models.Bank, error)
 }
 
-// PlaidSecretsStore hides Secret Manager details.
-type PlaidSecretsStore interface {
+// plaidSecretsPSStore hides Secret Manager details.
+type plaidSecretsPSStore interface {
 	StorePlaidToken(ctx context.Context, uid, itemID, token string) error
 	GetPlaidToken(ctx context.Context, uid, itemID string) (string, error)
 	DeletePlaidToken(ctx context.Context, uid, itemID string) error
 }
 
-// TransactionStore is what sync uses; shape it to your Firestore model.
-type TransactionStore interface {
+// transactionPSStore is what sync uses; shape it to your Firestore model.
+type transactionPSStore interface {
 	UpsertBatch(ctx context.Context, uid string, txs []models.Transaction) error
 	GetCursor(ctx context.Context, uid, bankID string) (string, error)
 	SetCursor(ctx context.Context, uid, bankID, cursor string) error
 }
 
-// PlaidClient plaid sdk adapter
-type PlaidClient interface {
+// plaidClient plaid sdk adapter
+type plaidClient interface {
 	CreateLinkToken(ctx context.Context, uid string) (linkToken string, err error)
 	ExchangePublicToken(ctx context.Context, publicToken string) (itemID string, accessToken string, err error)
 	SyncTransactions(ctx context.Context, bankID string, accessToken string, cursor *string) (dto.PlaidSyncPage, error)
@@ -40,14 +40,14 @@ type PlaidClient interface {
 
 type plaidService struct {
 	log      *slog.Logger
-	plaid    PlaidClient
-	banks    BankStore
-	secrets  PlaidSecretsStore
-	txs      TransactionStore
+	plaid    plaidClient
+	banks    bankPSStore
+	secrets  plaidSecretsPSStore
+	txs      transactionPSStore
 	clockNow func() time.Time
 }
 
-func NewPlaidService(log *slog.Logger, plaid PlaidClient, banks BankStore, secrets PlaidSecretsStore, txs TransactionStore) *plaidService {
+func NewPlaidService(log *slog.Logger, plaid plaidClient, banks bankPSStore, secrets plaidSecretsPSStore, txs transactionPSStore) *plaidService {
 	return &plaidService{
 		log:      log,
 		plaid:    plaid,
