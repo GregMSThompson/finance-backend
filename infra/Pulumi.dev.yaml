@@ -10,6 +10,6 @@ config:
   cloudrun:timeout: "60"
   plaid:secret:
     secure: AAABAL1WDYS2U6eqWeFA3fElips7UPCkK/tc8Mk+qaOXQOUWEZ37zOHo6tCdYbHxIcA8LiITOgAtqWGNBzA=
-  plaid:environment: sandbox
   plaid:clientId:
     secure: AAABANYr5O88K0ZmqGin9TYUwao3knREFRDSZPBLFJznXjecESzKlU1Msuqt7v3Nphfx7tvQOA4=
+  plaid:environment: sandbox
