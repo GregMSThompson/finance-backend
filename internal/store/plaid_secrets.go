@@ -23,12 +23,12 @@ func NewPlaidSecretsStore(client *secretmanager.Client, projectID string) *plaid
 	return &plaidSecretsStore{
 		client:    client,
 		projectID: projectID,
-		prefix:    "plaid/access-token",
+		prefix:    "plaid-access-token",
 	}
 }
 
 func (s *plaidSecretsStore) secretID(uid, itemID string) string {
-	return fmt.Sprintf("%s/%s/%s", s.prefix, uid, itemID)
+	return fmt.Sprintf("%s-%s-%s", s.prefix, uid, itemID)
 }
 
 func (s *plaidSecretsStore) secretName(uid, itemID string) string {

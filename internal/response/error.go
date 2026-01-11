@@ -3,6 +3,7 @@ package response
 import (
 	"encoding/json"
 	"net/http"
+	"runtime/debug"
 
 	"github.com/GregMSThompson/finance-backend/internal/errs"
 )
@@ -20,7 +21,11 @@ func (h *responseHandler) WriteError(w http.ResponseWriter, status int, code, me
 		Message: message,
 	})
 
-	h.Log.Error(message, "code", code, "error", err)
+	if code == "internal_error" {
+		h.Log.Error(message, "code", code, "error", err, "stack", string(debug.Stack()))
+	} else {
+		h.Log.Error(message, "code", code, "error", err)
+	}
 }
 
 func (h *responseHandler) HandleError(w http.ResponseWriter, err error) {
