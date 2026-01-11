@@ -52,6 +52,11 @@ func SetupCloudRun(ctx *pulumi.Context, prov *gcp.Provider, res ...pulumi.Resour
 		return nil, err
 	}
 
+	err = setIAMPermissions(ctx, apiSA, prov)
+	if err != nil {
+		return nil, err
+	}
+
 	return apiSA, nil
 }
 
@@ -233,6 +238,27 @@ func setIAMAccessPolicy(ctx *pulumi.Context, svc *cloudrun.Service, prov *gcp.Pr
 		pulumi.Provider(prov),
 	)
 	return err
+}
+
+func setIAMPermissions(ctx *pulumi.Context, apiSA *serviceaccount.Account, prov *gcp.Provider) error {
+	gcpCfg := config.New(ctx, "gcp")
+	projectID := gcpCfg.Require("project")
+
+	// Allow the app to create/read/write/delete secrets at runtime.
+	_, err := projects.NewIAMMember(ctx, "secretManagerAdmin", &projects.IAMMemberArgs{
+		Project: pulumi.String(projectID),
+		Role:    pulumi.String("roles/secretmanager.admin"),
+		Member: apiSA.Email.ApplyT(func(email string) string {
+			return fmt.Sprintf("serviceAccount:%s", email)
+		}).(pulumi.StringOutput),
+	},
+		pulumi.Provider(prov),
+	)
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func createSecrets(ctx *pulumi.Context) (*secretRefs, error) {

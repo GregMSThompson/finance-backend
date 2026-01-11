@@ -8,6 +8,7 @@ import (
 	"github.com/GregMSThompson/finance-backend/infra/firestore"
 	"github.com/GregMSThompson/finance-backend/infra/identity"
 	"github.com/GregMSThompson/finance-backend/infra/provider"
+	"github.com/GregMSThompson/finance-backend/infra/secret"
 )
 
 func main() {
@@ -24,6 +25,12 @@ func main() {
 			return err
 		}
 
+		// enable the secrets manager service
+		sm, err := secret.SetupSecretManager(ctx, prov)
+		if err != nil {
+			return err
+		}
+
 		// enable firestore and create a database for the project
 		err = firestore.SetupFirestore(ctx, prov)
 		if err != nil {
@@ -36,7 +43,7 @@ func main() {
 			return err
 		}
 
-		_, err = cloudrun.SetupCloudRun(ctx, prov, ident, repo)
+		_, err = cloudrun.SetupCloudRun(ctx, prov, ident, repo, sm)
 		if err != nil {
 			return err
 		}
