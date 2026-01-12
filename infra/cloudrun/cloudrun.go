@@ -7,12 +7,14 @@ import (
 	"github.com/pulumi/pulumi-docker/sdk/v4/go/docker"
 	"github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp"
 	"github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/cloudrun"
+	gcpkms "github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/kms"
 	"github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/projects"
 	"github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/serviceaccount"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi/config"
 
 	"github.com/GregMSThompson/finance-backend/infra/common"
+	"github.com/GregMSThompson/finance-backend/infra/kms"
 	"github.com/GregMSThompson/finance-backend/infra/secret"
 )
 
@@ -22,6 +24,11 @@ type secretRefs struct {
 }
 
 func SetupCloudRun(ctx *pulumi.Context, prov *gcp.Provider, res ...pulumi.Resource) (*serviceaccount.Account, error) {
+	keyID, err := kms.CreateKey(ctx, prov, "app-keys", "user")
+	if err != nil {
+		return nil, err
+	}
+
 	img, err := buildApiImage(ctx, res...)
 	if err != nil {
 		return nil, err
@@ -42,7 +49,7 @@ func SetupCloudRun(ctx *pulumi.Context, prov *gcp.Provider, res ...pulumi.Resour
 		return nil, err
 	}
 
-	svc, err := createCloudRunService(ctx, img, apiSA, sr, prov, srv)
+	svc, err := createCloudRunService(ctx, img, apiSA, sr, keyID, prov, srv)
 	if err != nil {
 		return nil, err
 	}
@@ -52,7 +59,7 @@ func SetupCloudRun(ctx *pulumi.Context, prov *gcp.Provider, res ...pulumi.Resour
 		return nil, err
 	}
 
-	err = setIAMPermissions(ctx, apiSA, prov)
+	err = setIAMPermissions(ctx, apiSA, keyID, prov)
 	if err != nil {
 		return nil, err
 	}
@@ -124,6 +131,7 @@ func createCloudRunService(ctx *pulumi.Context,
 	img *docker.Image,
 	apiSA *serviceaccount.Account,
 	sr *secretRefs,
+	keyID pulumi.StringOutput,
 	prov *gcp.Provider,
 	res ...pulumi.Resource) (*cloudrun.Service, error) {
 	gcpCfg := config.New(ctx, "gcp")
@@ -191,6 +199,10 @@ func createCloudRunService(ctx *pulumi.Context,
 								Value: pulumi.String(logLevel),
 							},
 							&cloudrun.ServiceTemplateSpecContainerEnvArgs{
+								Name:  pulumi.String("KMSKEYNAME"),
+								Value: keyID,
+							},
+							&cloudrun.ServiceTemplateSpecContainerEnvArgs{
 								Name:  pulumi.String("PLAIDENVIRONMENT"),
 								Value: pulumi.String(plaidEnv),
 							},
@@ -240,7 +252,7 @@ func setIAMAccessPolicy(ctx *pulumi.Context, svc *cloudrun.Service, prov *gcp.Pr
 	return err
 }
 
-func setIAMPermissions(ctx *pulumi.Context, apiSA *serviceaccount.Account, prov *gcp.Provider) error {
+func setIAMPermissions(ctx *pulumi.Context, apiSA *serviceaccount.Account, keyID pulumi.StringOutput, prov *gcp.Provider) error {
 	gcpCfg := config.New(ctx, "gcp")
 	projectID := gcpCfg.Require("project")
 
@@ -254,6 +266,18 @@ func setIAMPermissions(ctx *pulumi.Context, apiSA *serviceaccount.Account, prov 
 	},
 		pulumi.Provider(prov),
 	)
+	if err != nil {
+		return err
+	}
+
+	// Allow the app to encrpyt and decrypt with kms key keyID
+	_, err = gcpkms.NewCryptoKeyIAMMember(ctx, "kmsKeyAccess", &gcpkms.CryptoKeyIAMMemberArgs{
+		CryptoKeyId: keyID,
+		Role:        pulumi.String("roles/cloudkms.cryptoKeyEncrypterDecrypter"),
+		Member: apiSA.Email.ApplyT(func(email string) string {
+			return fmt.Sprintf("serviceAccount:%s", email)
+		}).(pulumi.StringOutput),
+	})
 	if err != nil {
 		return err
 	}

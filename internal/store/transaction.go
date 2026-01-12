@@ -5,6 +5,8 @@ import (
 	"time"
 
 	"cloud.google.com/go/firestore"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	"github.com/GregMSThompson/finance-backend/internal/models"
 )
@@ -41,7 +43,7 @@ func (s *transactionStore) UpsertBatch(ctx context.Context, uid string, txs []mo
 		}
 
 		doc := s.txCollection(uid).Doc(t.TransactionID)
-		job, err := bw.Set(doc, t, firestore.MergeAll)
+		job, err := bw.Set(doc, t)
 		if err != nil {
 			bw.End()
 			return err
@@ -63,6 +65,9 @@ func (s *transactionStore) UpsertBatch(ctx context.Context, uid string, txs []mo
 func (s *transactionStore) GetCursor(ctx context.Context, uid, bankID string) (string, error) {
 	snap, err := s.cursorDoc(uid, bankID).Get(ctx)
 	if err != nil {
+		if status.Code(err) == codes.NotFound {
+			return "", nil
+		}
 		return "", err
 	}
 	cursor, ok := snap.Data()["cursor"].(string)

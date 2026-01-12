@@ -8,6 +8,7 @@ import (
 	"github.com/GregMSThompson/finance-backend/internal/bootstrap"
 	plaidclient "github.com/GregMSThompson/finance-backend/internal/client/plaid"
 	"github.com/GregMSThompson/finance-backend/internal/config"
+	"github.com/GregMSThompson/finance-backend/internal/crypto"
 	"github.com/GregMSThompson/finance-backend/internal/handlers"
 	"github.com/GregMSThompson/finance-backend/internal/response"
 	"github.com/GregMSThompson/finance-backend/internal/router"
@@ -30,17 +31,17 @@ func main() {
 
 	// stores
 	ustore := store.NewUserStore(bs.Firestore)
-	bstore := store.NewBankStore(bs.Firestore)
 	tstore := store.NewTransactionStore(bs.Firestore)
-	psecrets := store.NewPlaidSecretsStore(bs.SecretsManager, cfg.ProjectID)
+	kmsHelper := crypto.NewKMS(bs.KMS, cfg.KMSKeyName)
+	bstore := store.NewBankStore(bs.Firestore, kmsHelper)
 
 	// adapters
 	padapter := plaidclient.NewAdapter(cfg.PlaidClientID, cfg.PlaidSecret, cfg.PlaidEnvironment)
 
 	// services
 	userv := services.NewUserService(bs.Log, ustore)
-	bserv := services.NewBankService(bs.Log, bstore, psecrets)
-	plserv := services.NewPlaidService(bs.Log, padapter, bstore, psecrets, tstore)
+	bserv := services.NewBankService(bs.Log, bstore)
+	plserv := services.NewPlaidService(bs.Log, padapter, bstore, tstore)
 
 	// response handler
 	rh := response.New(bs.Log)

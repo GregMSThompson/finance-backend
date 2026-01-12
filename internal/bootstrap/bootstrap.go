@@ -5,7 +5,7 @@ import (
 	"log/slog"
 
 	"cloud.google.com/go/firestore"
-	secretmanager "cloud.google.com/go/secretmanager/apiv1"
+	kms "cloud.google.com/go/kms/apiv1"
 	"firebase.google.com/go/v4/auth"
 
 	"github.com/GregMSThompson/finance-backend/internal/config"
@@ -16,7 +16,7 @@ type Bootstrap struct {
 	Log            *slog.Logger
 	Firestore      *firestore.Client
 	Firebase       *auth.Client
-	SecretsManager *secretmanager.Client
+	KMS            *kms.KeyManagementClient
 }
 
 func Run(cfg *config.Config) (*Bootstrap, error) {
@@ -33,7 +33,7 @@ func Run(cfg *config.Config) (*Bootstrap, error) {
 	if err != nil {
 		return bs, err
 	}
-	bs.SecretsManager, err = secretmanager.NewClient(applicationCtx)
+	bs.KMS, err = kms.NewKeyManagementClient(applicationCtx)
 	if err != nil {
 		return bs, err
 	}

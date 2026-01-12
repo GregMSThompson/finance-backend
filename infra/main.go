@@ -7,6 +7,7 @@ import (
 	"github.com/GregMSThompson/finance-backend/infra/docker"
 	"github.com/GregMSThompson/finance-backend/infra/firestore"
 	"github.com/GregMSThompson/finance-backend/infra/identity"
+	"github.com/GregMSThompson/finance-backend/infra/kms"
 	"github.com/GregMSThompson/finance-backend/infra/provider"
 	"github.com/GregMSThompson/finance-backend/infra/secret"
 )
@@ -37,13 +38,19 @@ func main() {
 			return err
 		}
 
+		// enable kms service
+		ks, err := kms.SetupKMS(ctx, prov)
+		if err != nil {
+			return err
+		}
+
 		// create docker repo
 		repo, err := docker.CreateCloudrunRepo(ctx, prov)
 		if err != nil {
 			return err
 		}
 
-		_, err = cloudrun.SetupCloudRun(ctx, prov, ident, repo, sm)
+		_, err = cloudrun.SetupCloudRun(ctx, prov, ident, repo, sm, ks)
 		if err != nil {
 			return err
 		}

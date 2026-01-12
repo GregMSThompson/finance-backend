@@ -5,16 +5,21 @@ import (
 	"time"
 
 	"cloud.google.com/go/firestore"
-
 	"github.com/GregMSThompson/finance-backend/internal/models"
 )
 
-type bankStore struct {
-	client *firestore.Client
+type kmsCipher interface {
+	KmsEncrypt(ctx context.Context, plaintext string) (string, error)
+	KmsDecrypt(ctx context.Context, ciphertext string) (string, error)
 }
 
-func NewBankStore(client *firestore.Client) *bankStore {
-	return &bankStore{client: client}
+type bankStore struct {
+	client *firestore.Client
+	kms    kmsCipher
+}
+
+func NewBankStore(client *firestore.Client, kms kmsCipher) *bankStore {
+	return &bankStore{client: client, kms: kms}
 }
 
 func (s *bankStore) collection(uid string) *firestore.CollectionRef {
@@ -27,7 +32,15 @@ func (s *bankStore) Create(ctx context.Context, uid string, bank *models.Bank) e
 		bank.CreatedAt = now
 	}
 	bank.UpdatedAt = now
-	_, err := s.collection(uid).Doc(bank.BankID).Set(ctx, bank)
+
+	toStore := *bank
+	token, err := s.encryptToken(ctx, bank.PlaidPublicToken)
+	if err != nil {
+		return err
+	}
+	toStore.PlaidPublicToken = token
+
+	_, err = s.collection(uid).Doc(bank.BankID).Set(ctx, &toStore)
 	return err
 }
 
@@ -40,6 +53,9 @@ func (s *bankStore) List(ctx context.Context, uid string) ([]*models.Bank, error
 	for _, d := range docs {
 		var b models.Bank
 		if err := d.DataTo(&b); err != nil {
+			return nil, err
+		}
+		if err := s.decryptToken(ctx, &b); err != nil {
 			return nil, err
 		}
 		banks = append(banks, &b)
@@ -56,10 +72,36 @@ func (s *bankStore) Get(ctx context.Context, uid, bankID string) (*models.Bank, 
 	if err := doc.DataTo(&b); err != nil {
 		return nil, err
 	}
+	if err := s.decryptToken(ctx, &b); err != nil {
+		return nil, err
+	}
 	return &b, nil
 }
 
 func (s *bankStore) Delete(ctx context.Context, uid, bankID string) error {
 	_, err := s.collection(uid).Doc(bankID).Delete(ctx)
 	return err
+}
+
+func (s *bankStore) encryptToken(ctx context.Context, token string) (string, error) {
+	if token == "" || s.kms == nil {
+		return token, nil
+	}
+	ciphertext, err := s.kms.KmsEncrypt(ctx, token)
+	if err != nil {
+		return "", err
+	}
+	return ciphertext, nil
+}
+
+func (s *bankStore) decryptToken(ctx context.Context, bank *models.Bank) error {
+	if bank.PlaidPublicToken == "" || s.kms == nil {
+		return nil
+	}
+	plaintext, err := s.kms.KmsDecrypt(ctx, bank.PlaidPublicToken)
+	if err != nil {
+		return err
+	}
+	bank.PlaidPublicToken = plaintext
+	return nil
 }

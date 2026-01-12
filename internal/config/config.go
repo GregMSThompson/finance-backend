@@ -12,6 +12,7 @@ type Config struct {
 	PlaidClientID    string
 	PlaidSecret      string
 	PlaidEnvironment dto.PlaidEnvironment
+	KMSKeyName       string
 }
 
 func New() *Config {
@@ -21,6 +22,7 @@ func New() *Config {
 		PlaidClientID:    os.Getenv("PLAIDCLIENTID"),
 		PlaidSecret:      os.Getenv("PLAIDSECRET"),
 		PlaidEnvironment: getPlaidEnvironment(os.Getenv("PLAIDENVIRONMENT")),
+		KMSKeyName:       os.Getenv("KMSKEYNAME"),
 	}
 }
 

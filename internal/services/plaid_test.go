@@ -63,29 +63,6 @@ func (f *fakeBankStore) List(ctx context.Context, uid string) ([]*models.Bank, e
 	return f.list, f.err
 }
 
-type fakeSecrets struct {
-	store map[string]string
-	err   error
-}
-
-func (f *fakeSecrets) StorePlaidToken(ctx context.Context, uid, itemID, token string) error {
-	if f.err != nil {
-		return f.err
-	}
-	if f.store == nil {
-		f.store = map[string]string{}
-	}
-	f.store[uid+":"+itemID] = token
-	return nil
-}
-func (f *fakeSecrets) GetPlaidToken(ctx context.Context, uid, itemID string) (string, error) {
-	if f.err != nil {
-		return "", f.err
-	}
-	return f.store[uid+":"+itemID], nil
-}
-func (f *fakeSecrets) DeletePlaidToken(ctx context.Context, uid, itemID string) error { return f.err }
-
 type fakeTxStore struct {
 	cursor     string
 	upserted   [][]models.Transaction
@@ -115,14 +92,13 @@ func (f *fakeTxStore) SetCursor(ctx context.Context, uid, bankID, cursor string)
 
 // --- tests ---
 
-func TestExchangePublicTokenStoresSecretsAndBank(t *testing.T) {
+func TestExchangePublicTokenStoresBank(t *testing.T) {
 	pl := &fakePlaid{itemID: "item-1", accessToken: "at-123"}
 	banks := &fakeBankStore{}
-	secrets := &fakeSecrets{}
 	txs := &fakeTxStore{}
 	log := slog.New(slog.NewTextHandler(testDiscard{}, nil))
 
-	svc := NewPlaidService(log, pl, banks, secrets, txs)
+	svc := NewPlaidService(log, pl, banks, txs)
 
 	_, err := svc.ExchangePublicToken(context.Background(), "uid-1", "public-xyz", "Chase")
 	if err != nil {
@@ -132,11 +108,11 @@ func TestExchangePublicTokenStoresSecretsAndBank(t *testing.T) {
 	if !pl.exchangeCalled {
 		t.Fatal("expected ExchangePublicToken to be called")
 	}
-	if secrets.store["uid-1:item-1"] != "at-123" {
-		t.Fatalf("access token not stored, got %v", secrets.store)
-	}
 	if len(banks.created) != 1 || banks.created[0].Institution != "Chase" {
 		t.Fatalf("bank not created with institution, got %+v", banks.created)
+	}
+	if banks.created[0].PlaidPublicToken != "at-123" {
+		t.Fatalf("expected access token to be stored on bank, got %q", banks.created[0].PlaidPublicToken)
 	}
 }
 
@@ -147,12 +123,11 @@ func TestSyncTransactionsUsesCursorAndSetsNewCursor(t *testing.T) {
 			{Transactions: []models.Transaction{{TransactionID: "t2"}}, Cursor: "c2", HasMore: false},
 		},
 	}
-	banks := &fakeBankStore{list: []*models.Bank{{BankID: "item-1"}}}
-	secrets := &fakeSecrets{store: map[string]string{"uid-1:item-1": "at-123"}}
+	banks := &fakeBankStore{list: []*models.Bank{{BankID: "item-1", PlaidPublicToken: "at-123"}}}
 	txs := &fakeTxStore{cursor: "prev-cursor"}
 	log := slog.New(slog.NewTextHandler(testDiscard{}, nil))
 
-	svc := NewPlaidService(log, pl, banks, secrets, txs)
+	svc := NewPlaidService(log, pl, banks, txs)
 	now := time.Unix(1000, 0)
 	svc.clockNow = func() time.Time { return now }
 
@@ -175,11 +150,10 @@ func TestSyncTransactionsUsesCursorAndSetsNewCursor(t *testing.T) {
 func TestSyncTransactionsPropagatesErrors(t *testing.T) {
 	pl := &fakePlaid{}
 	banks := &fakeBankStore{err: errors.New("boom")}
-	secrets := &fakeSecrets{}
 	txs := &fakeTxStore{}
 	log := slog.New(slog.NewTextHandler(testDiscard{}, nil))
 
-	svc := NewPlaidService(log, pl, banks, secrets, txs)
+	svc := NewPlaidService(log, pl, banks, txs)
 	_, err := svc.SyncTransactions(context.Background(), "uid-1", nil)
 	if err == nil {
 		t.Fatalf("expected error, got nil")

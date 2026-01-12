@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"time"
 
@@ -15,13 +16,6 @@ import (
 type bankPSStore interface {
 	Create(ctx context.Context, uid string, bank *models.Bank) error
 	List(ctx context.Context, uid string) ([]*models.Bank, error)
-}
-
-// plaidSecretsPSStore hides Secret Manager details.
-type plaidSecretsPSStore interface {
-	StorePlaidToken(ctx context.Context, uid, itemID, token string) error
-	GetPlaidToken(ctx context.Context, uid, itemID string) (string, error)
-	DeletePlaidToken(ctx context.Context, uid, itemID string) error
 }
 
 // transactionPSStore is what sync uses; shape it to your Firestore model.
@@ -42,17 +36,15 @@ type plaidService struct {
 	log      *slog.Logger
 	plaid    plaidClient
 	banks    bankPSStore
-	secrets  plaidSecretsPSStore
 	txs      transactionPSStore
 	clockNow func() time.Time
 }
 
-func NewPlaidService(log *slog.Logger, plaid plaidClient, banks bankPSStore, secrets plaidSecretsPSStore, txs transactionPSStore) *plaidService {
+func NewPlaidService(log *slog.Logger, plaid plaidClient, banks bankPSStore, txs transactionPSStore) *plaidService {
 	return &plaidService{
 		log:      log,
 		plaid:    plaid,
 		banks:    banks,
-		secrets:  secrets,
 		txs:      txs,
 		clockNow: time.Now,
 	}
@@ -72,16 +64,13 @@ func (s *plaidService) ExchangePublicToken(ctx context.Context, uid, publicToken
 		return "", err
 	}
 
-	if err := s.secrets.StorePlaidToken(ctx, uid, itemID, accessToken); err != nil {
-		return "", err
-	}
-
 	bank := &models.Bank{
-		BankID:      itemID,
-		Institution: institutionName,
-		Status:      "active",
-		CreatedAt:   s.clockNow(),
-		UpdatedAt:   s.clockNow(),
+		BankID:           itemID,
+		Institution:      institutionName,
+		Status:           "active",
+		PlaidPublicToken: accessToken,
+		CreatedAt:        s.clockNow(),
+		UpdatedAt:        s.clockNow(),
 	}
 	if err := s.banks.Create(ctx, uid, bank); err != nil {
 		return "", err
@@ -103,9 +92,9 @@ func (s *plaidService) SyncTransactions(ctx context.Context, uid string, bankID 
 			continue
 		}
 
-		token, err := s.secrets.GetPlaidToken(ctx, uid, b.BankID)
-		if err != nil {
-			return result, err
+		token := b.PlaidPublicToken
+		if token == "" {
+			return result, fmt.Errorf("plaid access token missing for bank %s", b.BankID)
 		}
 
 		storedCursor, err := s.txs.GetCursor(ctx, uid, b.BankID)
