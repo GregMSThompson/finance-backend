@@ -12,15 +12,22 @@ type bankBSStore interface {
 	Delete(ctx context.Context, uid, bankID string) error
 }
 
+type transactionBSStore interface {
+	DeleteByBank(ctx context.Context, uid, bankID string) error
+	DeleteCursor(ctx context.Context, uid, bankID string) error
+}
+
 type bankService struct {
 	log     *slog.Logger
 	banks   bankBSStore
+	txs     transactionBSStore
 }
 
-func NewBankService(log *slog.Logger, banks bankBSStore) *bankService {
+func NewBankService(log *slog.Logger, banks bankBSStore, txs transactionBSStore) *bankService {
 	return &bankService{
 		log:     log,
 		banks:   banks,
+		txs:     txs,
 	}
 }
 
@@ -29,6 +36,13 @@ func (s *bankService) ListBanks(ctx context.Context, uid string) ([]*models.Bank
 }
 
 func (s *bankService) DeleteBank(ctx context.Context, uid, bankID string) error {
+	// TODO: Make deletions atomic or add retries to avoid partial cleanup on failure.
+	if err := s.txs.DeleteByBank(ctx, uid, bankID); err != nil {
+		return err
+	}
+	if err := s.txs.DeleteCursor(ctx, uid, bankID); err != nil {
+		return err
+	}
 	if err := s.banks.Delete(ctx, uid, bankID); err != nil {
 		return err
 	}

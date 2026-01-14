@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"cloud.google.com/go/firestore"
+	"google.golang.org/api/iterator"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
@@ -83,4 +84,44 @@ func (s *transactionStore) SetCursor(ctx context.Context, uid, bankID, cursor st
 		"updatedAt": time.Now(),
 	}, firestore.MergeAll)
 	return err
+}
+
+func (s *transactionStore) DeleteByBank(ctx context.Context, uid, bankID string) error {
+	iter := s.txCollection(uid).Where("bankId", "==", bankID).Documents(ctx)
+	bw := s.client.BulkWriter(ctx)
+	jobs := make([]*firestore.BulkWriterJob, 0)
+
+	for {
+		doc, err := iter.Next()
+		if err == iterator.Done {
+			break
+		}
+		if err != nil {
+			bw.End()
+			return err
+		}
+		job, err := bw.Delete(doc.Ref)
+		if err != nil {
+			bw.End()
+			return err
+		}
+		jobs = append(jobs, job)
+	}
+
+	bw.End()
+	for _, job := range jobs {
+		if _, err := job.Results(); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (s *transactionStore) DeleteCursor(ctx context.Context, uid, bankID string) error {
+	_, err := s.cursorDoc(uid, bankID).Delete(ctx)
+	if err != nil && status.Code(err) != codes.NotFound {
+		return err
+	}
+	return nil
 }

@@ -29,10 +29,12 @@ func main() {
 	bs, err := bootstrap.Run(cfg)
 	exitOnError("bootstrap failed", err, bs.Log)
 
+	// helpers
+	kmsHelper := crypto.NewKMS(bs.KMS, cfg.KMSKeyName)
+
 	// stores
 	ustore := store.NewUserStore(bs.Firestore)
 	tstore := store.NewTransactionStore(bs.Firestore)
-	kmsHelper := crypto.NewKMS(bs.KMS, cfg.KMSKeyName)
 	bstore := store.NewBankStore(bs.Firestore, kmsHelper)
 
 	// adapters
@@ -40,7 +42,7 @@ func main() {
 
 	// services
 	userv := services.NewUserService(bs.Log, ustore)
-	bserv := services.NewBankService(bs.Log, bstore)
+	bserv := services.NewBankService(bs.Log, bstore, tstore)
 	plserv := services.NewPlaidService(bs.Log, padapter, bstore, tstore)
 
 	// response handler
