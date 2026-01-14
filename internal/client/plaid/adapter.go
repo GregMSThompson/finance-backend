@@ -56,6 +56,9 @@ func (a *adapter) SyncTransactions(ctx context.Context, bankID string, accessTok
 		req.SetCursor(*cursor)
 	}
 	req.SetCount(500)
+	opts := plaid.NewTransactionsSyncRequestOptions()
+	opts.SetIncludePersonalFinanceCategory(true)
+	req.SetOptions(*opts)
 
 	var page dto.PlaidSyncPage
 
@@ -68,6 +71,7 @@ func (a *adapter) SyncTransactions(ctx context.Context, bankID string, accessTok
 	now := time.Now()
 
 	convert := func(plaidTx plaid.Transaction) models.Transaction {
+		pfc := plaidTx.GetPersonalFinanceCategory()
 		return models.Transaction{
 			TransactionID:  plaidTx.GetTransactionId(),
 			BankID:         bankID,
@@ -78,6 +82,10 @@ func (a *adapter) SyncTransactions(ctx context.Context, bankID string, accessTok
 			Date:           plaidTx.GetDate(),
 			AuthorizedDate: plaidTx.GetAuthorizedDate(),
 			Categories:     plaidTx.GetCategory(),
+			PFCPrimary:     pfc.GetPrimary(),
+			PFCDetailed:    pfc.GetDetailed(),
+			PFCConfidence:  pfc.GetConfidenceLevel(),
+			PFCIconURL:     plaidTx.GetPersonalFinanceCategoryIconUrl(),
 			CreatedAt:      now,
 			UpdatedAt:      now,
 		}
