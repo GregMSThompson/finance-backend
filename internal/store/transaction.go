@@ -9,6 +9,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	"github.com/GregMSThompson/finance-backend/internal/dto"
 	"github.com/GregMSThompson/finance-backend/internal/models"
 )
 
@@ -26,6 +27,75 @@ func (s *transactionStore) txCollection(uid string) *firestore.CollectionRef {
 
 func (s *transactionStore) cursorDoc(uid, bankID string) *firestore.DocumentRef {
 	return s.client.Collection("users").Doc(uid).Collection("plaid_cursors").Doc(bankID)
+}
+
+func (s *transactionStore) Query(ctx context.Context, uid string, q dto.TransactionQuery) (<-chan *models.Transaction, <-chan error) {
+	out := make(chan *models.Transaction, 10)
+	errCh := make(chan error, 1)
+
+	query := s.txCollection(uid).Query
+	if q.Pending != nil {
+		query = query.Where("pending", "==", *q.Pending)
+	}
+	if q.PFCPrimary != nil {
+		query = query.Where("pfcPrimary", "==", *q.PFCPrimary)
+	}
+	if q.BankID != nil {
+		query = query.Where("bankId", "==", *q.BankID)
+	}
+	if q.DateFrom != nil {
+		query = query.Where("date", ">=", *q.DateFrom)
+	}
+	if q.DateTo != nil {
+		query = query.Where("date", "<=", *q.DateTo)
+	}
+
+	orderField := q.OrderBy
+	if orderField == "" {
+		orderField = "date"
+	}
+	dir := firestore.Asc
+	if q.Desc {
+		dir = firestore.Desc
+	}
+	query = query.OrderBy(orderField, dir)
+
+	if q.Limit > 0 {
+		query = query.Limit(q.Limit)
+	}
+
+	iter := query.Documents(ctx)
+	go func() {
+		defer close(out)
+		defer close(errCh)
+		defer iter.Stop()
+
+		for {
+			doc, err := iter.Next()
+			if err == iterator.Done {
+				return
+			}
+			if err != nil {
+				errCh <- err
+				return
+			}
+
+			var tx models.Transaction
+			if err := doc.DataTo(&tx); err != nil {
+				errCh <- err
+				return
+			}
+
+			select {
+			case out <- &tx:
+			case <-ctx.Done():
+				errCh <- ctx.Err()
+				return
+			}
+		}
+	}()
+
+	return out, errCh
 }
 
 func (s *transactionStore) UpsertBatch(ctx context.Context, uid string, txs []models.Transaction) error {

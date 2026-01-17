@@ -8,6 +8,7 @@ import (
 
 	"github.com/GregMSThompson/finance-backend/internal/dto"
 	"github.com/GregMSThompson/finance-backend/internal/models"
+	"github.com/GregMSThompson/finance-backend/pkg/helpers"
 )
 
 // --- Dependencies (minimal interfaces scoped to this service) ---
@@ -135,17 +136,10 @@ func (s *plaidService) SyncTransactions(ctx context.Context, uid string, bankID 
 
 		result.BanksSynced++
 		if bankID != nil {
-			result.Cursor = deref(cursor)
+			result.Cursor = helpers.Value(cursor)
 			break
 		}
 	}
 
 	return result, nil
-}
-
-func deref(ptr *string) string {
-	if ptr == nil {
-		return ""
-	}
-	return *ptr
 }
