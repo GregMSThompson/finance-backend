@@ -36,6 +36,8 @@ func (h *responseHandler) HandleError(w http.ResponseWriter, err error) {
 		h.WriteError(w, http.StatusConflict, "already_exists", e.Message, e)
 	case *errs.ValidationError:
 		h.WriteError(w, http.StatusBadRequest, "invalid_input", e.Message, e)
+	case *errs.UnsupportedGroupByError:
+		h.WriteError(w, http.StatusBadRequest, "invalid_input", e.Message, e)
 	default:
 		h.WriteError(w, http.StatusInternalServerError, "internal_error", "An unexpected error occurred", e)
 	}

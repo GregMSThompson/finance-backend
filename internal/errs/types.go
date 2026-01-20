@@ -1,19 +1,47 @@
 package errs
 
-type NotFoundError struct {
+type ErrorMessage struct {
 	Message string
 }
 
-func (e *NotFoundError) Error() string { return e.Message }
+func (e *ErrorMessage) Error() string { return e.Message }
+
+type NotFoundError struct {
+	ErrorMessage
+}
 
 type AlreadyExistsError struct {
-	Message string
+	ErrorMessage
 }
-
-func (e *AlreadyExistsError) Error() string { return e.Message }
 
 type ValidationError struct {
-	Message string
+	ErrorMessage
 }
 
-func (e *ValidationError) Error() string { return e.Message }
+type UnsupportedGroupByError struct {
+	ErrorMessage
+}
+
+func NewNotFoundError(message string) *NotFoundError {
+	return &NotFoundError{
+		ErrorMessage: ErrorMessage{Message: message},
+	}
+}
+
+func NewAlreadyExistsError(message string) *AlreadyExistsError {
+	return &AlreadyExistsError{
+		ErrorMessage: ErrorMessage{Message: message},
+	}
+}
+
+func NewValidationError(message string) *ValidationError {
+	return &ValidationError{
+		ErrorMessage: ErrorMessage{Message: message},
+	}
+}
+
+func NewUnsupportedGroupByError() *UnsupportedGroupByError {
+	return &UnsupportedGroupByError{
+		ErrorMessage: ErrorMessage{Message: "unsupported groupBy"},
+	}
+}

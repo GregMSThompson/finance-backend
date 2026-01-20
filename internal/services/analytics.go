@@ -2,9 +2,9 @@ package services
 
 import (
 	"context"
-	"errors"
 
 	"github.com/GregMSThompson/finance-backend/internal/dto"
+	"github.com/GregMSThompson/finance-backend/internal/errs"
 	"github.com/GregMSThompson/finance-backend/internal/models"
 	"github.com/GregMSThompson/finance-backend/pkg/helpers"
 )
@@ -170,13 +170,11 @@ func streamTransactions(txCh <-chan *models.Transaction, errCh <-chan error, han
 	return nil
 }
 
-var errUnsupportedGroupBy = errors.New("unsupported groupBy")
-
 func validateGroupBy(groupBy string) error {
 	switch groupBy {
 	case "pfcPrimary", "merchant", "day":
 		return nil
 	default:
-		return errUnsupportedGroupBy
+		return errs.NewUnsupportedGroupByError()
 	}
 }

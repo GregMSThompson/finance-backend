@@ -10,22 +10,22 @@ import (
 	"github.com/GregMSThompson/finance-backend/internal/models"
 )
 
-type adapter struct {
+type Adapter struct {
 	client *plaid.APIClient
 }
 
-func NewAdapter(clientID, secret string, env dto.PlaidEnvironment) *adapter {
+func NewAdapter(clientID, secret string, env dto.PlaidEnvironment) *Adapter {
 	cfg := plaid.NewConfiguration()
 	cfg.AddDefaultHeader("PLAID-CLIENT-ID", clientID)
 	cfg.AddDefaultHeader("PLAID-SECRET", secret)
 	cfg.UseEnvironment(toPlaidEnv(env))
 
-	return &adapter{
+	return &Adapter{
 		client: plaid.NewAPIClient(cfg),
 	}
 }
 
-func (a *adapter) CreateLinkToken(ctx context.Context, uid string) (string, error) {
+func (a *Adapter) CreateLinkToken(ctx context.Context, uid string) (string, error) {
 	req := plaid.NewLinkTokenCreateRequest(
 		"Finance App",
 		"en",
@@ -41,7 +41,7 @@ func (a *adapter) CreateLinkToken(ctx context.Context, uid string) (string, erro
 	return resp.GetLinkToken(), nil
 }
 
-func (a *adapter) ExchangePublicToken(ctx context.Context, publicToken string) (itemID, accessToken string, err error) {
+func (a *Adapter) ExchangePublicToken(ctx context.Context, publicToken string) (itemID, accessToken string, err error) {
 	req := plaid.NewItemPublicTokenExchangeRequest(publicToken)
 	resp, _, err := a.client.PlaidApi.ItemPublicTokenExchange(ctx).ItemPublicTokenExchangeRequest(*req).Execute()
 	if err != nil {
@@ -50,7 +50,7 @@ func (a *adapter) ExchangePublicToken(ctx context.Context, publicToken string) (
 	return resp.GetItemId(), resp.GetAccessToken(), nil
 }
 
-func (a *adapter) SyncTransactions(ctx context.Context, bankID string, accessToken string, cursor *string) (dto.PlaidSyncPage, error) {
+func (a *Adapter) SyncTransactions(ctx context.Context, bankID string, accessToken string, cursor *string) (dto.PlaidSyncPage, error) {
 	req := plaid.NewTransactionsSyncRequest(accessToken)
 	if cursor != nil {
 		req.SetCursor(*cursor)

@@ -21,8 +21,10 @@ func NewRouter(deps *handlers.Deps) chi.Router {
 	// handlers
 	ush := handlers.NewUserHandlers(deps)
 	ph := handlers.NewPlaidHandlers(deps)
+	aih := handlers.NewAIHandlers(deps)
 
 	r.Mount("/users", ush.UserRoutes())
 	r.Mount("/", ph.PlaidRoutes())
+	r.Mount("/ai", aih.AIRoutes())
 	return r
 }

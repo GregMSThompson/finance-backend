@@ -15,4 +15,5 @@ type Deps struct {
 	UserSvc         userService
 	PlaidSvc        plaidService
 	BankSvc         bankService
+	AISvc           aiService
 }

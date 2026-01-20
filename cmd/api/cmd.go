@@ -6,7 +6,6 @@ import (
 	"os"
 
 	"github.com/GregMSThompson/finance-backend/internal/bootstrap"
-	plaidclient "github.com/GregMSThompson/finance-backend/internal/client/plaid"
 	"github.com/GregMSThompson/finance-backend/internal/config"
 	"github.com/GregMSThompson/finance-backend/internal/crypto"
 	"github.com/GregMSThompson/finance-backend/internal/handlers"
@@ -28,6 +27,7 @@ func main() {
 	cfg := config.New()
 	bs, err := bootstrap.Run(cfg)
 	exitOnError("bootstrap failed", err, bs.Log)
+	defer bs.Close()
 
 	// helpers
 	kmsHelper := crypto.NewKMS(bs.KMS, cfg.KMSKeyName)
@@ -37,13 +37,12 @@ func main() {
 	tstore := store.NewTransactionStore(bs.Firestore)
 	bstore := store.NewBankStore(bs.Firestore, kmsHelper)
 
-	// adapters
-	padapter := plaidclient.NewAdapter(cfg.PlaidClientID, cfg.PlaidSecret, cfg.PlaidEnvironment)
-
 	// services
 	userv := services.NewUserService(bs.Log, ustore)
 	bserv := services.NewBankService(bs.Log, bstore, tstore)
-	plserv := services.NewPlaidService(bs.Log, padapter, bstore, tstore)
+	plserv := services.NewPlaidService(bs.Log, bs.PlaidAdapter, bstore, tstore)
+	anserv := services.NewAnalyticsService(tstore)
+	aiserv := services.NewAIService(bs.VertexAdapter, anserv)
 
 	// response handler
 	rh := response.New(bs.Log)
@@ -56,6 +55,7 @@ func main() {
 	deps.UserSvc = userv
 	deps.BankSvc = bserv
 	deps.PlaidSvc = plserv
+	deps.AISvc = aiserv
 
 	// router
 	r := router.NewRouter(deps)
