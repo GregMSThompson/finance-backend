@@ -13,4 +13,4 @@ config:
   plaid:clientId:
     secure: AAABANYr5O88K0ZmqGin9TYUwao3knREFRDSZPBLFJznXjecESzKlU1Msuqt7v3Nphfx7tvQOA4=
   plaid:environment: sandbox
-  vertex:model: gemini-1.5-flash-002
+  vertex:model: gemini-2.5-flash-lite
