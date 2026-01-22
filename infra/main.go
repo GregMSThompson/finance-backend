@@ -10,6 +10,7 @@ import (
 	"github.com/GregMSThompson/finance-backend/infra/kms"
 	"github.com/GregMSThompson/finance-backend/infra/provider"
 	"github.com/GregMSThompson/finance-backend/infra/secret"
+	"github.com/GregMSThompson/finance-backend/infra/vertex"
 )
 
 func main() {
@@ -34,6 +35,12 @@ func main() {
 
 		// enable firestore and create a database for the project
 		err = firestore.SetupFirestore(ctx, prov)
+		if err != nil {
+			return err
+		}
+
+		// enable vertex service for gemini queries
+		err = vertex.SetupVertex(ctx, prov)
 		if err != nil {
 			return err
 		}

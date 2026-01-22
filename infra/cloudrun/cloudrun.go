@@ -137,6 +137,7 @@ func createCloudRunService(ctx *pulumi.Context,
 	gcpCfg := config.New(ctx, "gcp")
 	crCfg := config.New(ctx, "cloudrun")
 	plaidCfg := config.New(ctx, "plaid")
+	vertexCfg := config.New(ctx, "vertex")
 
 	projectID := gcpCfg.Require("project")
 	region := gcpCfg.Require("region")
@@ -148,6 +149,7 @@ func createCloudRunService(ctx *pulumi.Context,
 	logLevel := crCfg.Require("logLevel")
 	timeout, _ := strconv.Atoi(crCfg.Require("timeout"))
 	plaidEnv := plaidCfg.Require("environment")
+	vertexModel := vertexCfg.Require("model")
 
 	return cloudrun.NewService(ctx, "apiService", &cloudrun.ServiceArgs{
 		Location: pulumi.String(region),
@@ -195,6 +197,10 @@ func createCloudRunService(ctx *pulumi.Context,
 								Value: pulumi.String(projectID),
 							},
 							&cloudrun.ServiceTemplateSpecContainerEnvArgs{
+								Name:  pulumi.String("REGION"),
+								Value: pulumi.String(region),
+							},
+							&cloudrun.ServiceTemplateSpecContainerEnvArgs{
 								Name:  pulumi.String("LOGLEVEL"),
 								Value: pulumi.String(logLevel),
 							},
@@ -205,6 +211,10 @@ func createCloudRunService(ctx *pulumi.Context,
 							&cloudrun.ServiceTemplateSpecContainerEnvArgs{
 								Name:  pulumi.String("PLAIDENVIRONMENT"),
 								Value: pulumi.String(plaidEnv),
+							},
+							&cloudrun.ServiceTemplateSpecContainerEnvArgs{
+								Name:  pulumi.String("VERTEXMODEL"),
+								Value: pulumi.String(vertexModel),
 							},
 							&cloudrun.ServiceTemplateSpecContainerEnvArgs{
 								Name: pulumi.String("PLAIDCLIENTID"),
@@ -278,6 +288,20 @@ func setIAMPermissions(ctx *pulumi.Context, apiSA *serviceaccount.Account, keyID
 			return fmt.Sprintf("serviceAccount:%s", email)
 		}).(pulumi.StringOutput),
 	})
+	if err != nil {
+		return err
+	}
+
+	// Allow the app to call Vertex AI.
+	_, err = projects.NewIAMMember(ctx, "vertexAccess", &projects.IAMMemberArgs{
+		Project: pulumi.String(projectID),
+		Role:    pulumi.String("roles/aiplatform.user"),
+		Member: apiSA.Email.ApplyT(func(email string) string {
+			return fmt.Sprintf("serviceAccount:%s", email)
+		}).(pulumi.StringOutput),
+	},
+		pulumi.Provider(prov),
+	)
 	if err != nil {
 		return err
 	}
