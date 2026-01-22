@@ -116,19 +116,22 @@ func parseContentResponse(resp *genai.GenerateContentResponse) (string, []dto.Ve
 }
 
 func toGenaiTools(tools []dto.VertexTool) []*genai.Tool {
-	out := make([]*genai.Tool, 0, len(tools))
+	if len(tools) == 0 {
+		return nil
+	}
+
+	decls := make([]*genai.FunctionDeclaration, 0, len(tools))
 	for _, tool := range tools {
-		out = append(out, &genai.Tool{
-			FunctionDeclarations: []*genai.FunctionDeclaration{
-				{
-					Name:        tool.Name,
-					Description: tool.Description,
-					Parameters:  toGenaiSchema(tool.Parameters),
-				},
-			},
+		decls = append(decls, &genai.FunctionDeclaration{
+			Name:        tool.Name,
+			Description: tool.Description,
+			Parameters:  toGenaiSchema(tool.Parameters),
 		})
 	}
-	return out
+
+	return []*genai.Tool{
+		{FunctionDeclarations: decls},
+	}
 }
 
 func toGenaiSchema(schema *dto.VertexSchema) *genai.Schema {
