@@ -64,6 +64,38 @@ func (a *Adapter) GenerateContent(ctx context.Context, req dto.VertexGenerateReq
 		model.Tools = toGenaiTools(req.Tools)
 	}
 
+	// debug request metadata
+	toolSummary := make([]map[string]any, 0, len(req.Tools))
+	for _, tool := range req.Tools {
+		propCount := 0
+		enumSizes := map[string]int{}
+		required := []string(nil)
+		if tool.Parameters != nil {
+			required = tool.Parameters.Required
+			if len(tool.Parameters.Properties) > 0 {
+				propCount = len(tool.Parameters.Properties)
+				for name, prop := range tool.Parameters.Properties {
+					if prop != nil && len(prop.Enum) > 0 {
+						enumSizes[name] = len(prop.Enum)
+					}
+				}
+			}
+		}
+		toolSummary = append(toolSummary, map[string]any{
+			"name":       tool.Name,
+			"required":   required,
+			"properties": propCount,
+			"enumSizes":  enumSizes,
+		})
+	}
+	a.log.Debug(
+		"vertex generate content request",
+		"systemLen", len(req.System),
+		"userLen", len(req.UserMessage),
+		"tools", toolSummary,
+		"toolResults", len(req.ToolResults),
+	)
+
 	var parts []genai.Part
 	if req.UserMessage != "" {
 		parts = append(parts, genai.Text(req.UserMessage))
@@ -85,6 +117,59 @@ func (a *Adapter) GenerateContent(ctx context.Context, req dto.VertexGenerateReq
 
 	out.Raw = resp
 	out.Text, out.ToolCalls = parseContentResponse(resp)
+
+	// debug gemini output
+	finishReasons := make([]string, 0, len(resp.Candidates))
+	partsDebug := make([]map[string]any, 0)
+	for _, candidate := range resp.Candidates {
+		finishReasons = append(finishReasons, candidate.FinishReason.String())
+		if candidate.Content == nil {
+			continue
+		}
+		for _, part := range candidate.Content.Parts {
+			switch p := part.(type) {
+			case genai.Text:
+				partsDebug = append(partsDebug, map[string]any{
+					"type":   "text",
+					"length": len(p),
+				})
+			case *genai.Text:
+				partsDebug = append(partsDebug, map[string]any{
+					"type":   "text",
+					"length": len(*p),
+				})
+			case *genai.FunctionCall:
+				partsDebug = append(partsDebug, map[string]any{
+					"type": "functionCall",
+					"name": p.Name,
+					"args": p.Args,
+				})
+			case genai.FunctionCall:
+				partsDebug = append(partsDebug, map[string]any{
+					"type": "functionCall",
+					"name": p.Name,
+					"args": p.Args,
+				})
+			default:
+				partsDebug = append(partsDebug, map[string]any{
+					"type": fmt.Sprintf("%T", part),
+				})
+			}
+		}
+	}
+	a.log.Debug(
+		"vertex generate content response",
+		"candidates", len(resp.Candidates),
+		"toolCalls", len(out.ToolCalls),
+		"textLen", len(out.Text),
+		"promptFeedback", resp.PromptFeedback,
+		"finishReasons", finishReasons,
+		"parts", partsDebug,
+	)
+
+	if len(out.Text) == 0 && len(out.ToolCalls) == 0 {
+		return out, fmt.Errorf("vertex response contained no text or tool calls")
+	}
 	return out, nil
 }
 
@@ -103,7 +188,14 @@ func parseContentResponse(resp *genai.GenerateContentResponse) (string, []dto.Ve
 			switch p := part.(type) {
 			case genai.Text:
 				text += string(p)
+			case *genai.Text:
+				text += string(*p)
 			case *genai.FunctionCall:
+				calls = append(calls, dto.VertexToolCall{
+					Name: p.Name,
+					Args: p.Args,
+				})
+			case genai.FunctionCall:
 				calls = append(calls, dto.VertexToolCall{
 					Name: p.Name,
 					Args: p.Args,
