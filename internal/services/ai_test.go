@@ -45,6 +45,22 @@ func (f *fakeAnalyticsClient) GetTransactions(ctx context.Context, uid string, a
 	return dto.AnalyticsTransactionsResult{}, nil
 }
 
+type fakeAIStore struct {
+	messages []dto.AIMessage
+}
+
+func (f *fakeAIStore) SaveMessage(ctx context.Context, uid, sessionID string, msg dto.AIMessage) error {
+	f.messages = append(f.messages, msg)
+	return nil
+}
+
+func (f *fakeAIStore) ListMessages(ctx context.Context, uid, sessionID string, limit int) ([]dto.AIMessage, error) {
+	if limit > 0 && len(f.messages) > limit {
+		return append([]dto.AIMessage{}, f.messages[len(f.messages)-limit:]...), nil
+	}
+	return append([]dto.AIMessage{}, f.messages...), nil
+}
+
 func TestAIQueryToolFlow(t *testing.T) {
 	vertex := &fakeVertexClient{
 		responses: []dto.VertexGenerateResponse{
@@ -59,12 +75,13 @@ func TestAIQueryToolFlow(t *testing.T) {
 	analytics := &fakeAnalyticsClient{
 		totalResp: dto.AnalyticsSpendTotalResult{Total: 5, Currency: "USD"},
 	}
-	svc := NewAIService(vertex, analytics)
+	store := &fakeAIStore{}
+	svc := NewAIService(vertex, analytics, store, 0)
 	svc.clockNow = func() time.Time {
 		return time.Date(2025, time.February, 15, 12, 0, 0, 0, time.UTC)
 	}
 
-	resp, err := svc.Query(context.Background(), "user", "How much did I spend?")
+	resp, err := svc.Query(context.Background(), "user", "session", "How much did I spend?")
 	if err != nil {
 		t.Fatalf("Query error: %v", err)
 	}
@@ -90,9 +107,10 @@ func TestAIQueryNoToolCall(t *testing.T) {
 		responses: []dto.VertexGenerateResponse{{Text: "No tool needed."}},
 	}
 	analytics := &fakeAnalyticsClient{}
-	svc := NewAIService(vertex, analytics)
+	store := &fakeAIStore{}
+	svc := NewAIService(vertex, analytics, store, 0)
 
-	resp, err := svc.Query(context.Background(), "user", "Hi")
+	resp, err := svc.Query(context.Background(), "user", "session", "Hi")
 	if err != nil {
 		t.Fatalf("Query error: %v", err)
 	}

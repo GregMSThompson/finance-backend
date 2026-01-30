@@ -2,6 +2,7 @@ package config
 
 import (
 	"os"
+	"time"
 
 	"github.com/GregMSThompson/finance-backend/internal/dto"
 )
@@ -15,6 +16,7 @@ type Config struct {
 	PlaidEnvironment dto.PlaidEnvironment
 	KMSKeyName       string
 	VertexModel      string
+	AITTL            time.Duration
 }
 
 func New() *Config {
@@ -27,6 +29,7 @@ func New() *Config {
 		PlaidEnvironment: getPlaidEnvironment(os.Getenv("PLAIDENVIRONMENT")),
 		KMSKeyName:       os.Getenv("KMSKEYNAME"),
 		VertexModel:      os.Getenv("VERTEXMODEL"),
+		AITTL:            parseDuration(os.Getenv("AITTL")),
 	}
 }
 
@@ -39,4 +42,15 @@ func getPlaidEnvironment(env string) dto.PlaidEnvironment {
 	default: // "production"
 		return dto.PlaidProduction
 	}
+}
+
+func parseDuration(value string) time.Duration {
+	if value == "" {
+		return 0
+	}
+	d, err := time.ParseDuration(value)
+	if err != nil {
+		return 0
+	}
+	return d
 }

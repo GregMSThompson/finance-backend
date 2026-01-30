@@ -138,6 +138,7 @@ func createCloudRunService(ctx *pulumi.Context,
 	crCfg := config.New(ctx, "cloudrun")
 	plaidCfg := config.New(ctx, "plaid")
 	vertexCfg := config.New(ctx, "vertex")
+	appCfg := config.New(ctx, "app")
 
 	projectID := gcpCfg.Require("project")
 	region := gcpCfg.Require("region")
@@ -150,6 +151,7 @@ func createCloudRunService(ctx *pulumi.Context,
 	timeout, _ := strconv.Atoi(crCfg.Require("timeout"))
 	plaidEnv := plaidCfg.Require("environment")
 	vertexModel := vertexCfg.Require("model")
+	aiTTL := appCfg.Require("aiTtl")
 
 	return cloudrun.NewService(ctx, "apiService", &cloudrun.ServiceArgs{
 		Location: pulumi.String(region),
@@ -215,6 +217,10 @@ func createCloudRunService(ctx *pulumi.Context,
 							&cloudrun.ServiceTemplateSpecContainerEnvArgs{
 								Name:  pulumi.String("VERTEXMODEL"),
 								Value: pulumi.String(vertexModel),
+							},
+							&cloudrun.ServiceTemplateSpecContainerEnvArgs{
+								Name:  pulumi.String("AITTL"),
+								Value: pulumi.String(aiTTL),
 							},
 							&cloudrun.ServiceTemplateSpecContainerEnvArgs{
 								Name: pulumi.String("PLAIDCLIENTID"),

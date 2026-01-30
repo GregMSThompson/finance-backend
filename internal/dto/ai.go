@@ -1,7 +1,8 @@
 package dto
 
 type AIQueryRequest struct {
-	Message string `json:"message"`
+	SessionID string `json:"sessionId"`
+	Message   string `json:"message"`
 }
 
 type AIQueryResponse struct {

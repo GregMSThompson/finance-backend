@@ -14,3 +14,4 @@ config:
     secure: AAABANYr5O88K0ZmqGin9TYUwao3knREFRDSZPBLFJznXjecESzKlU1Msuqt7v3Nphfx7tvQOA4=
   plaid:environment: sandbox
   vertex:model: gemini-2.5-flash-lite
+  app:aiTtl: 168h

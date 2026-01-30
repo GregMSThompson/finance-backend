@@ -14,7 +14,7 @@ import (
 )
 
 type aiService interface {
-	Query(ctx context.Context, uid, message string) (dto.AIQueryResponse, error)
+	Query(ctx context.Context, uid, sessionID, message string) (dto.AIQueryResponse, error)
 }
 
 type aiHandlers struct {
@@ -45,9 +45,13 @@ func (h *aiHandlers) Query(w http.ResponseWriter, r *http.Request) {
 		h.ResponseHandler.HandleError(w, errs.NewValidationError("message is required"))
 		return
 	}
+	if body.SessionID == "" {
+		h.ResponseHandler.HandleError(w, errs.NewValidationError("sessionId is required"))
+		return
+	}
 
 	uid := middleware.UID(r.Context())
-	resp, err := h.AISvc.Query(r.Context(), uid, body.Message)
+	resp, err := h.AISvc.Query(r.Context(), uid, body.SessionID, body.Message)
 	if err != nil {
 		h.ResponseHandler.HandleError(w, err)
 		return

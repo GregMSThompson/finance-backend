@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/GregMSThompson/finance-backend/internal/dto"
@@ -22,24 +23,39 @@ type analyticsClient interface {
 	GetTransactions(ctx context.Context, uid string, args dto.AnalyticsTransactionsArgs) (dto.AnalyticsTransactionsResult, error)
 }
 
+type aiStore interface {
+	SaveMessage(ctx context.Context, uid, sessionID string, msg dto.AIMessage) error
+	ListMessages(ctx context.Context, uid, sessionID string, limit int) ([]dto.AIMessage, error)
+}
+
 type aiService struct {
 	vertex   vertexClient
 	analysis analyticsClient
+	store    aiStore
+	ttl      time.Duration
 	clockNow func() time.Time
 }
 
-func NewAIService(vertex vertexClient, analysis analyticsClient) *aiService {
+func NewAIService(vertex vertexClient, analysis analyticsClient, store aiStore, ttl time.Duration) *aiService {
 	return &aiService{
 		vertex:   vertex,
 		analysis: analysis,
+		store:    store,
+		ttl:      ttl,
 		clockNow: time.Now,
 	}
 }
 
-func (s *aiService) Query(ctx context.Context, uid, message string) (dto.AIQueryResponse, error) {
+func (s *aiService) Query(ctx context.Context, uid, sessionID, message string) (dto.AIQueryResponse, error) {
+	history, err := s.store.ListMessages(ctx, uid, sessionID, 8)
+	if err != nil {
+		return dto.AIQueryResponse{}, err
+	}
+
+	userMsg := s.composeUserMessage(history, message)
 	req := dto.VertexGenerateRequest{
 		System:      systemPrompt(),
-		UserMessage: message,
+		UserMessage: userMsg,
 		Tools:       toolSchemas(),
 	}
 
@@ -49,6 +65,18 @@ func (s *aiService) Query(ctx context.Context, uid, message string) (dto.AIQuery
 	}
 
 	if len(resp.ToolCalls) == 0 {
+		if err := s.saveMessage(ctx, uid, sessionID, dto.AIMessage{
+			Role:    "user",
+			Content: message,
+		}); err != nil {
+			return dto.AIQueryResponse{}, err
+		}
+		if err := s.saveMessage(ctx, uid, sessionID, dto.AIMessage{
+			Role:    "assistant",
+			Content: resp.Text,
+		}); err != nil {
+			return dto.AIQueryResponse{}, err
+		}
 		return dto.AIQueryResponse{Answer: resp.Text}, nil
 	}
 
@@ -58,12 +86,34 @@ func (s *aiService) Query(ctx context.Context, uid, message string) (dto.AIQuery
 		return dto.AIQueryResponse{}, err
 	}
 
+	if err := s.saveMessage(ctx, uid, sessionID, dto.AIMessage{
+		Role:    "user",
+		Content: message,
+	}); err != nil {
+		return dto.AIQueryResponse{}, err
+	}
+	if err := s.saveMessage(ctx, uid, sessionID, dto.AIMessage{
+		Role:       "tool",
+		ToolName:   toolCall.Name,
+		ToolArgs:   toolCall.Args,
+		ToolResult: toolResult.Response,
+	}); err != nil {
+		return dto.AIQueryResponse{}, err
+	}
+
 	finalResp, err := s.vertex.GenerateContent(ctx, dto.VertexGenerateRequest{
 		System:      systemPrompt(),
-		UserMessage: message,
+		UserMessage: userMsg,
 		ToolResults: []dto.VertexToolResult{toolResult},
 	})
 	if err != nil {
+		return dto.AIQueryResponse{}, err
+	}
+
+	if err := s.saveMessage(ctx, uid, sessionID, dto.AIMessage{
+		Role:    "assistant",
+		Content: finalResp.Text,
+	}); err != nil {
 		return dto.AIQueryResponse{}, err
 	}
 
@@ -74,6 +124,50 @@ func (s *aiService) Query(ctx context.Context, uid, message string) (dto.AIQuery
 			Args: toolCall.Args,
 		},
 	}, nil
+}
+
+func (s *aiService) composeUserMessage(history []dto.AIMessage, message string) string {
+	if len(history) == 0 {
+		return message
+	}
+
+	var b strings.Builder
+	for _, msg := range history {
+		switch msg.Role {
+		case "user":
+			b.WriteString("User: ")
+			b.WriteString(msg.Content)
+			b.WriteString("\n")
+		case "assistant":
+			b.WriteString("Assistant: ")
+			b.WriteString(msg.Content)
+			b.WriteString("\n")
+		case "tool":
+			b.WriteString("Tool ")
+			b.WriteString(msg.ToolName)
+			b.WriteString(": ")
+			if msg.ToolResult != nil {
+				if raw, err := json.Marshal(msg.ToolResult); err == nil {
+					b.Write(raw)
+				}
+			}
+			b.WriteString("\n")
+		}
+	}
+	b.WriteString("User: ")
+	b.WriteString(message)
+	return b.String()
+}
+
+func (s *aiService) saveMessage(ctx context.Context, uid, sessionID string, msg dto.AIMessage) error {
+	now := s.clockNow()
+	if msg.CreatedAt.IsZero() {
+		msg.CreatedAt = now
+	}
+	if s.ttl > 0 {
+		msg.ExpiresAt = now.Add(s.ttl)
+	}
+	return s.store.SaveMessage(ctx, uid, sessionID, msg)
 }
 
 func (s *aiService) executeTool(ctx context.Context, uid string, call dto.VertexToolCall) (dto.VertexToolResult, error) {

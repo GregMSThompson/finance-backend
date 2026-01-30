@@ -36,13 +36,14 @@ func main() {
 	ustore := store.NewUserStore(bs.Firestore)
 	tstore := store.NewTransactionStore(bs.Firestore)
 	bstore := store.NewBankStore(bs.Firestore, kmsHelper)
+	astore := store.NewAIStore(bs.Firestore)
 
 	// services
 	userv := services.NewUserService(bs.Log, ustore)
 	bserv := services.NewBankService(bs.Log, bstore, tstore)
 	plserv := services.NewPlaidService(bs.Log, bs.PlaidAdapter, bstore, tstore)
 	anserv := services.NewAnalyticsService(tstore)
-	aiserv := services.NewAIService(bs.VertexAdapter, anserv)
+	aiserv := services.NewAIService(bs.VertexAdapter, anserv, astore, cfg.AITTL)
 
 	// response handler
 	rh := response.New(bs.Log)
