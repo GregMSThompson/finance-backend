@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -54,12 +55,20 @@ func (s *aiService) Query(ctx context.Context, uid, sessionID, message string) (
 
 	userMsg := s.composeUserMessage(history, message)
 	req := dto.VertexGenerateRequest{
-		System:      systemPrompt(),
+		System:      systemPrompt(s.clockNow()),
 		UserMessage: userMsg,
 		Tools:       toolSchemas(),
 	}
 
 	resp, err := s.vertex.GenerateContent(ctx, req)
+	if err != nil {
+		var malformed *errs.MalformedFunctionCallError
+		if errors.As(err, &malformed) {
+			strictReq := req
+			strictReq.System = strictSystemPrompt(s.clockNow())
+			resp, err = s.vertex.GenerateContent(ctx, strictReq)
+		}
+	}
 	if err != nil {
 		return dto.AIQueryResponse{}, err
 	}
@@ -102,7 +111,7 @@ func (s *aiService) Query(ctx context.Context, uid, sessionID, message string) (
 	}
 
 	finalResp, err := s.vertex.GenerateContent(ctx, dto.VertexGenerateRequest{
-		System:      systemPrompt(),
+		System:      systemPrompt(s.clockNow()),
 		UserMessage: userMsg,
 		ToolResults: []dto.VertexToolResult{toolResult},
 	})
@@ -296,10 +305,19 @@ func toolSchemas() []dto.VertexTool {
 	}
 }
 
-func systemPrompt() string {
+func systemPrompt(now time.Time) string {
+	today := now.Format("2006-01-02")
+	weekday := now.Weekday().String()
 	return "You are a finance analytics assistant. Use tools for deterministic queries. " +
 		"Defaults: pending=false; date range defaults to month-to-date if not provided. " +
-		"Do not fabricate data; only answer from tool results."
+		"Do not fabricate data; only answer from tool results. " +
+		"Today is " + today + " (" + weekday + ", US). " +
+		"Important: never include role labels like 'Assistant:' or 'User:' in responses. Respond with the answer only."
+}
+
+func strictSystemPrompt(now time.Time) string {
+	return systemPrompt(now) + " You must respond with a valid tool call that matches the schema. " +
+		"If required information is missing, ask a clarification question instead of calling a tool."
 }
 
 func decodeArgs[T any](args map[string]any) (T, error) {

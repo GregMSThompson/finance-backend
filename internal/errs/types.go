@@ -22,6 +22,10 @@ type UnsupportedGroupByError struct {
 	ErrorMessage
 }
 
+type MalformedFunctionCallError struct {
+	ErrorMessage
+}
+
 func NewNotFoundError(message string) *NotFoundError {
 	return &NotFoundError{
 		ErrorMessage: ErrorMessage{Message: message},
@@ -43,5 +47,11 @@ func NewValidationError(message string) *ValidationError {
 func NewUnsupportedGroupByError() *UnsupportedGroupByError {
 	return &UnsupportedGroupByError{
 		ErrorMessage: ErrorMessage{Message: "unsupported groupBy"},
+	}
+}
+
+func NewMalformedFunctionCallError() *MalformedFunctionCallError {
+	return &MalformedFunctionCallError{
+		ErrorMessage: ErrorMessage{Message: "malformed function call"},
 	}
 }

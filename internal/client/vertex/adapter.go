@@ -8,6 +8,7 @@ import (
 	"cloud.google.com/go/vertexai/genai"
 
 	"github.com/GregMSThompson/finance-backend/internal/dto"
+	"github.com/GregMSThompson/finance-backend/internal/errs"
 )
 
 type Adapter struct {
@@ -121,8 +122,12 @@ func (a *Adapter) GenerateContent(ctx context.Context, req dto.VertexGenerateReq
 	// debug gemini output
 	finishReasons := make([]string, 0, len(resp.Candidates))
 	partsDebug := make([]map[string]any, 0)
+	malformed := false
 	for _, candidate := range resp.Candidates {
 		finishReasons = append(finishReasons, candidate.FinishReason.String())
+		if candidate.FinishReason == genai.FinishReasonMalformedFunctionCall {
+			malformed = true
+		}
 		if candidate.Content == nil {
 			continue
 		}
@@ -163,11 +168,15 @@ func (a *Adapter) GenerateContent(ctx context.Context, req dto.VertexGenerateReq
 		"toolCalls", len(out.ToolCalls),
 		"textLen", len(out.Text),
 		"promptFeedback", resp.PromptFeedback,
+		"promptFeedbackRaw", fmt.Sprintf("%+v", resp.PromptFeedback),
 		"finishReasons", finishReasons,
 		"parts", partsDebug,
 	)
 
 	if len(out.Text) == 0 && len(out.ToolCalls) == 0 {
+		if malformed {
+			return out, errs.NewMalformedFunctionCallError()
+		}
 		return out, fmt.Errorf("vertex response contained no text or tool calls")
 	}
 	return out, nil
