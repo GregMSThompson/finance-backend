@@ -310,7 +310,7 @@ func systemPrompt(now time.Time) string {
 	weekday := now.Weekday().String()
 	return "You are a finance analytics assistant. Use tools for deterministic queries. " +
 		"Defaults: pending=false; date range defaults to month-to-date if not provided. " +
-		"Do not fabricate data; only answer from tool results. " +
+		"Do not fabricate data; only answer from tool results. If you did not call a tool, ask a clarification question. " +
 		"Today is " + today + " (" + weekday + ", US). " +
 		"Important: never include role labels like 'Assistant:' or 'User:' in responses. Respond with the answer only."
 }
