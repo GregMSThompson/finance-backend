@@ -69,14 +69,19 @@ func setupTransactionIndexes(ctx *pulumi.Context, prov *gcp.Provider, db *firest
 	}{
 		{name: "txPendingDateAsc", fields: indexFields("pending", "ASCENDING", "date", "ASCENDING")},
 		{name: "txPendingDateDesc", fields: indexFields("pending", "ASCENDING", "date", "DESCENDING")},
+		{name: "txPendingDateDescNameDesc", fields: indexFieldsWithNameOrder("DESCENDING", "pending", "ASCENDING", "date", "DESCENDING")},
 		{name: "txPfcPrimaryDateAsc", fields: indexFields("pfcPrimary", "ASCENDING", "date", "ASCENDING")},
 		{name: "txPfcPrimaryDateDesc", fields: indexFields("pfcPrimary", "ASCENDING", "date", "DESCENDING")},
+		{name: "txPfcPrimaryDateDescNameDesc", fields: indexFieldsWithNameOrder("DESCENDING", "pfcPrimary", "ASCENDING", "date", "DESCENDING")},
 		{name: "txBankIdDateAsc", fields: indexFields("bankId", "ASCENDING", "date", "ASCENDING")},
 		{name: "txBankIdDateDesc", fields: indexFields("bankId", "ASCENDING", "date", "DESCENDING")},
+		{name: "txBankIdDateDescNameDesc", fields: indexFieldsWithNameOrder("DESCENDING", "bankId", "ASCENDING", "date", "DESCENDING")},
 		{name: "txPendingPfcPrimaryDateAsc", fields: indexFields("pending", "ASCENDING", "pfcPrimary", "ASCENDING", "date", "ASCENDING")},
 		{name: "txPendingPfcPrimaryDateDesc", fields: indexFields("pending", "ASCENDING", "pfcPrimary", "ASCENDING", "date", "DESCENDING")},
+		{name: "txPendingPfcPrimaryDateDescNameDesc", fields: indexFieldsWithNameOrder("DESCENDING", "pending", "ASCENDING", "pfcPrimary", "ASCENDING", "date", "DESCENDING")},
 		{name: "txPendingBankIdDateAsc", fields: indexFields("pending", "ASCENDING", "bankId", "ASCENDING", "date", "ASCENDING")},
 		{name: "txPendingBankIdDateDesc", fields: indexFields("pending", "ASCENDING", "bankId", "ASCENDING", "date", "DESCENDING")},
+		{name: "txPendingBankIdDateDescNameDesc", fields: indexFieldsWithNameOrder("DESCENDING", "pending", "ASCENDING", "bankId", "ASCENDING", "date", "DESCENDING")},
 	}
 
 	for _, idx := range indexes {
@@ -99,6 +104,10 @@ func setupTransactionIndexes(ctx *pulumi.Context, prov *gcp.Provider, db *firest
 }
 
 func indexFields(pathA, orderA, pathB, orderB string, rest ...string) firestore.IndexFieldArray {
+	return indexFieldsWithNameOrder("ASCENDING", pathA, orderA, pathB, orderB, rest...)
+}
+
+func indexFieldsWithNameOrder(nameOrder string, pathA, orderA, pathB, orderB string, rest ...string) firestore.IndexFieldArray {
 	fields := firestore.IndexFieldArray{
 		&firestore.IndexFieldArgs{
 			FieldPath: pulumi.String(pathA),
@@ -117,7 +126,7 @@ func indexFields(pathA, orderA, pathB, orderB string, rest ...string) firestore.
 	}
 	fields = append(fields, &firestore.IndexFieldArgs{
 		FieldPath: pulumi.String("__name__"),
-		Order:     pulumi.String("ASCENDING"),
+		Order:     pulumi.String(nameOrder),
 	})
 	return fields
 }
