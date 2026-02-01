@@ -10,6 +10,7 @@ import (
 
 	"github.com/GregMSThompson/finance-backend/internal/dto"
 	"github.com/GregMSThompson/finance-backend/internal/errs"
+	"github.com/GregMSThompson/finance-backend/internal/models"
 	"github.com/GregMSThompson/finance-backend/internal/taxonomy"
 	"github.com/GregMSThompson/finance-backend/pkg/helpers"
 )
@@ -25,8 +26,8 @@ type analyticsClient interface {
 }
 
 type aiStore interface {
-	SaveMessage(ctx context.Context, uid, sessionID string, msg dto.AIMessage) error
-	ListMessages(ctx context.Context, uid, sessionID string, limit int) ([]dto.AIMessage, error)
+	SaveMessage(ctx context.Context, uid, sessionID string, msg models.AIMessage) error
+	ListMessages(ctx context.Context, uid, sessionID string, limit int) ([]models.AIMessage, error)
 }
 
 type aiService struct {
@@ -74,13 +75,13 @@ func (s *aiService) Query(ctx context.Context, uid, sessionID, message string) (
 	}
 
 	if len(resp.ToolCalls) == 0 {
-		if err := s.saveMessage(ctx, uid, sessionID, dto.AIMessage{
+		if err := s.saveMessage(ctx, uid, sessionID, models.AIMessage{
 			Role:    "user",
 			Content: message,
 		}); err != nil {
 			return dto.AIQueryResponse{}, err
 		}
-		if err := s.saveMessage(ctx, uid, sessionID, dto.AIMessage{
+		if err := s.saveMessage(ctx, uid, sessionID, models.AIMessage{
 			Role:    "assistant",
 			Content: resp.Text,
 		}); err != nil {
@@ -95,13 +96,13 @@ func (s *aiService) Query(ctx context.Context, uid, sessionID, message string) (
 		return dto.AIQueryResponse{}, err
 	}
 
-	if err := s.saveMessage(ctx, uid, sessionID, dto.AIMessage{
+	if err := s.saveMessage(ctx, uid, sessionID, models.AIMessage{
 		Role:    "user",
 		Content: message,
 	}); err != nil {
 		return dto.AIQueryResponse{}, err
 	}
-	if err := s.saveMessage(ctx, uid, sessionID, dto.AIMessage{
+	if err := s.saveMessage(ctx, uid, sessionID, models.AIMessage{
 		Role:       "tool",
 		ToolName:   toolCall.Name,
 		ToolArgs:   toolCall.Args,
@@ -119,7 +120,7 @@ func (s *aiService) Query(ctx context.Context, uid, sessionID, message string) (
 		return dto.AIQueryResponse{}, err
 	}
 
-	if err := s.saveMessage(ctx, uid, sessionID, dto.AIMessage{
+	if err := s.saveMessage(ctx, uid, sessionID, models.AIMessage{
 		Role:    "assistant",
 		Content: finalResp.Text,
 	}); err != nil {
@@ -135,7 +136,7 @@ func (s *aiService) Query(ctx context.Context, uid, sessionID, message string) (
 	}, nil
 }
 
-func (s *aiService) composeUserMessage(history []dto.AIMessage, message string) string {
+func (s *aiService) composeUserMessage(history []models.AIMessage, message string) string {
 	if len(history) == 0 {
 		return message
 	}
@@ -168,7 +169,7 @@ func (s *aiService) composeUserMessage(history []dto.AIMessage, message string) 
 	return b.String()
 }
 
-func (s *aiService) saveMessage(ctx context.Context, uid, sessionID string, msg dto.AIMessage) error {
+func (s *aiService) saveMessage(ctx context.Context, uid, sessionID string, msg models.AIMessage) error {
 	now := s.clockNow()
 	if msg.CreatedAt.IsZero() {
 		msg.CreatedAt = now

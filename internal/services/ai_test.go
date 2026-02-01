@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/GregMSThompson/finance-backend/internal/dto"
+	"github.com/GregMSThompson/finance-backend/internal/models"
 	"github.com/GregMSThompson/finance-backend/pkg/helpers"
 )
 
@@ -46,19 +47,19 @@ func (f *fakeAnalyticsClient) GetTransactions(ctx context.Context, uid string, a
 }
 
 type fakeAIStore struct {
-	messages []dto.AIMessage
+	messages []models.AIMessage
 }
 
-func (f *fakeAIStore) SaveMessage(ctx context.Context, uid, sessionID string, msg dto.AIMessage) error {
+func (f *fakeAIStore) SaveMessage(ctx context.Context, uid, sessionID string, msg models.AIMessage) error {
 	f.messages = append(f.messages, msg)
 	return nil
 }
 
-func (f *fakeAIStore) ListMessages(ctx context.Context, uid, sessionID string, limit int) ([]dto.AIMessage, error) {
+func (f *fakeAIStore) ListMessages(ctx context.Context, uid, sessionID string, limit int) ([]models.AIMessage, error) {
 	if limit > 0 && len(f.messages) > limit {
-		return append([]dto.AIMessage{}, f.messages[len(f.messages)-limit:]...), nil
+		return append([]models.AIMessage{}, f.messages[len(f.messages)-limit:]...), nil
 	}
-	return append([]dto.AIMessage{}, f.messages...), nil
+	return append([]models.AIMessage{}, f.messages...), nil
 }
 
 func TestAIQueryToolFlow(t *testing.T) {

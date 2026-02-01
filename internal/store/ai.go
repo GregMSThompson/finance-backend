@@ -7,7 +7,7 @@ import (
 	"cloud.google.com/go/firestore"
 	"google.golang.org/api/iterator"
 
-	"github.com/GregMSThompson/finance-backend/internal/dto"
+	"github.com/GregMSThompson/finance-backend/internal/models"
 )
 
 type aiStore struct {
@@ -22,7 +22,7 @@ func (s *aiStore) messagesCollection(uid, sessionID string) *firestore.Collectio
 	return s.client.Collection("users").Doc(uid).Collection("ai_sessions").Doc(sessionID).Collection("messages")
 }
 
-func (s *aiStore) SaveMessage(ctx context.Context, uid, sessionID string, msg dto.AIMessage) error {
+func (s *aiStore) SaveMessage(ctx context.Context, uid, sessionID string, msg models.AIMessage) error {
 	if msg.CreatedAt.IsZero() {
 		msg.CreatedAt = time.Now()
 	}
@@ -31,7 +31,7 @@ func (s *aiStore) SaveMessage(ctx context.Context, uid, sessionID string, msg dt
 	return err
 }
 
-func (s *aiStore) ListMessages(ctx context.Context, uid, sessionID string, limit int) ([]dto.AIMessage, error) {
+func (s *aiStore) ListMessages(ctx context.Context, uid, sessionID string, limit int) ([]models.AIMessage, error) {
 	query := s.messagesCollection(uid, sessionID).Query.OrderBy("createdAt", firestore.Desc)
 	if limit > 0 {
 		query = query.Limit(limit)
@@ -40,7 +40,7 @@ func (s *aiStore) ListMessages(ctx context.Context, uid, sessionID string, limit
 	iter := query.Documents(ctx)
 	defer iter.Stop()
 
-	var out []dto.AIMessage
+	var out []models.AIMessage
 	for {
 		doc, err := iter.Next()
 		if err == iterator.Done {
@@ -49,7 +49,7 @@ func (s *aiStore) ListMessages(ctx context.Context, uid, sessionID string, limit
 		if err != nil {
 			return nil, err
 		}
-		var msg dto.AIMessage
+		var msg models.AIMessage
 		if err := doc.DataTo(&msg); err != nil {
 			return nil, err
 		}
@@ -60,7 +60,7 @@ func (s *aiStore) ListMessages(ctx context.Context, uid, sessionID string, limit
 	return out, nil
 }
 
-func reverseMessages(msgs []dto.AIMessage) {
+func reverseMessages(msgs []models.AIMessage) {
 	for i, j := 0, len(msgs)-1; i < j; i, j = i+1, j-1 {
 		msgs[i], msgs[j] = msgs[j], msgs[i]
 	}
