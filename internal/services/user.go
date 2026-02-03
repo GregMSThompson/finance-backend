@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/GregMSThompson/finance-backend/internal/models"
+	"github.com/GregMSThompson/finance-backend/pkg/logger"
 )
 
 type userUSStore interface {
@@ -27,6 +28,9 @@ func NewUserService(log *slog.Logger, store userUSStore) *userService {
 }
 
 func (s *userService) CreateUser(ctx context.Context, uid, email, first, last string) error {
+	// Get logger from context - already has uid, email, request_id, method, path
+	log := logger.FromContext(ctx)
+
 	user := &models.User{
 		UID:       uid,
 		Email:     email,
@@ -35,12 +39,20 @@ func (s *userService) CreateUser(ctx context.Context, uid, email, first, last st
 		CreatedAt: time.Now(),
 		UpdatedAt: time.Now(),
 	}
+
 	err := s.Store.CreateUser(ctx, user)
 	if err != nil {
+		log.Error("failed to create user in store", "error", err)
 		return err
 	}
 
-	s.Log.Info("User created", "id", user.UID)
-	s.Log.Debug("User created", slog.Any("user", user))
+	// uid and email are automatically included from context
+	log.Info("user created successfully", "first_name", first, "last_name", last)
+
+	// Only process debug data if debug level is enabled
+	if logger.IsDebugEnabled(ctx) {
+		log.Debug("user created with full details", slog.Any("user", user))
+	}
+
 	return nil
 }

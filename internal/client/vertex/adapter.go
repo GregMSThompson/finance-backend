@@ -9,6 +9,7 @@ import (
 
 	"github.com/GregMSThompson/finance-backend/internal/dto"
 	"github.com/GregMSThompson/finance-backend/internal/errs"
+	"github.com/GregMSThompson/finance-backend/pkg/logger"
 )
 
 type Adapter struct {
@@ -65,37 +66,40 @@ func (a *Adapter) GenerateContent(ctx context.Context, req dto.VertexGenerateReq
 		model.Tools = toGenaiTools(req.Tools)
 	}
 
-	// debug request metadata
-	toolSummary := make([]map[string]any, 0, len(req.Tools))
-	for _, tool := range req.Tools {
-		propCount := 0
-		enumSizes := map[string]int{}
-		required := []string(nil)
-		if tool.Parameters != nil {
-			required = tool.Parameters.Required
-			if len(tool.Parameters.Properties) > 0 {
-				propCount = len(tool.Parameters.Properties)
-				for name, prop := range tool.Parameters.Properties {
-					if prop != nil && len(prop.Enum) > 0 {
-						enumSizes[name] = len(prop.Enum)
+	// Only process expensive debug data if debug is enabled
+	if logger.IsDebugEnabled(ctx) {
+		log := logger.FromContext(ctx)
+		toolSummary := make([]map[string]any, 0, len(req.Tools))
+		for _, tool := range req.Tools {
+			propCount := 0
+			enumSizes := map[string]int{}
+			required := []string(nil)
+			if tool.Parameters != nil {
+				required = tool.Parameters.Required
+				if len(tool.Parameters.Properties) > 0 {
+					propCount = len(tool.Parameters.Properties)
+					for name, prop := range tool.Parameters.Properties {
+						if prop != nil && len(prop.Enum) > 0 {
+							enumSizes[name] = len(prop.Enum)
+						}
 					}
 				}
 			}
+			toolSummary = append(toolSummary, map[string]any{
+				"name":       tool.Name,
+				"required":   required,
+				"properties": propCount,
+				"enumSizes":  enumSizes,
+			})
 		}
-		toolSummary = append(toolSummary, map[string]any{
-			"name":       tool.Name,
-			"required":   required,
-			"properties": propCount,
-			"enumSizes":  enumSizes,
-		})
+		log.Debug(
+			"vertex generate content request",
+			"systemLen", len(req.System),
+			"userLen", len(req.UserMessage),
+			"tools", toolSummary,
+			"toolResults", len(req.ToolResults),
+		)
 	}
-	a.log.Debug(
-		"vertex generate content request",
-		"systemLen", len(req.System),
-		"userLen", len(req.UserMessage),
-		"tools", toolSummary,
-		"toolResults", len(req.ToolResults),
-	)
 
 	var parts []genai.Part
 	if req.UserMessage != "" {
@@ -119,59 +123,67 @@ func (a *Adapter) GenerateContent(ctx context.Context, req dto.VertexGenerateReq
 	out.Raw = resp
 	out.Text, out.ToolCalls = parseContentResponse(resp)
 
-	// debug gemini output
-	finishReasons := make([]string, 0, len(resp.Candidates))
-	partsDebug := make([]map[string]any, 0)
+	// Check for malformed function calls and empty responses
 	malformed := false
 	for _, candidate := range resp.Candidates {
-		finishReasons = append(finishReasons, candidate.FinishReason.String())
 		if candidate.FinishReason == genai.FinishReasonMalformedFunctionCall {
 			malformed = true
-		}
-		if candidate.Content == nil {
-			continue
-		}
-		for _, part := range candidate.Content.Parts {
-			switch p := part.(type) {
-			case genai.Text:
-				partsDebug = append(partsDebug, map[string]any{
-					"type":   "text",
-					"length": len(p),
-				})
-			case *genai.Text:
-				partsDebug = append(partsDebug, map[string]any{
-					"type":   "text",
-					"length": len(*p),
-				})
-			case *genai.FunctionCall:
-				partsDebug = append(partsDebug, map[string]any{
-					"type": "functionCall",
-					"name": p.Name,
-					"args": p.Args,
-				})
-			case genai.FunctionCall:
-				partsDebug = append(partsDebug, map[string]any{
-					"type": "functionCall",
-					"name": p.Name,
-					"args": p.Args,
-				})
-			default:
-				partsDebug = append(partsDebug, map[string]any{
-					"type": fmt.Sprintf("%T", part),
-				})
-			}
+			break
 		}
 	}
-	a.log.Debug(
-		"vertex generate content response",
-		"candidates", len(resp.Candidates),
-		"toolCalls", len(out.ToolCalls),
-		"textLen", len(out.Text),
-		"promptFeedback", resp.PromptFeedback,
-		"promptFeedbackRaw", fmt.Sprintf("%+v", resp.PromptFeedback),
-		"finishReasons", finishReasons,
-		"parts", partsDebug,
-	)
+
+	// Only process expensive debug data if debug is enabled
+	if logger.IsDebugEnabled(ctx) {
+		log := logger.FromContext(ctx)
+		finishReasons := make([]string, 0, len(resp.Candidates))
+		partsDebug := make([]map[string]any, 0)
+		for _, candidate := range resp.Candidates {
+			finishReasons = append(finishReasons, candidate.FinishReason.String())
+			if candidate.Content == nil {
+				continue
+			}
+			for _, part := range candidate.Content.Parts {
+				switch p := part.(type) {
+				case genai.Text:
+					partsDebug = append(partsDebug, map[string]any{
+						"type":   "text",
+						"length": len(p),
+					})
+				case *genai.Text:
+					partsDebug = append(partsDebug, map[string]any{
+						"type":   "text",
+						"length": len(*p),
+					})
+				case *genai.FunctionCall:
+					partsDebug = append(partsDebug, map[string]any{
+						"type": "functionCall",
+						"name": p.Name,
+						"args": p.Args,
+					})
+				case genai.FunctionCall:
+					partsDebug = append(partsDebug, map[string]any{
+						"type": "functionCall",
+						"name": p.Name,
+						"args": p.Args,
+					})
+				default:
+					partsDebug = append(partsDebug, map[string]any{
+						"type": fmt.Sprintf("%T", part),
+					})
+				}
+			}
+		}
+		log.Debug(
+			"vertex generate content response",
+			"candidates", len(resp.Candidates),
+			"toolCalls", len(out.ToolCalls),
+			"textLen", len(out.Text),
+			"promptFeedback", resp.PromptFeedback,
+			"promptFeedbackRaw", fmt.Sprintf("%+v", resp.PromptFeedback),
+			"finishReasons", finishReasons,
+			"parts", partsDebug,
+		)
+	}
 
 	if len(out.Text) == 0 && len(out.ToolCalls) == 0 {
 		if malformed {
