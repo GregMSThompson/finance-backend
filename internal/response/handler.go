@@ -6,9 +6,9 @@ import (
 )
 
 type ResponseHandler interface {
-	WriteSuccess(w http.ResponseWriter, status int, data any)
-	WriteError(w http.ResponseWriter, status int, code, message string, err error)
-	HandleError(w http.ResponseWriter, err error)
+	WriteSuccess(w http.ResponseWriter, r *http.Request, status int, data any)
+	WriteError(w http.ResponseWriter, r *http.Request, status int, code, message string)
+	HandleError(w http.ResponseWriter, r *http.Request, err error)
 }
 
 type responseHandler struct {

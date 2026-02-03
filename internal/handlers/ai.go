@@ -38,24 +38,24 @@ func (h *aiHandlers) AIRoutes() chi.Router {
 func (h *aiHandlers) Query(w http.ResponseWriter, r *http.Request) {
 	var body dto.AIQueryRequest
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		h.ResponseHandler.HandleError(w, err)
+		h.ResponseHandler.HandleError(w, r, err)
 		return
 	}
 	if body.Message == "" {
-		h.ResponseHandler.HandleError(w, errs.NewValidationError("message is required"))
+		h.ResponseHandler.HandleError(w, r, errs.NewValidationError("message is required"))
 		return
 	}
 	if body.SessionID == "" {
-		h.ResponseHandler.HandleError(w, errs.NewValidationError("sessionId is required"))
+		h.ResponseHandler.HandleError(w, r, errs.NewValidationError("sessionId is required"))
 		return
 	}
 
 	uid := middleware.UID(r.Context())
 	resp, err := h.AISvc.Query(r.Context(), uid, body.SessionID, body.Message)
 	if err != nil {
-		h.ResponseHandler.HandleError(w, err)
+		h.ResponseHandler.HandleError(w, r, err)
 		return
 	}
 
-	h.ResponseHandler.WriteSuccess(w, http.StatusOK, resp)
+	h.ResponseHandler.WriteSuccess(w, r, http.StatusOK, resp)
 }

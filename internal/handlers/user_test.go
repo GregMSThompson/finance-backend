@@ -43,7 +43,7 @@ type stubResponseHandler struct {
 	errorWriteMsg    string
 }
 
-func (s *stubResponseHandler) WriteSuccess(w http.ResponseWriter, status int, data any) {
+func (s *stubResponseHandler) WriteSuccess(w http.ResponseWriter, r *http.Request, status int, data any) {
 	s.writeSuccessCalled = true
 	s.writeSuccessStatus = status
 	s.writeSuccessData = data
@@ -53,7 +53,7 @@ func (s *stubResponseHandler) WriteSuccess(w http.ResponseWriter, status int, da
 	w.Write([]byte(`{"success":true}`))
 }
 
-func (s *stubResponseHandler) WriteError(w http.ResponseWriter, status int, code, message string, err error) {
+func (s *stubResponseHandler) WriteError(w http.ResponseWriter, r *http.Request, status int, code, message string) {
 	s.errorWriteCalled = true
 	s.errorWriteStatus = status
 	s.errorWriteCode = code
@@ -61,7 +61,7 @@ func (s *stubResponseHandler) WriteError(w http.ResponseWriter, status int, code
 	w.WriteHeader(status)
 }
 
-func (s *stubResponseHandler) HandleError(w http.ResponseWriter, err error) {
+func (s *stubResponseHandler) HandleError(w http.ResponseWriter, r *http.Request, err error) {
 	s.handleErrorCalled = true
 	s.handleError = err
 	w.WriteHeader(http.StatusInternalServerError)

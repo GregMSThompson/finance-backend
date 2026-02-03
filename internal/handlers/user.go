@@ -45,15 +45,15 @@ func (h *userHandlers) CreateUser(w http.ResponseWriter, r *http.Request) {
 
 	err := json.NewDecoder(r.Body).Decode(&body)
 	if err != nil {
-		h.ResponseHandler.HandleError(w, err)
+		h.ResponseHandler.HandleError(w, r, err)
 		return
 	}
 
 	err = h.UserSvc.CreateUser(r.Context(), uid, email, body.FirstName, body.LastName)
 	if err != nil {
-		h.ResponseHandler.HandleError(w, err)
+		h.ResponseHandler.HandleError(w, r, err)
 		return
 	}
 
-	h.ResponseHandler.WriteSuccess(w, 200, nil)
+	h.ResponseHandler.WriteSuccess(w, r, 200, nil)
 }

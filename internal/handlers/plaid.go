@@ -55,11 +55,11 @@ func (h *plaidHandlers) CreateLinkToken(w http.ResponseWriter, r *http.Request) 
 
 	linkToken, err := h.PlaidSvc.CreateLinkToken(r.Context(), uid)
 	if err != nil {
-		h.ResponseHandler.HandleError(w, err)
+		h.ResponseHandler.HandleError(w, r, err)
 		return
 	}
 
-	h.ResponseHandler.WriteSuccess(w, http.StatusOK, map[string]string{"linkToken": linkToken})
+	h.ResponseHandler.WriteSuccess(w, r, http.StatusOK, map[string]string{"linkToken": linkToken})
 }
 
 func (h *plaidHandlers) LinkBank(w http.ResponseWriter, r *http.Request) {
@@ -68,18 +68,18 @@ func (h *plaidHandlers) LinkBank(w http.ResponseWriter, r *http.Request) {
 		InstitutionName string `json:"institutionName,omitempty"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		h.ResponseHandler.HandleError(w, err)
+		h.ResponseHandler.HandleError(w, r, err)
 		return
 	}
 
 	uid := middleware.UID(r.Context())
 	bankID, err := h.PlaidSvc.ExchangePublicToken(r.Context(), uid, body.PublicToken, body.InstitutionName)
 	if err != nil {
-		h.ResponseHandler.HandleError(w, err)
+		h.ResponseHandler.HandleError(w, r, err)
 		return
 	}
 
-	h.ResponseHandler.WriteSuccess(w, http.StatusOK, map[string]string{"bankId": bankID})
+	h.ResponseHandler.WriteSuccess(w, r, http.StatusOK, map[string]string{"bankId": bankID})
 }
 
 func (h *plaidHandlers) ListBanks(w http.ResponseWriter, r *http.Request) {
@@ -87,11 +87,11 @@ func (h *plaidHandlers) ListBanks(w http.ResponseWriter, r *http.Request) {
 
 	banks, err := h.BankSvc.ListBanks(r.Context(), uid)
 	if err != nil {
-		h.ResponseHandler.HandleError(w, err)
+		h.ResponseHandler.HandleError(w, r, err)
 		return
 	}
 
-	h.ResponseHandler.WriteSuccess(w, http.StatusOK, banks)
+	h.ResponseHandler.WriteSuccess(w, r, http.StatusOK, banks)
 }
 
 func (h *plaidHandlers) DeleteBank(w http.ResponseWriter, r *http.Request) {
@@ -99,11 +99,11 @@ func (h *plaidHandlers) DeleteBank(w http.ResponseWriter, r *http.Request) {
 	bankID := chi.URLParam(r, "bankId")
 
 	if err := h.BankSvc.DeleteBank(r.Context(), uid, bankID); err != nil {
-		h.ResponseHandler.HandleError(w, err)
+		h.ResponseHandler.HandleError(w, r, err)
 		return
 	}
 
-	h.ResponseHandler.WriteSuccess(w, http.StatusOK, nil)
+	h.ResponseHandler.WriteSuccess(w, r, http.StatusOK, nil)
 }
 
 func (h *plaidHandlers) SyncTransactions(w http.ResponseWriter, r *http.Request) {
@@ -111,16 +111,16 @@ func (h *plaidHandlers) SyncTransactions(w http.ResponseWriter, r *http.Request)
 		BankID *string `json:"bankId,omitempty"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil && err.Error() != "EOF" { // allow empty body
-		h.ResponseHandler.HandleError(w, err)
+		h.ResponseHandler.HandleError(w, r, err)
 		return
 	}
 
 	uid := middleware.UID(r.Context())
 	result, err := h.PlaidSvc.SyncTransactions(r.Context(), uid, body.BankID)
 	if err != nil {
-		h.ResponseHandler.HandleError(w, err)
+		h.ResponseHandler.HandleError(w, r, err)
 		return
 	}
 
-	h.ResponseHandler.WriteSuccess(w, http.StatusOK, result)
+	h.ResponseHandler.WriteSuccess(w, r, http.StatusOK, result)
 }
