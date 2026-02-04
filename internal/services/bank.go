@@ -5,6 +5,7 @@ import (
 	"log/slog"
 
 	"github.com/GregMSThompson/finance-backend/internal/models"
+	"github.com/GregMSThompson/finance-backend/pkg/logger"
 )
 
 type bankBSStore interface {
@@ -47,6 +48,7 @@ func (s *bankService) DeleteBank(ctx context.Context, uid, bankID string) error 
 		return err
 	}
 
-	s.log.Info("Bank deleted", "uid", uid, "bankId", bankID)
+	log := logger.FromContext(ctx)
+	log.Info("bank deleted", "bank_id", bankID)
 	return nil
 }

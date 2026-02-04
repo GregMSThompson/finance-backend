@@ -9,6 +9,7 @@ import (
 	"github.com/GregMSThompson/finance-backend/internal/dto"
 	"github.com/GregMSThompson/finance-backend/internal/models"
 	"github.com/GregMSThompson/finance-backend/pkg/helpers"
+	"github.com/GregMSThompson/finance-backend/pkg/logger"
 )
 
 // --- Dependencies (minimal interfaces scoped to this service) ---
@@ -77,17 +78,26 @@ func (s *plaidService) ExchangePublicToken(ctx context.Context, uid, publicToken
 		return "", err
 	}
 
-	s.log.Info("Plaid item linked", "uid", uid, "itemId", itemID)
+	log := logger.FromContext(ctx)
+	log.Info("bank linked", "bank_id", itemID, "institution", institutionName)
 	return itemID, nil
 }
 
 func (s *plaidService) SyncTransactions(ctx context.Context, uid string, bankID *string) (dto.PlaidServiceSyncResult, error) {
 	result := dto.PlaidServiceSyncResult{}
+	log := logger.FromContext(ctx)
 
 	banks, err := s.banks.List(ctx, uid)
 	if err != nil {
 		return result, err
 	}
+
+	banksToSync := len(banks)
+	if bankID != nil {
+		banksToSync = 1
+	}
+	log.Info("transaction sync started", "bank_count", banksToSync)
+
 	for _, b := range banks {
 		if bankID != nil && *bankID != b.BankID {
 			continue
@@ -112,6 +122,7 @@ func (s *plaidService) SyncTransactions(ctx context.Context, uid string, bankID 
 		for hasMore {
 			page, err := s.plaid.SyncTransactions(ctx, b.BankID, token, cursor)
 			if err != nil {
+				log.Warn("bank sync failed", "bank_id", b.BankID)
 				return result, err
 			}
 
@@ -141,5 +152,6 @@ func (s *plaidService) SyncTransactions(ctx context.Context, uid string, bankID 
 		}
 	}
 
+	log.Info("transaction sync completed", "banks_synced", result.BanksSynced, "transactions_inserted", result.TransactionsInserted)
 	return result, nil
 }

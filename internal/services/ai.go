@@ -13,6 +13,7 @@ import (
 	"github.com/GregMSThompson/finance-backend/internal/models"
 	"github.com/GregMSThompson/finance-backend/internal/taxonomy"
 	"github.com/GregMSThompson/finance-backend/pkg/helpers"
+	"github.com/GregMSThompson/finance-backend/pkg/logger"
 )
 
 type vertexClient interface {
@@ -49,6 +50,8 @@ func NewAIService(vertex vertexClient, analysis analyticsClient, store aiStore, 
 }
 
 func (s *aiService) Query(ctx context.Context, uid, sessionID, message string) (dto.AIQueryResponse, error) {
+	log := logger.FromContext(ctx)
+
 	history, err := s.store.ListMessages(ctx, uid, sessionID, 8)
 	if err != nil {
 		return dto.AIQueryResponse{}, err
@@ -87,10 +90,13 @@ func (s *aiService) Query(ctx context.Context, uid, sessionID, message string) (
 		}); err != nil {
 			return dto.AIQueryResponse{}, err
 		}
+		log.Info("ai query completed", "session_id", sessionID)
 		return dto.AIQueryResponse{Answer: resp.Text}, nil
 	}
 
 	toolCall := resp.ToolCalls[0]
+	log.Info("executing tool", "tool", toolCall.Name)
+
 	toolResult, err := s.executeTool(ctx, uid, toolCall)
 	if err != nil {
 		return dto.AIQueryResponse{}, err
@@ -127,6 +133,7 @@ func (s *aiService) Query(ctx context.Context, uid, sessionID, message string) (
 		return dto.AIQueryResponse{}, err
 	}
 
+	log.Info("ai query completed", "session_id", sessionID, "tool", toolCall.Name)
 	return dto.AIQueryResponse{
 		Answer: finalResp.Text,
 		Debug: &dto.AIDebugInfo{
