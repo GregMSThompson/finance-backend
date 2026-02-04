@@ -5,6 +5,10 @@ import (
 	"time"
 
 	"cloud.google.com/go/firestore"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+
+	"github.com/GregMSThompson/finance-backend/internal/errs"
 	"github.com/GregMSThompson/finance-backend/internal/models"
 )
 
@@ -41,19 +45,22 @@ func (s *bankStore) Create(ctx context.Context, uid string, bank *models.Bank) e
 	toStore.PlaidPublicToken = token
 
 	_, err = s.collection(uid).Doc(bank.BankID).Set(ctx, &toStore)
-	return err
+	if err != nil {
+		return errs.NewDatabaseError("create", "failed to create bank", err)
+	}
+	return nil
 }
 
 func (s *bankStore) List(ctx context.Context, uid string) ([]*models.Bank, error) {
 	docs, err := s.collection(uid).Documents(ctx).GetAll()
 	if err != nil {
-		return nil, err
+		return nil, errs.NewDatabaseError("read", "failed to list banks", err)
 	}
 	banks := make([]*models.Bank, 0, len(docs))
 	for _, d := range docs {
 		var b models.Bank
 		if err := d.DataTo(&b); err != nil {
-			return nil, err
+			return nil, errs.NewDatabaseError("read", "failed to parse bank data", err)
 		}
 		if err := s.decryptToken(ctx, &b); err != nil {
 			return nil, err
@@ -66,11 +73,14 @@ func (s *bankStore) List(ctx context.Context, uid string) ([]*models.Bank, error
 func (s *bankStore) Get(ctx context.Context, uid, bankID string) (*models.Bank, error) {
 	doc, err := s.collection(uid).Doc(bankID).Get(ctx)
 	if err != nil {
-		return nil, err
+		if status.Code(err) == codes.NotFound {
+			return nil, errs.NewNotFoundError("bank not found")
+		}
+		return nil, errs.NewDatabaseError("read", "failed to get bank", err)
 	}
 	var b models.Bank
 	if err := doc.DataTo(&b); err != nil {
-		return nil, err
+		return nil, errs.NewDatabaseError("read", "failed to parse bank data", err)
 	}
 	if err := s.decryptToken(ctx, &b); err != nil {
 		return nil, err
@@ -80,7 +90,10 @@ func (s *bankStore) Get(ctx context.Context, uid, bankID string) (*models.Bank, 
 
 func (s *bankStore) Delete(ctx context.Context, uid, bankID string) error {
 	_, err := s.collection(uid).Doc(bankID).Delete(ctx)
-	return err
+	if err != nil {
+		return errs.NewDatabaseError("delete", "failed to delete bank", err)
+	}
+	return nil
 }
 
 func (s *bankStore) encryptToken(ctx context.Context, token string) (string, error) {
@@ -89,7 +102,7 @@ func (s *bankStore) encryptToken(ctx context.Context, token string) (string, err
 	}
 	ciphertext, err := s.kms.KmsEncrypt(ctx, token)
 	if err != nil {
-		return "", err
+		return "", errs.NewEncryptionError("failed to encrypt token", err)
 	}
 	return ciphertext, nil
 }
@@ -100,7 +113,7 @@ func (s *bankStore) decryptToken(ctx context.Context, bank *models.Bank) error {
 	}
 	plaintext, err := s.kms.KmsDecrypt(ctx, bank.PlaidPublicToken)
 	if err != nil {
-		return err
+		return errs.NewEncryptionError("failed to decrypt token", err)
 	}
 	bank.PlaidPublicToken = plaintext
 	return nil

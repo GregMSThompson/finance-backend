@@ -7,6 +7,7 @@ import (
 	"cloud.google.com/go/firestore"
 	"google.golang.org/api/iterator"
 
+	"github.com/GregMSThompson/finance-backend/internal/errs"
 	"github.com/GregMSThompson/finance-backend/internal/models"
 )
 
@@ -28,7 +29,10 @@ func (s *aiStore) SaveMessage(ctx context.Context, uid, sessionID string, msg mo
 	}
 
 	_, _, err := s.messagesCollection(uid, sessionID).Add(ctx, msg)
-	return err
+	if err != nil {
+		return errs.NewDatabaseError("create", "failed to save AI message", err)
+	}
+	return nil
 }
 
 func (s *aiStore) ListMessages(ctx context.Context, uid, sessionID string, limit int) ([]models.AIMessage, error) {
@@ -47,11 +51,11 @@ func (s *aiStore) ListMessages(ctx context.Context, uid, sessionID string, limit
 			break
 		}
 		if err != nil {
-			return nil, err
+			return nil, errs.NewDatabaseError("read", "failed to list AI messages", err)
 		}
 		var msg models.AIMessage
 		if err := doc.DataTo(&msg); err != nil {
-			return nil, err
+			return nil, errs.NewDatabaseError("read", "failed to parse AI message data", err)
 		}
 		out = append(out, msg)
 	}

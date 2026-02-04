@@ -10,6 +10,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	"github.com/GregMSThompson/finance-backend/internal/dto"
+	"github.com/GregMSThompson/finance-backend/internal/errs"
 	"github.com/GregMSThompson/finance-backend/internal/models"
 )
 
@@ -76,13 +77,13 @@ func (s *transactionStore) Query(ctx context.Context, uid string, q dto.Transact
 				return
 			}
 			if err != nil {
-				errCh <- err
+				errCh <- errs.NewDatabaseError("read", "failed to query transactions", err)
 				return
 			}
 
 			var tx models.Transaction
 			if err := doc.DataTo(&tx); err != nil {
-				errCh <- err
+				errCh <- errs.NewDatabaseError("read", "failed to parse transaction data", err)
 				return
 			}
 
@@ -117,7 +118,7 @@ func (s *transactionStore) UpsertBatch(ctx context.Context, uid string, txs []mo
 		job, err := bw.Set(doc, t)
 		if err != nil {
 			bw.End()
-			return err
+			return errs.NewDatabaseError("create", "failed to upsert transaction", err)
 		}
 		jobs = append(jobs, job)
 	}
@@ -126,7 +127,7 @@ func (s *transactionStore) UpsertBatch(ctx context.Context, uid string, txs []mo
 	bw.End()
 	for _, job := range jobs {
 		if _, err := job.Results(); err != nil {
-			return err
+			return errs.NewDatabaseError("create", "failed to commit transaction batch", err)
 		}
 	}
 
@@ -139,7 +140,7 @@ func (s *transactionStore) GetCursor(ctx context.Context, uid, bankID string) (s
 		if status.Code(err) == codes.NotFound {
 			return "", nil
 		}
-		return "", err
+		return "", errs.NewDatabaseError("read", "failed to get cursor", err)
 	}
 	cursor, ok := snap.Data()["cursor"].(string)
 	if !ok {
@@ -153,7 +154,10 @@ func (s *transactionStore) SetCursor(ctx context.Context, uid, bankID, cursor st
 		"cursor":    cursor,
 		"updatedAt": time.Now(),
 	}, firestore.MergeAll)
-	return err
+	if err != nil {
+		return errs.NewDatabaseError("update", "failed to set cursor", err)
+	}
+	return nil
 }
 
 func (s *transactionStore) DeleteByBank(ctx context.Context, uid, bankID string) error {
@@ -168,12 +172,12 @@ func (s *transactionStore) DeleteByBank(ctx context.Context, uid, bankID string)
 		}
 		if err != nil {
 			bw.End()
-			return err
+			return errs.NewDatabaseError("delete", "failed to query transactions for deletion", err)
 		}
 		job, err := bw.Delete(doc.Ref)
 		if err != nil {
 			bw.End()
-			return err
+			return errs.NewDatabaseError("delete", "failed to delete transaction", err)
 		}
 		jobs = append(jobs, job)
 	}
@@ -181,7 +185,7 @@ func (s *transactionStore) DeleteByBank(ctx context.Context, uid, bankID string)
 	bw.End()
 	for _, job := range jobs {
 		if _, err := job.Results(); err != nil {
-			return err
+			return errs.NewDatabaseError("delete", "failed to commit transaction deletion batch", err)
 		}
 	}
 
@@ -191,7 +195,7 @@ func (s *transactionStore) DeleteByBank(ctx context.Context, uid, bankID string)
 func (s *transactionStore) DeleteCursor(ctx context.Context, uid, bankID string) error {
 	_, err := s.cursorDoc(uid, bankID).Delete(ctx)
 	if err != nil && status.Code(err) != codes.NotFound {
-		return err
+		return errs.NewDatabaseError("delete", "failed to delete cursor", err)
 	}
 	return nil
 }

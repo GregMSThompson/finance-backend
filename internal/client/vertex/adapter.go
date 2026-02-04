@@ -6,6 +6,8 @@ import (
 	"log/slog"
 
 	"cloud.google.com/go/vertexai/genai"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	"github.com/GregMSThompson/finance-backend/internal/dto"
 	"github.com/GregMSThompson/finance-backend/internal/errs"
@@ -21,7 +23,7 @@ type Adapter struct {
 func NewAdapter(ctx context.Context, log *slog.Logger, projectID, region, model string) (*Adapter, error) {
 	client, err := genai.NewClient(ctx, projectID, region)
 	if err != nil {
-		return nil, err
+		return nil, errs.NewExternalServiceError("vertex", "failed to create Vertex AI client", IsTransientError(err), err)
 	}
 
 	return &Adapter{
@@ -117,7 +119,7 @@ func (a *Adapter) GenerateContent(ctx context.Context, req dto.VertexGenerateReq
 
 	resp, err := model.GenerateContent(ctx, parts...)
 	if err != nil {
-		return out, err
+		return out, errs.NewExternalServiceError("vertex", "failed to generate content", IsTransientError(err), err)
 	}
 
 	out.Raw = resp
@@ -289,4 +291,41 @@ func toGenaiType(schemaType string) genai.Type {
 	default:
 		return genai.TypeUnspecified
 	}
+}
+
+// IsTransientError checks if a Vertex AI error is transient (retryable).
+// Transient errors include service unavailability, timeouts, and resource exhaustion.
+// Non-transient errors include invalid arguments, permission denied, etc.
+func IsTransientError(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	// Extract gRPC status code from error
+	st, ok := status.FromError(err)
+	if !ok {
+		// Not a gRPC error, assume non-transient
+		return false
+	}
+
+	// Check if the error code indicates a transient condition
+	switch st.Code() {
+	case codes.Unavailable,
+		codes.DeadlineExceeded,
+		codes.ResourceExhausted,
+		codes.Aborted:
+		return true
+
+	case codes.InvalidArgument,
+		codes.NotFound,
+		codes.PermissionDenied,
+		codes.Unauthenticated,
+		codes.FailedPrecondition,
+		codes.OutOfRange,
+		codes.Unimplemented:
+		return false
+	}
+
+	// For unknown codes, assume non-transient to avoid infinite retries
+	return false
 }
