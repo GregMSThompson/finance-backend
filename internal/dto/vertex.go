@@ -5,6 +5,7 @@ type VertexGenerateRequest struct {
 	System          string
 	Contents        []VertexContent // Structured conversation history
 	Tools           []VertexTool
+	ToolConfig      *VertexToolConfig
 	Temperature     *float32
 	MaxOutputTokens *int32
 }
@@ -49,4 +50,16 @@ type VertexSchema struct {
 	Properties  map[string]*VertexSchema
 	Required    []string
 	Items       *VertexSchema
+}
+
+type FunctionCallingMode string
+
+const (
+	FunctionCallingModeAuto FunctionCallingMode = "AUTO"
+	FunctionCallingModeAny  FunctionCallingMode = "ANY"
+	FunctionCallingModeNone FunctionCallingMode = "NONE"
+)
+
+type VertexToolConfig struct {
+	Mode FunctionCallingMode
 }

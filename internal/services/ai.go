@@ -61,6 +61,9 @@ func (s *aiService) Query(ctx context.Context, uid, sessionID, message string) (
 		System:   systemPrompt(s.clockNow()),
 		Contents: contents,
 		Tools:    toolSchemas(),
+		ToolConfig: &dto.VertexToolConfig{
+			Mode: dto.FunctionCallingModeAuto,
+		},
 	}
 
 	resp, err := s.vertex.GenerateContent(ctx, req)
@@ -146,6 +149,10 @@ func (s *aiService) Query(ctx context.Context, uid, sessionID, message string) (
 	finalResp, err := s.vertex.GenerateContent(ctx, dto.VertexGenerateRequest{
 		System:   systemPrompt(s.clockNow()),
 		Contents: contentsWithToolResult,
+		Tools:    toolSchemas(),
+		ToolConfig: &dto.VertexToolConfig{
+			Mode: dto.FunctionCallingModeNone,
+		},
 	})
 	if err != nil {
 		return dto.AIQueryResponse{}, err
@@ -376,6 +383,7 @@ func systemPrompt(now time.Time) string {
 	today := now.Format("2006-01-02")
 	weekday := now.Weekday().String()
 	return "You are a finance analytics assistant. Use tools for deterministic queries. " +
+		"Make only one tool call per request. For multi-part questions, address the primary question first. " +
 		"Calculate date ranges from natural language (e.g., 'last week', 'this month'). A week is defined as Monday to Sunday. " +
 		"All financial data (transactions, amounts, categories) must come from tool results - never fabricate these. " +
 		"If a query is ambiguous (e.g., which category?), ask for clarification. " +

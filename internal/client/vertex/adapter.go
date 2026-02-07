@@ -67,6 +67,13 @@ func (a *Adapter) GenerateContent(ctx context.Context, req dto.VertexGenerateReq
 	if len(req.Tools) > 0 {
 		model.Tools = toGenaiTools(req.Tools)
 	}
+	if req.ToolConfig != nil {
+		model.ToolConfig = &genai.ToolConfig{
+			FunctionCallingConfig: &genai.FunctionCallingConfig{
+				Mode: toGenaiMode(req.ToolConfig.Mode),
+			},
+		}
+	}
 
 	// Only process expensive debug data if debug is enabled
 	if logger.IsDebugEnabled(ctx) {
@@ -351,6 +358,19 @@ func toGenaiType(schemaType string) genai.Type {
 		return genai.TypeBoolean
 	default:
 		return genai.TypeUnspecified
+	}
+}
+
+func toGenaiMode(mode dto.FunctionCallingMode) genai.FunctionCallingMode {
+	switch mode {
+	case dto.FunctionCallingModeAuto:
+		return genai.FunctionCallingAuto
+	case dto.FunctionCallingModeAny:
+		return genai.FunctionCallingAny
+	case dto.FunctionCallingModeNone:
+		return genai.FunctionCallingNone
+	default:
+		return genai.FunctionCallingAuto
 	}
 }
 
