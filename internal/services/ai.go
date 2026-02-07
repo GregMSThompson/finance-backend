@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/GregMSThompson/finance-backend/internal/dto"
@@ -57,11 +56,11 @@ func (s *aiService) Query(ctx context.Context, uid, sessionID, message string) (
 		return dto.AIQueryResponse{}, err
 	}
 
-	userMsg := s.composeUserMessage(history, message)
+	contents := convertMessagesToContents(history, message)
 	req := dto.VertexGenerateRequest{
-		System:      systemPrompt(s.clockNow()),
-		UserMessage: userMsg,
-		Tools:       toolSchemas(),
+		System:   systemPrompt(s.clockNow()),
+		Contents: contents,
+		Tools:    toolSchemas(),
 	}
 
 	resp, err := s.vertex.GenerateContent(ctx, req)
@@ -84,22 +83,36 @@ func (s *aiService) Query(ctx context.Context, uid, sessionID, message string) (
 		}); err != nil {
 			return dto.AIQueryResponse{}, err
 		}
-		if err := s.saveMessage(ctx, uid, sessionID, models.AIMessage{
-			Role:    "assistant",
-			Content: resp.Text,
-		}); err != nil {
-			return dto.AIQueryResponse{}, err
+		// Only save non-empty assistant responses
+		if resp.Text != "" {
+			if err := s.saveMessage(ctx, uid, sessionID, models.AIMessage{
+				Role:    "assistant",
+				Content: resp.Text,
+			}); err != nil {
+				return dto.AIQueryResponse{}, err
+			}
 		}
 		log.Info("ai query completed", "session_id", sessionID)
 		return dto.AIQueryResponse{Answer: resp.Text}, nil
 	}
 
+	// Handle multiple tool calls (currently only processing the first one)
+	if len(resp.ToolCalls) > 1 {
+		log.Warn("received multiple tool calls, only processing the first", "count", len(resp.ToolCalls))
+	}
+
 	toolCall := resp.ToolCalls[0]
+
+	// Validate tool call name before executing
+	if !isValidToolName(toolCall.Name) {
+		return dto.AIQueryResponse{}, errs.NewValidationError(fmt.Sprintf("model requested unknown tool: %s", toolCall.Name))
+	}
+
 	log.Info("executing tool", "tool", toolCall.Name)
 
 	toolResult, err := s.executeTool(ctx, uid, toolCall)
 	if err != nil {
-		return dto.AIQueryResponse{}, err
+		return dto.AIQueryResponse{}, fmt.Errorf("failed to execute tool %s: %w", toolCall.Name, err)
 	}
 
 	if err := s.saveMessage(ctx, uid, sessionID, models.AIMessage{
@@ -117,10 +130,22 @@ func (s *aiService) Query(ctx context.Context, uid, sessionID, message string) (
 		return dto.AIQueryResponse{}, err
 	}
 
+	// For the second request after tool execution, add the tool result to contents
+	contentsWithToolResult := append(contents, dto.VertexContent{
+		Role: "model",
+		Parts: []dto.VertexPart{
+			{FunctionCall: &toolCall},
+		},
+	}, dto.VertexContent{
+		Role: "user",
+		Parts: []dto.VertexPart{
+			{FunctionResponse: &toolResult},
+		},
+	})
+
 	finalResp, err := s.vertex.GenerateContent(ctx, dto.VertexGenerateRequest{
-		System:      systemPrompt(s.clockNow()),
-		UserMessage: userMsg,
-		ToolResults: []dto.VertexToolResult{toolResult},
+		System:   systemPrompt(s.clockNow()),
+		Contents: contentsWithToolResult,
 	})
 	if err != nil {
 		return dto.AIQueryResponse{}, err
@@ -143,37 +168,71 @@ func (s *aiService) Query(ctx context.Context, uid, sessionID, message string) (
 	}, nil
 }
 
-func (s *aiService) composeUserMessage(history []models.AIMessage, message string) string {
-	if len(history) == 0 {
-		return message
-	}
+func convertMessagesToContents(history []models.AIMessage, currentMessage string) []dto.VertexContent {
+	contents := make([]dto.VertexContent, 0, len(history)+1)
 
-	var b strings.Builder
+	// Convert history messages to structured contents
 	for _, msg := range history {
 		switch msg.Role {
 		case "user":
-			b.WriteString("User: ")
-			b.WriteString(msg.Content)
-			b.WriteString("\n")
+			// User message with text
+			contents = append(contents, dto.VertexContent{
+				Role: "user",
+				Parts: []dto.VertexPart{
+					{Text: &msg.Content},
+				},
+			})
+
 		case "assistant":
-			b.WriteString("Assistant: ")
-			b.WriteString(msg.Content)
-			b.WriteString("\n")
-		case "tool":
-			b.WriteString("Tool ")
-			b.WriteString(msg.ToolName)
-			b.WriteString(": ")
-			if msg.ToolResult != nil {
-				if raw, err := json.Marshal(msg.ToolResult); err == nil {
-					b.Write(raw)
-				}
+			// Assistant response with text
+			if msg.Content != "" {
+				contents = append(contents, dto.VertexContent{
+					Role: "model",
+					Parts: []dto.VertexPart{
+						{Text: &msg.Content},
+					},
+				})
 			}
-			b.WriteString("\n")
+
+		case "tool":
+			// Tool calls and results need special handling
+			// Tool call from assistant
+			if msg.ToolName != "" && msg.ToolArgs != nil {
+				contents = append(contents, dto.VertexContent{
+					Role: "model",
+					Parts: []dto.VertexPart{
+						{FunctionCall: &dto.VertexToolCall{
+							Name: msg.ToolName,
+							Args: msg.ToolArgs,
+						}},
+					},
+				})
+			}
+
+			// Tool result from user
+			if msg.ToolName != "" && msg.ToolResult != nil {
+				contents = append(contents, dto.VertexContent{
+					Role: "user",
+					Parts: []dto.VertexPart{
+						{FunctionResponse: &dto.VertexToolResult{
+							Name:     msg.ToolName,
+							Response: msg.ToolResult,
+						}},
+					},
+				})
+			}
 		}
 	}
-	b.WriteString("User: ")
-	b.WriteString(message)
-	return b.String()
+
+	// Add the current user message
+	contents = append(contents, dto.VertexContent{
+		Role: "user",
+		Parts: []dto.VertexPart{
+			{Text: &currentMessage},
+		},
+	})
+
+	return contents
 }
 
 func (s *aiService) saveMessage(ctx context.Context, uid, sessionID string, msg models.AIMessage) error {
@@ -319,8 +378,7 @@ func systemPrompt(now time.Time) string {
 	return "You are a finance analytics assistant. Use tools for deterministic queries. " +
 		"Defaults: pending=false; date range defaults to month-to-date if not provided. " +
 		"Do not fabricate data; only answer from tool results. If you did not call a tool, ask a clarification question. " +
-		"Today is " + today + " (" + weekday + ", US). " +
-		"Important: never include role labels like 'Assistant:' or 'User:' in responses. Respond with the answer only."
+		"Today is " + today + " (" + weekday + ", US)."
 }
 
 func strictSystemPrompt(now time.Time) string {
@@ -380,4 +438,13 @@ func toMap(value any) (map[string]any, error) {
 		return nil, err
 	}
 	return out, nil
+}
+
+func isValidToolName(name string) bool {
+	validTools := map[string]bool{
+		"get_spend_total":     true,
+		"get_spend_breakdown": true,
+		"get_transactions":    true,
+	}
+	return validTools[name]
 }

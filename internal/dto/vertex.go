@@ -3,11 +3,21 @@ package dto
 type VertexGenerateRequest struct {
 	Model           string
 	System          string
-	UserMessage     string
+	Contents        []VertexContent // Structured conversation history
 	Tools           []VertexTool
-	ToolResults     []VertexToolResult
 	Temperature     *float32
 	MaxOutputTokens *int32
+}
+
+type VertexContent struct {
+	Role  string       // "user" or "model"
+	Parts []VertexPart
+}
+
+type VertexPart struct {
+	Text             *string
+	FunctionCall     *VertexToolCall
+	FunctionResponse *VertexToolResult
 }
 
 type VertexGenerateResponse struct {

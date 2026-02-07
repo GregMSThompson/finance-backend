@@ -97,41 +97,61 @@ func (a *Adapter) GenerateContent(ctx context.Context, req dto.VertexGenerateReq
 		log.Debug(
 			"vertex generate content request",
 			"systemLen", len(req.System),
-			"userLen", len(req.UserMessage),
+			"contents", len(req.Contents),
 			"tools", toolSummary,
-			"toolResults", len(req.ToolResults),
 		)
 	}
 
-	var parts []genai.Part
-	if req.UserMessage != "" {
-		parts = append(parts, genai.Text(req.UserMessage))
-	}
-	for _, toolResult := range req.ToolResults {
-		parts = append(parts, genai.FunctionResponse{
-			Name:     toolResult.Name,
-			Response: toolResult.Response,
-		})
-	}
-	if len(parts) == 0 {
+	if len(req.Contents) == 0 {
 		return out, fmt.Errorf("vertex generate request has no content")
 	}
 
-	resp, err := model.GenerateContent(ctx, parts...)
+	// Split contents into history and current message
+	var history []*genai.Content
+	var currentParts []genai.Part
+
+	if len(req.Contents) > 1 {
+		// Convert all but last to history
+		history = toGenaiContents(req.Contents[:len(req.Contents)-1])
+	}
+
+	// Last content is the current message
+	currentParts = toGenaiParts(req.Contents[len(req.Contents)-1].Parts)
+
+	// Use chat session with history
+	chat := model.StartChat()
+	chat.History = history
+
+	resp, err := chat.SendMessage(ctx, currentParts...)
 	if err != nil {
 		return out, errs.NewExternalServiceError("vertex", "failed to generate content", IsTransientError(err), err)
 	}
 
 	out.Raw = resp
+
+	// Check for blocked content due to safety filters
+	if resp.PromptFeedback != nil && resp.PromptFeedback.BlockReason != 0 {
+		return out, errs.NewExternalServiceError("vertex", fmt.Sprintf("content blocked: %v", resp.PromptFeedback.BlockReason), false, nil)
+	}
+
 	out.Text, out.ToolCalls = parseContentResponse(resp)
 
 	// Check for malformed function calls and empty responses
 	malformed := false
+	blocked := false
 	for _, candidate := range resp.Candidates {
 		if candidate.FinishReason == genai.FinishReasonMalformedFunctionCall {
 			malformed = true
 			break
 		}
+		if candidate.FinishReason == genai.FinishReasonSafety {
+			blocked = true
+			break
+		}
+	}
+
+	if blocked {
+		return out, errs.NewExternalServiceError("vertex", "response blocked by safety filters", false, nil)
 	}
 
 	// Only process expensive debug data if debug is enabled
@@ -228,6 +248,47 @@ func parseContentResponse(resp *genai.GenerateContentResponse) (string, []dto.Ve
 	}
 
 	return text, calls
+}
+
+func toGenaiContents(contents []dto.VertexContent) []*genai.Content {
+	if len(contents) == 0 {
+		return nil
+	}
+
+	result := make([]*genai.Content, 0, len(contents))
+	for _, content := range contents {
+		result = append(result, &genai.Content{
+			Role:  content.Role,
+			Parts: toGenaiParts(content.Parts),
+		})
+	}
+	return result
+}
+
+func toGenaiParts(parts []dto.VertexPart) []genai.Part {
+	if len(parts) == 0 {
+		return nil
+	}
+
+	result := make([]genai.Part, 0, len(parts))
+	for _, part := range parts {
+		if part.Text != nil {
+			result = append(result, genai.Text(*part.Text))
+		}
+		if part.FunctionCall != nil {
+			result = append(result, genai.FunctionCall{
+				Name: part.FunctionCall.Name,
+				Args: part.FunctionCall.Args,
+			})
+		}
+		if part.FunctionResponse != nil {
+			result = append(result, genai.FunctionResponse{
+				Name:     part.FunctionResponse.Name,
+				Response: part.FunctionResponse.Response,
+			})
+		}
+	}
+	return result
 }
 
 func toGenaiTools(tools []dto.VertexTool) []*genai.Tool {
