@@ -10,7 +10,7 @@ import (
 )
 
 type transactionAnalyticsStore interface {
-	Query(ctx context.Context, uid string, q dto.TransactionQuery) (<-chan *models.Transaction, <-chan error)
+	Query(ctx context.Context, uid string, q dto.TransactionQuery, handle func(*models.Transaction) error) error
 }
 
 type analyticsService struct {
@@ -27,17 +27,15 @@ func (s *analyticsService) GetSpendTotal(ctx context.Context, uid string, args d
 		To:   helpers.Value(args.DateTo),
 	}
 
-	txCh, errCh := s.txs.Query(ctx, uid, dto.TransactionQuery{
+	var total float64
+	var currency string
+	if err := s.txs.Query(ctx, uid, dto.TransactionQuery{
 		Pending:    args.Pending,
 		PFCPrimary: args.PFCPrimary,
 		BankID:     args.BankID,
 		DateFrom:   args.DateFrom,
 		DateTo:     args.DateTo,
-	})
-
-	var total float64
-	var currency string
-	if err := streamTransactions(txCh, errCh, func(tx *models.Transaction) error {
+	}, func(tx *models.Transaction) error {
 		total += tx.Amount
 		if currency == "" && tx.Currency != "" {
 			currency = tx.Currency
@@ -62,17 +60,15 @@ func (s *analyticsService) GetSpendBreakdown(ctx context.Context, uid string, ar
 		return result, err
 	}
 
-	txCh, errCh := s.txs.Query(ctx, uid, dto.TransactionQuery{
+	items := map[string]*dto.AnalyticsBreakdownItem{}
+	var currency string
+	if err := s.txs.Query(ctx, uid, dto.TransactionQuery{
 		Pending:    args.Pending,
 		PFCPrimary: args.PFCPrimary,
 		BankID:     args.BankID,
 		DateFrom:   args.DateFrom,
 		DateTo:     args.DateTo,
-	})
-
-	items := map[string]*dto.AnalyticsBreakdownItem{}
-	var currency string
-	if err := streamTransactions(txCh, errCh, func(tx *models.Transaction) error {
+	}, func(tx *models.Transaction) error {
 		key := breakdownKey(tx, args.GroupBy)
 		if key == "" {
 			return nil
@@ -99,7 +95,9 @@ func (s *analyticsService) GetSpendBreakdown(ctx context.Context, uid string, ar
 
 func (s *analyticsService) GetTransactions(ctx context.Context, uid string, args dto.AnalyticsTransactionsArgs) (dto.AnalyticsTransactionsResult, error) {
 	result := dto.AnalyticsTransactionsResult{}
-	txCh, errCh := s.txs.Query(ctx, uid, dto.TransactionQuery{
+
+	var txs []models.Transaction
+	if err := s.txs.Query(ctx, uid, dto.TransactionQuery{
 		Pending:    args.Pending,
 		PFCPrimary: args.PFCPrimary,
 		BankID:     args.BankID,
@@ -108,10 +106,7 @@ func (s *analyticsService) GetTransactions(ctx context.Context, uid string, args
 		OrderBy:    args.OrderBy,
 		Desc:       args.Desc,
 		Limit:      args.Limit,
-	})
-
-	var txs []models.Transaction
-	if err := streamTransactions(txCh, errCh, func(tx *models.Transaction) error {
+	}, func(tx *models.Transaction) error {
 		txs = append(txs, *tx)
 		return nil
 	}); err != nil {
@@ -141,33 +136,6 @@ func mapBreakdownItems(items map[string]*dto.AnalyticsBreakdownItem) []dto.Analy
 		out = append(out, *item)
 	}
 	return out
-}
-
-func streamTransactions(txCh <-chan *models.Transaction, errCh <-chan error, handle func(*models.Transaction) error) error {
-	for txCh != nil || errCh != nil {
-		select {
-		case tx, ok := <-txCh:
-			if !ok {
-				txCh = nil
-				continue
-			}
-			if handle == nil {
-				continue
-			}
-			if err := handle(tx); err != nil {
-				return err
-			}
-		case err, ok := <-errCh:
-			if !ok {
-				errCh = nil
-				continue
-			}
-			if err != nil {
-				return err
-			}
-		}
-	}
-	return nil
 }
 
 func validateGroupBy(groupBy string) error {

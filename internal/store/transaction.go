@@ -30,7 +30,36 @@ func (s *transactionStore) cursorDoc(uid, bankID string) *firestore.DocumentRef 
 	return s.client.Collection("users").Doc(uid).Collection("plaid_cursors").Doc(bankID)
 }
 
-func (s *transactionStore) Query(ctx context.Context, uid string, q dto.TransactionQuery) (<-chan *models.Transaction, <-chan error) {
+func (s *transactionStore) Query(ctx context.Context, uid string, q dto.TransactionQuery, handle func(*models.Transaction) error) error {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	txCh, errCh := s.query(ctx, uid, q)
+
+	for txCh != nil || errCh != nil {
+		select {
+		case tx, ok := <-txCh:
+			if !ok {
+				txCh = nil
+				continue
+			}
+			if err := handle(tx); err != nil {
+				return err
+			}
+		case err, ok := <-errCh:
+			if !ok {
+				errCh = nil
+				continue
+			}
+			if err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func (s *transactionStore) query(ctx context.Context, uid string, q dto.TransactionQuery) (<-chan *models.Transaction, <-chan error) {
 	out := make(chan *models.Transaction, 10)
 	errCh := make(chan error, 1)
 

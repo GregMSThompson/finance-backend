@@ -15,27 +15,13 @@ type fakeAnalyticsStore struct {
 	err error
 }
 
-func (f *fakeAnalyticsStore) Query(ctx context.Context, uid string, q dto.TransactionQuery) (<-chan *models.Transaction, <-chan error) {
-	out := make(chan *models.Transaction, len(f.txs))
-	errCh := make(chan error, 1)
-
-	go func() {
-		defer close(out)
-		defer close(errCh)
-		for _, tx := range f.txs {
-			select {
-			case out <- tx:
-			case <-ctx.Done():
-				errCh <- ctx.Err()
-				return
-			}
+func (f *fakeAnalyticsStore) Query(ctx context.Context, uid string, q dto.TransactionQuery, handle func(*models.Transaction) error) error {
+	for _, tx := range f.txs {
+		if err := handle(tx); err != nil {
+			return err
 		}
-		if f.err != nil {
-			errCh <- f.err
-		}
-	}()
-
-	return out, errCh
+	}
+	return f.err
 }
 
 func TestAnalyticsSpendTotal(t *testing.T) {

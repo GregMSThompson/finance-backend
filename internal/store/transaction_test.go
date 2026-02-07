@@ -63,54 +63,40 @@ func TestTransactionQueryWithEmulator(t *testing.T) {
 	pending := false
 	dateFrom := "2025-01-12"
 	dateTo := "2025-01-20"
-	txCh, errCh := store.Query(ctx, uid, dto.TransactionQuery{
+
+	var results []models.Transaction
+	err = store.Query(ctx, uid, dto.TransactionQuery{
 		Pending:  &pending,
 		DateFrom: &dateFrom,
 		DateTo:   &dateTo,
+	}, func(tx *models.Transaction) error {
+		results = append(results, *tx)
+		return nil
 	})
-
-	results := readTransactions(t, txCh, errCh)
+	if err != nil {
+		t.Fatalf("query error: %v", err)
+	}
 	if len(results) != 0 {
 		t.Fatalf("expected 0 results, got %d", len(results))
 	}
 
 	pending = true
-	txCh, errCh = store.Query(ctx, uid, dto.TransactionQuery{
+	results = nil
+	err = store.Query(ctx, uid, dto.TransactionQuery{
 		Pending:  &pending,
 		DateFrom: &dateFrom,
 		DateTo:   &dateTo,
+	}, func(tx *models.Transaction) error {
+		results = append(results, *tx)
+		return nil
 	})
-
-	results = readTransactions(t, txCh, errCh)
+	if err != nil {
+		t.Fatalf("query error: %v", err)
+	}
 	if len(results) != 1 {
 		t.Fatalf("expected 1 result, got %d", len(results))
 	}
 	if results[0].TransactionID != "t2" {
 		t.Fatalf("unexpected transaction: %s", results[0].TransactionID)
 	}
-}
-
-func readTransactions(t *testing.T, txCh <-chan *models.Transaction, errCh <-chan error) []models.Transaction {
-	t.Helper()
-
-	var out []models.Transaction
-	for txCh != nil || errCh != nil {
-		select {
-		case tx, ok := <-txCh:
-			if !ok {
-				txCh = nil
-				continue
-			}
-			out = append(out, *tx)
-		case err, ok := <-errCh:
-			if !ok {
-				errCh = nil
-				continue
-			}
-			if err != nil {
-				t.Fatalf("query error: %v", err)
-			}
-		}
-	}
-	return out
 }
