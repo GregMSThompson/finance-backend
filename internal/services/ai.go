@@ -376,8 +376,10 @@ func systemPrompt(now time.Time) string {
 	today := now.Format("2006-01-02")
 	weekday := now.Weekday().String()
 	return "You are a finance analytics assistant. Use tools for deterministic queries. " +
+		"Calculate date ranges from natural language (e.g., 'last week', 'this month'). A week is defined as Monday to Sunday. " +
+		"All financial data (transactions, amounts, categories) must come from tool results - never fabricate these. " +
+		"If a query is ambiguous (e.g., which category?), ask for clarification. " +
 		"Defaults: pending=false; date range defaults to month-to-date if not provided. " +
-		"Do not fabricate data; only answer from tool results. If you did not call a tool, ask a clarification question. " +
 		"Today is " + today + " (" + weekday + ", US)."
 }
 
