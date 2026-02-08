@@ -36,6 +36,7 @@ func (h *aiHandlers) AIRoutes() chi.Router {
 }
 
 func (h *aiHandlers) Query(w http.ResponseWriter, r *http.Request) {
+	// TODO: Add request-scoped timeouts and per-resource timeouts once latency budgets are defined.
 	var body dto.AIQueryRequest
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		h.ResponseHandler.HandleError(w, r, err)

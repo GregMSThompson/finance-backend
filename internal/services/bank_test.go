@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/GregMSThompson/finance-backend/internal/models"
+	"github.com/GregMSThompson/finance-backend/pkg/helpers"
 	"github.com/GregMSThompson/finance-backend/pkg/logger"
 )
 
@@ -48,9 +49,9 @@ func (f *bankFakeTxStore) DeleteCursor(ctx context.Context, uid, bankID string) 
 
 func TestBankServiceListBanks(t *testing.T) {
 	expected := []*models.Bank{{BankID: "b1"}, {BankID: "b2"}}
-	svc := NewBankService(testLogger(), &bankFakeBankStore{list: expected}, &bankFakeTxStore{})
+	svc := NewBankService(&bankFakeBankStore{list: expected}, &bankFakeTxStore{})
 
-	ctx := logger.ToContext(context.Background(), testLogger())
+	ctx := helpers.TestCtx()
 	got, err := svc.ListBanks(ctx, "uid-1")
 	if err != nil {
 		t.Fatalf("ListBanks returned error: %v", err)
@@ -63,9 +64,9 @@ func TestBankServiceListBanks(t *testing.T) {
 func TestBankServiceDeleteBankSuccess(t *testing.T) {
 	banks := &bankFakeBankStore{}
 	txs := &bankFakeTxStore{}
-	svc := NewBankService(testLogger(), banks, txs)
+	svc := NewBankService(banks, txs)
 
-	ctx := logger.ToContext(context.Background(), testLogger())
+	ctx := helpers.TestCtx()
 	if err := svc.DeleteBank(ctx, "uid-1", "bank-1"); err != nil {
 		t.Fatalf("DeleteBank returned error: %v", err)
 	}
@@ -84,9 +85,9 @@ func TestBankServiceDeleteBankStopsOnDeleteByBankError(t *testing.T) {
 	expectedErr := errors.New("delete txs failed")
 	banks := &bankFakeBankStore{}
 	txs := &bankFakeTxStore{deleteByBankErr: expectedErr}
-	svc := NewBankService(testLogger(), banks, txs)
+	svc := NewBankService(banks, txs)
 
-	ctx := logger.ToContext(context.Background(), testLogger())
+	ctx := helpers.TestCtx()
 	if err := svc.DeleteBank(ctx, "uid-1", "bank-1"); err != expectedErr {
 		t.Fatalf("DeleteBank error = %v, want %v", err, expectedErr)
 	}
@@ -102,9 +103,9 @@ func TestBankServiceDeleteBankStopsOnDeleteCursorError(t *testing.T) {
 	expectedErr := errors.New("delete cursor failed")
 	banks := &bankFakeBankStore{}
 	txs := &bankFakeTxStore{deleteCursorErr: expectedErr}
-	svc := NewBankService(testLogger(), banks, txs)
+	svc := NewBankService(banks, txs)
 
-	ctx := logger.ToContext(context.Background(), testLogger())
+	ctx := helpers.TestCtx()
 	if err := svc.DeleteBank(ctx, "uid-1", "bank-1"); err != expectedErr {
 		t.Fatalf("DeleteBank error = %v, want %v", err, expectedErr)
 	}

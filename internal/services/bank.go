@@ -2,7 +2,6 @@ package services
 
 import (
 	"context"
-	"log/slog"
 
 	"github.com/GregMSThompson/finance-backend/internal/models"
 	"github.com/GregMSThompson/finance-backend/pkg/logger"
@@ -19,14 +18,12 @@ type transactionBSStore interface {
 }
 
 type bankService struct {
-	log     *slog.Logger
 	banks   bankBSStore
 	txs     transactionBSStore
 }
 
-func NewBankService(log *slog.Logger, banks bankBSStore, txs transactionBSStore) *bankService {
+func NewBankService(banks bankBSStore, txs transactionBSStore) *bankService {
 	return &bankService{
-		log:     log,
 		banks:   banks,
 		txs:     txs,
 	}

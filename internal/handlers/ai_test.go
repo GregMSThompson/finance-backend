@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -13,7 +12,7 @@ import (
 	"github.com/GregMSThompson/finance-backend/internal/dto"
 	"github.com/GregMSThompson/finance-backend/internal/errs"
 	"github.com/GregMSThompson/finance-backend/internal/middleware"
-	"github.com/GregMSThompson/finance-backend/pkg/logger"
+	"github.com/GregMSThompson/finance-backend/pkg/helpers"
 )
 
 type stubAIService struct {
@@ -67,8 +66,7 @@ func TestAIQueryHandlerSuccess(t *testing.T) {
 
 	body := `{"sessionId":"s1","message":"hello"}`
 	req := httptest.NewRequest(http.MethodPost, "/ai/query", strings.NewReader(body))
-	log := slog.New(logger.NewTestHandler(slog.LevelInfo))
-	ctx := logger.ToContext(req.Context(), log)
+	ctx := helpers.TestCtx()
 	ctx = context.WithValue(ctx, middleware.UIDKey, "uid-123")
 	req = req.WithContext(ctx)
 	rr := httptest.NewRecorder()
@@ -92,7 +90,7 @@ func TestAIQueryHandlerInvalidJSON(t *testing.T) {
 	h := NewAIHandlers(&Deps{ResponseHandler: resp, AISvc: aiSvc})
 
 	req := httptest.NewRequest(http.MethodPost, "/ai/query", strings.NewReader("not-json"))
-	req = req.WithContext(logger.ToContext(req.Context(), slog.New(logger.NewTestHandler(slog.LevelInfo))))
+	req = req.WithContext(helpers.TestCtx())
 	rr := httptest.NewRecorder()
 
 	h.Query(rr, req)
@@ -112,7 +110,7 @@ func TestAIQueryHandlerMissingMessage(t *testing.T) {
 
 	body := `{"sessionId":"s1","message":""}`
 	req := httptest.NewRequest(http.MethodPost, "/ai/query", strings.NewReader(body))
-	req = req.WithContext(logger.ToContext(req.Context(), slog.New(logger.NewTestHandler(slog.LevelInfo))))
+	req = req.WithContext(helpers.TestCtx())
 	rr := httptest.NewRecorder()
 
 	h.Query(rr, req)
@@ -133,7 +131,7 @@ func TestAIQueryHandlerMissingSessionID(t *testing.T) {
 
 	body := `{"sessionId":"","message":"hi"}`
 	req := httptest.NewRequest(http.MethodPost, "/ai/query", strings.NewReader(body))
-	req = req.WithContext(logger.ToContext(req.Context(), slog.New(logger.NewTestHandler(slog.LevelInfo))))
+	req = req.WithContext(helpers.TestCtx())
 	rr := httptest.NewRecorder()
 
 	h.Query(rr, req)
@@ -154,8 +152,7 @@ func TestAIQueryHandlerServiceError(t *testing.T) {
 
 	body := `{"sessionId":"s1","message":"hello"}`
 	req := httptest.NewRequest(http.MethodPost, "/ai/query", strings.NewReader(body))
-	log := slog.New(logger.NewTestHandler(slog.LevelInfo))
-	ctx := logger.ToContext(req.Context(), log)
+	ctx := helpers.TestCtx()
 	ctx = context.WithValue(ctx, middleware.UIDKey, "uid-123")
 	req = req.WithContext(ctx)
 	rr := httptest.NewRecorder()

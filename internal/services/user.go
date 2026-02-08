@@ -2,7 +2,6 @@ package services
 
 import (
 	"context"
-	"log/slog"
 	"time"
 
 	"github.com/GregMSThompson/finance-backend/internal/models"
@@ -16,13 +15,11 @@ type userUSStore interface {
 }
 
 type userService struct {
-	Log   *slog.Logger
 	Store userUSStore
 }
 
-func NewUserService(log *slog.Logger, store userUSStore) *userService {
+func NewUserService(store userUSStore) *userService {
 	return &userService{
-		Log:   log,
 		Store: store,
 	}
 }
@@ -48,11 +45,7 @@ func (s *userService) CreateUser(ctx context.Context, uid, email, first, last st
 
 	// uid and email are automatically included from context
 	log.Info("user created successfully", "first_name", first, "last_name", last)
-
-	// Only process debug data if debug level is enabled
-	if logger.IsDebugEnabled(ctx) {
-		log.Debug("user created with full details", slog.Any("user", user))
-	}
+	log.Debug("user created with full details", "user", user)
 
 	return nil
 }

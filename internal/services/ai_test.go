@@ -3,7 +3,6 @@ package services
 import (
 	"context"
 	"errors"
-	"log/slog"
 	"strings"
 	"testing"
 	"time"
@@ -12,7 +11,6 @@ import (
 	"github.com/GregMSThompson/finance-backend/internal/errs"
 	"github.com/GregMSThompson/finance-backend/internal/models"
 	"github.com/GregMSThompson/finance-backend/pkg/helpers"
-	"github.com/GregMSThompson/finance-backend/pkg/logger"
 )
 
 type fakeVertexClient struct {
@@ -114,7 +112,7 @@ func TestAIQueryToolFlow(t *testing.T) {
 		return time.Date(2025, time.February, 15, 12, 0, 0, 0, time.UTC)
 	}
 
-	ctx := logger.ToContext(context.Background(), slog.New(logger.NewTestHandler(slog.LevelInfo)))
+	ctx := helpers.TestCtx()
 	resp, err := svc.Query(ctx, "user", "session", "How much did I spend?")
 	if err != nil {
 		t.Fatalf("Query error: %v", err)
@@ -144,7 +142,7 @@ func TestAIQueryNoToolCall(t *testing.T) {
 	store := &fakeAIStore{}
 	svc := NewAIService(vertex, analytics, store, 0)
 
-	ctx := logger.ToContext(context.Background(), slog.New(logger.NewTestHandler(slog.LevelInfo)))
+	ctx := helpers.TestCtx()
 	resp, err := svc.Query(ctx, "user", "session", "Hi")
 	if err != nil {
 		t.Fatalf("Query error: %v", err)
@@ -171,7 +169,7 @@ func TestAIQueryUnknownTool(t *testing.T) {
 	store := &fakeAIStore{}
 	svc := NewAIService(vertex, analytics, store, 0)
 
-	ctx := logger.ToContext(context.Background(), slog.New(logger.NewTestHandler(slog.LevelInfo)))
+	ctx := helpers.TestCtx()
 	_, err := svc.Query(ctx, "user", "session", "What is this?")
 	if err == nil {
 		t.Fatalf("expected error for unknown tool")
@@ -196,7 +194,7 @@ func TestAIQueryMultipleToolCallsUsesFirst(t *testing.T) {
 	store := &fakeAIStore{}
 	svc := NewAIService(vertex, analytics, store, 0)
 
-	ctx := logger.ToContext(context.Background(), slog.New(logger.NewTestHandler(slog.LevelInfo)))
+	ctx := helpers.TestCtx()
 	_, err := svc.Query(ctx, "user", "session", "Multi")
 	if err != nil {
 		t.Fatalf("Query error: %v", err)
@@ -225,7 +223,7 @@ func TestAIQueryAnalyticsErrorPropagates(t *testing.T) {
 	store := &fakeAIStore{}
 	svc := NewAIService(vertex, analytics, store, 0)
 
-	ctx := logger.ToContext(context.Background(), slog.New(logger.NewTestHandler(slog.LevelInfo)))
+	ctx := helpers.TestCtx()
 	_, err := svc.Query(ctx, "user", "session", "How much?")
 	if err == nil {
 		t.Fatalf("expected error from analytics")
@@ -242,7 +240,7 @@ func TestAIQueryDoesNotRetryOnOtherErrors(t *testing.T) {
 	store := &fakeAIStore{}
 	svc := NewAIService(vertex, analytics, store, 0)
 
-	ctx := logger.ToContext(context.Background(), slog.New(logger.NewTestHandler(slog.LevelInfo)))
+	ctx := helpers.TestCtx()
 	_, err := svc.Query(ctx, "user", "session", "Hi")
 	if err == nil {
 		t.Fatalf("expected error")
@@ -265,7 +263,7 @@ func TestAIQueryRetriesWithStrictPromptOnMalformedCall(t *testing.T) {
 	store := &fakeAIStore{}
 	svc := NewAIService(vertex, analytics, store, 0)
 
-	ctx := logger.ToContext(context.Background(), slog.New(logger.NewTestHandler(slog.LevelInfo)))
+	ctx := helpers.TestCtx()
 	resp, err := svc.Query(ctx, "user", "session", "Hello")
 	if err != nil {
 		t.Fatalf("Query error: %v", err)

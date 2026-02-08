@@ -15,6 +15,7 @@ import (
 	"github.com/GregMSThompson/finance-backend/internal/middleware"
 	"github.com/GregMSThompson/finance-backend/internal/models"
 	"github.com/GregMSThompson/finance-backend/internal/response"
+	"github.com/GregMSThompson/finance-backend/pkg/helpers"
 	"github.com/GregMSThompson/finance-backend/pkg/logger"
 )
 
@@ -99,8 +100,7 @@ func newTestPlaidHandlerWithResp(p *fakePlaidSvc, b *fakeBankSvc, resp *plaidStu
 }
 
 func ctxWithUID(ctx context.Context) context.Context {
-	log := slog.New(logger.NewTestHandler(slog.LevelInfo))
-	ctx = logger.ToContext(ctx, log)
+	ctx = helpers.TestCtx()
 	return context.WithValue(ctx, middleware.UIDKey, "uid-123")
 }
 

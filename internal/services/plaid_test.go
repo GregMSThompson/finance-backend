@@ -3,13 +3,12 @@ package services
 import (
 	"context"
 	"errors"
-	"log/slog"
 	"testing"
 	"time"
 
 	"github.com/GregMSThompson/finance-backend/internal/dto"
 	"github.com/GregMSThompson/finance-backend/internal/models"
-	"github.com/GregMSThompson/finance-backend/pkg/logger"
+	"github.com/GregMSThompson/finance-backend/pkg/helpers"
 )
 
 // --- fakes ---
@@ -97,11 +96,10 @@ func TestExchangePublicTokenStoresBank(t *testing.T) {
 	pl := &fakePlaid{itemID: "item-1", accessToken: "at-123"}
 	banks := &fakeBankStore{}
 	txs := &fakeTxStore{}
-	log := slog.New(logger.NewTestHandler(slog.LevelInfo))
 
-	svc := NewPlaidService(log, pl, banks, txs)
+	svc := NewPlaidService(pl, banks, txs)
 
-	ctx := logger.ToContext(context.Background(), log)
+	ctx := helpers.TestCtx()
 	_, err := svc.ExchangePublicToken(ctx, "uid-1", "public-xyz", "Chase")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -127,13 +125,12 @@ func TestSyncTransactionsUsesCursorAndSetsNewCursor(t *testing.T) {
 	}
 	banks := &fakeBankStore{list: []*models.Bank{{BankID: "item-1", PlaidPublicToken: "at-123"}}}
 	txs := &fakeTxStore{cursor: "prev-cursor"}
-	log := slog.New(logger.NewTestHandler(slog.LevelInfo))
 
-	svc := NewPlaidService(log, pl, banks, txs)
+	svc := NewPlaidService(pl, banks, txs)
 	now := time.Unix(1000, 0)
 	svc.clockNow = func() time.Time { return now }
 
-	ctx := logger.ToContext(context.Background(), log)
+	ctx := helpers.TestCtx()
 	res, err := svc.SyncTransactions(ctx, "uid-1", nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -154,10 +151,9 @@ func TestSyncTransactionsPropagatesErrors(t *testing.T) {
 	pl := &fakePlaid{}
 	banks := &fakeBankStore{err: errors.New("boom")}
 	txs := &fakeTxStore{}
-	log := slog.New(logger.NewTestHandler(slog.LevelInfo))
 
-	svc := NewPlaidService(log, pl, banks, txs)
-	ctx := logger.ToContext(context.Background(), log)
+	svc := NewPlaidService(pl, banks, txs)
+	ctx := helpers.TestCtx()
 	_, err := svc.SyncTransactions(ctx, "uid-1", nil)
 	if err == nil {
 		t.Fatalf("expected error, got nil")
@@ -168,10 +164,9 @@ func TestExchangePublicTokenPropagatesExchangeError(t *testing.T) {
 	pl := &fakePlaid{exchangeErr: errors.New("plaid down")}
 	banks := &fakeBankStore{}
 	txs := &fakeTxStore{}
-	log := slog.New(logger.NewTestHandler(slog.LevelInfo))
 
-	svc := NewPlaidService(log, pl, banks, txs)
-	ctx := logger.ToContext(context.Background(), log)
+	svc := NewPlaidService(pl, banks, txs)
+	ctx := helpers.TestCtx()
 	_, err := svc.ExchangePublicToken(ctx, "uid-1", "public-xyz", "Chase")
 	if err == nil {
 		t.Fatalf("expected error")
@@ -185,10 +180,9 @@ func TestExchangePublicTokenPropagatesCreateError(t *testing.T) {
 	pl := &fakePlaid{itemID: "item-1", accessToken: "at-123"}
 	banks := &fakeBankStore{err: errors.New("create failed")}
 	txs := &fakeTxStore{}
-	log := slog.New(logger.NewTestHandler(slog.LevelInfo))
 
-	svc := NewPlaidService(log, pl, banks, txs)
-	ctx := logger.ToContext(context.Background(), log)
+	svc := NewPlaidService(pl, banks, txs)
+	ctx := helpers.TestCtx()
 	_, err := svc.ExchangePublicToken(ctx, "uid-1", "public-xyz", "Chase")
 	if err == nil {
 		t.Fatalf("expected error")
@@ -199,10 +193,9 @@ func TestSyncTransactionsMissingAccessToken(t *testing.T) {
 	pl := &fakePlaid{}
 	banks := &fakeBankStore{list: []*models.Bank{{BankID: "item-1", PlaidPublicToken: ""}}}
 	txs := &fakeTxStore{}
-	log := slog.New(logger.NewTestHandler(slog.LevelInfo))
 
-	svc := NewPlaidService(log, pl, banks, txs)
-	ctx := logger.ToContext(context.Background(), log)
+	svc := NewPlaidService(pl, banks, txs)
+	ctx := helpers.TestCtx()
 	_, err := svc.SyncTransactions(ctx, "uid-1", nil)
 	if err == nil {
 		t.Fatalf("expected error")
@@ -213,10 +206,9 @@ func TestSyncTransactionsGetCursorError(t *testing.T) {
 	pl := &fakePlaid{}
 	banks := &fakeBankStore{list: []*models.Bank{{BankID: "item-1", PlaidPublicToken: "at-123"}}}
 	txs := &fakeTxStore{getErr: errors.New("get cursor failed")}
-	log := slog.New(logger.NewTestHandler(slog.LevelInfo))
 
-	svc := NewPlaidService(log, pl, banks, txs)
-	ctx := logger.ToContext(context.Background(), log)
+	svc := NewPlaidService(pl, banks, txs)
+	ctx := helpers.TestCtx()
 	_, err := svc.SyncTransactions(ctx, "uid-1", nil)
 	if err == nil {
 		t.Fatalf("expected error")
@@ -227,10 +219,9 @@ func TestSyncTransactionsPlaidError(t *testing.T) {
 	pl := &fakePlaid{syncErr: errors.New("plaid sync failed")}
 	banks := &fakeBankStore{list: []*models.Bank{{BankID: "item-1", PlaidPublicToken: "at-123"}}}
 	txs := &fakeTxStore{}
-	log := slog.New(logger.NewTestHandler(slog.LevelInfo))
 
-	svc := NewPlaidService(log, pl, banks, txs)
-	ctx := logger.ToContext(context.Background(), log)
+	svc := NewPlaidService(pl, banks, txs)
+	ctx := helpers.TestCtx()
 	_, err := svc.SyncTransactions(ctx, "uid-1", nil)
 	if err == nil {
 		t.Fatalf("expected error")
@@ -245,10 +236,9 @@ func TestSyncTransactionsUpsertError(t *testing.T) {
 	}
 	banks := &fakeBankStore{list: []*models.Bank{{BankID: "item-1", PlaidPublicToken: "at-123"}}}
 	txs := &fakeTxStore{upsertErr: errors.New("upsert failed")}
-	log := slog.New(logger.NewTestHandler(slog.LevelInfo))
 
-	svc := NewPlaidService(log, pl, banks, txs)
-	ctx := logger.ToContext(context.Background(), log)
+	svc := NewPlaidService(pl, banks, txs)
+	ctx := helpers.TestCtx()
 	_, err := svc.SyncTransactions(ctx, "uid-1", nil)
 	if err == nil {
 		t.Fatalf("expected error")
@@ -263,10 +253,9 @@ func TestSyncTransactionsSetCursorError(t *testing.T) {
 	}
 	banks := &fakeBankStore{list: []*models.Bank{{BankID: "item-1", PlaidPublicToken: "at-123"}}}
 	txs := &fakeTxStore{setCurErr: errors.New("set cursor failed")}
-	log := slog.New(logger.NewTestHandler(slog.LevelInfo))
 
-	svc := NewPlaidService(log, pl, banks, txs)
-	ctx := logger.ToContext(context.Background(), log)
+	svc := NewPlaidService(pl, banks, txs)
+	ctx := helpers.TestCtx()
 	_, err := svc.SyncTransactions(ctx, "uid-1", nil)
 	if err == nil {
 		t.Fatalf("expected error")

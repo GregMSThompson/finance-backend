@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/GregMSThompson/finance-backend/internal/models"
+	"github.com/GregMSThompson/finance-backend/pkg/helpers"
 	"github.com/GregMSThompson/finance-backend/pkg/logger"
 )
 
@@ -34,9 +35,9 @@ func newTestLogger() *slog.Logger {
 
 func TestUserServiceCreateUser(t *testing.T) {
 	store := &stubUserStore{}
-	svc := NewUserService(newTestLogger(), store)
+	svc := NewUserService(store)
 
-	ctx := logger.ToContext(context.Background(), newTestLogger())
+	ctx := helpers.TestCtx()
 	now := time.Now()
 
 	err := svc.CreateUser(ctx, "uid-123", "user@example.com", "Jane", "Doe")
@@ -71,9 +72,9 @@ func TestUserServiceCreateUser(t *testing.T) {
 
 func TestUserServiceCreateUserStoreError(t *testing.T) {
 	store := &stubUserStore{err: errors.New("store failure")}
-	svc := NewUserService(newTestLogger(), store)
+	svc := NewUserService(store)
 
-	ctx := logger.ToContext(context.Background(), newTestLogger())
+	ctx := helpers.TestCtx()
 	err := svc.CreateUser(ctx, "uid-456", "user2@example.com", "John", "Smith")
 
 	if err == nil {

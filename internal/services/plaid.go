@@ -3,7 +3,6 @@ package services
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"time"
 
 	"github.com/GregMSThompson/finance-backend/internal/dto"
@@ -35,16 +34,14 @@ type plaidClient interface {
 }
 
 type plaidService struct {
-	log      *slog.Logger
 	plaid    plaidClient
 	banks    bankPSStore
 	txs      transactionPSStore
 	clockNow func() time.Time
 }
 
-func NewPlaidService(log *slog.Logger, plaid plaidClient, banks bankPSStore, txs transactionPSStore) *plaidService {
+func NewPlaidService(plaid plaidClient, banks bankPSStore, txs transactionPSStore) *plaidService {
 	return &plaidService{
-		log:      log,
 		plaid:    plaid,
 		banks:    banks,
 		txs:      txs,
