@@ -11,11 +11,15 @@ import (
 )
 
 type fakeAnalyticsStore struct {
-	txs []*models.Transaction
-	err error
+	txs      []*models.Transaction
+	err      error
+	lastUID  string
+	lastQuery dto.TransactionQuery
 }
 
 func (f *fakeAnalyticsStore) Query(ctx context.Context, uid string, q dto.TransactionQuery, handle func(*models.Transaction) error) error {
+	f.lastUID = uid
+	f.lastQuery = q
 	for _, tx := range f.txs {
 		if err := handle(tx); err != nil {
 			return err
@@ -113,5 +117,64 @@ func TestAnalyticsTransactions(t *testing.T) {
 	}
 	if len(got.Transactions) != 2 {
 		t.Fatalf("transactions length mismatch: got %d", len(got.Transactions))
+	}
+}
+
+func TestAnalyticsSpendTotalPropagatesStoreError(t *testing.T) {
+	store := &fakeAnalyticsStore{
+		err: errors.New("store down"),
+	}
+	svc := NewAnalyticsService(store)
+
+	_, err := svc.GetSpendTotal(context.Background(), "user", dto.AnalyticsSpendTotalArgs{})
+	if err == nil {
+		t.Fatalf("expected error")
+	}
+}
+
+func TestAnalyticsTransactionsPassesFilters(t *testing.T) {
+	store := &fakeAnalyticsStore{}
+	svc := NewAnalyticsService(store)
+
+	pending := true
+	primary := "food"
+	bankID := "bank-1"
+	from := "2025-01-01"
+	to := "2025-01-31"
+	args := dto.AnalyticsTransactionsArgs{
+		Pending:    &pending,
+		PFCPrimary: &primary,
+		BankID:     &bankID,
+		DateFrom:   &from,
+		DateTo:     &to,
+		OrderBy:    "amount",
+		Desc:       true,
+		Limit:      5,
+	}
+
+	_, err := svc.GetTransactions(context.Background(), "user-123", args)
+	if err != nil {
+		t.Fatalf("GetTransactions error: %v", err)
+	}
+	if store.lastUID != "user-123" {
+		t.Fatalf("uid mismatch: %q", store.lastUID)
+	}
+	if store.lastQuery.OrderBy != "amount" || !store.lastQuery.Desc || store.lastQuery.Limit != 5 {
+		t.Fatalf("order/limit mismatch: %+v", store.lastQuery)
+	}
+	if store.lastQuery.Pending == nil || *store.lastQuery.Pending != true {
+		t.Fatalf("pending mismatch: %+v", store.lastQuery.Pending)
+	}
+	if store.lastQuery.PFCPrimary == nil || *store.lastQuery.PFCPrimary != "food" {
+		t.Fatalf("pfcPrimary mismatch: %+v", store.lastQuery.PFCPrimary)
+	}
+	if store.lastQuery.BankID == nil || *store.lastQuery.BankID != "bank-1" {
+		t.Fatalf("bankId mismatch: %+v", store.lastQuery.BankID)
+	}
+	if store.lastQuery.DateFrom == nil || *store.lastQuery.DateFrom != "2025-01-01" {
+		t.Fatalf("dateFrom mismatch: %+v", store.lastQuery.DateFrom)
+	}
+	if store.lastQuery.DateTo == nil || *store.lastQuery.DateTo != "2025-01-31" {
+		t.Fatalf("dateTo mismatch: %+v", store.lastQuery.DateTo)
 	}
 }

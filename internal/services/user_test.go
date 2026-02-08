@@ -36,7 +36,7 @@ func TestUserServiceCreateUser(t *testing.T) {
 	store := &stubUserStore{}
 	svc := NewUserService(newTestLogger(), store)
 
-	ctx := context.Background()
+	ctx := logger.ToContext(context.Background(), newTestLogger())
 	now := time.Now()
 
 	err := svc.CreateUser(ctx, "uid-123", "user@example.com", "Jane", "Doe")
@@ -73,7 +73,7 @@ func TestUserServiceCreateUserStoreError(t *testing.T) {
 	store := &stubUserStore{err: errors.New("store failure")}
 	svc := NewUserService(newTestLogger(), store)
 
-	ctx := context.Background()
+	ctx := logger.ToContext(context.Background(), newTestLogger())
 	err := svc.CreateUser(ctx, "uid-456", "user2@example.com", "John", "Smith")
 
 	if err == nil {

@@ -4,15 +4,18 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/GregMSThompson/finance-backend/internal/dto"
 	"github.com/GregMSThompson/finance-backend/internal/middleware"
 	"github.com/GregMSThompson/finance-backend/internal/models"
 	"github.com/GregMSThompson/finance-backend/internal/response"
+	"github.com/GregMSThompson/finance-backend/pkg/logger"
 )
 
 // fakes implementing handler interfaces
@@ -56,9 +59,28 @@ type fakeBankSvc struct {
 func (f *fakeBankSvc) ListBanks(ctx context.Context, uid string) ([]*models.Bank, error) { return f.banks, f.err }
 func (f *fakeBankSvc) DeleteBank(ctx context.Context, uid, bankID string) error          { return f.err }
 
+type plaidStubResponseHandler struct {
+	handleErrorCalled bool
+	handleError       error
+}
+
+func (s *plaidStubResponseHandler) WriteSuccess(w http.ResponseWriter, r *http.Request, status int, data any) {
+	w.WriteHeader(status)
+}
+
+func (s *plaidStubResponseHandler) WriteError(w http.ResponseWriter, r *http.Request, status int, code, message string) {
+	w.WriteHeader(status)
+}
+
+func (s *plaidStubResponseHandler) HandleError(w http.ResponseWriter, r *http.Request, err error) {
+	s.handleErrorCalled = true
+	s.handleError = err
+	w.WriteHeader(http.StatusInternalServerError)
+}
+
 // helper to build handler
 func newTestPlaidHandler(p *fakePlaidSvc, b *fakeBankSvc) *plaidHandlers {
-	log := slog.New(slog.NewTextHandler(testDiscard{}, nil))
+	log := slog.New(logger.NewTestHandler(slog.LevelInfo))
 	deps := &Deps{
 		ResponseHandler: response.New(log),
 		PlaidSvc:        p,
@@ -67,7 +89,18 @@ func newTestPlaidHandler(p *fakePlaidSvc, b *fakeBankSvc) *plaidHandlers {
 	return NewPlaidHandlers(deps)
 }
 
+func newTestPlaidHandlerWithResp(p *fakePlaidSvc, b *fakeBankSvc, resp *plaidStubResponseHandler) *plaidHandlers {
+	deps := &Deps{
+		ResponseHandler: resp,
+		PlaidSvc:        p,
+		BankSvc:         b,
+	}
+	return NewPlaidHandlers(deps)
+}
+
 func ctxWithUID(ctx context.Context) context.Context {
+	log := slog.New(logger.NewTestHandler(slog.LevelInfo))
+	ctx = logger.ToContext(ctx, log)
 	return context.WithValue(ctx, middleware.UIDKey, "uid-123")
 }
 
@@ -129,7 +162,82 @@ func TestSyncTransactionsHandler(t *testing.T) {
 	}
 }
 
-// discard logger output in tests
-type testDiscard struct{}
+func TestCreateLinkTokenHandlerServiceError(t *testing.T) {
+	p := &fakePlaidSvc{err: errors.New("boom")}
+	resp := &plaidStubResponseHandler{}
+	h := newTestPlaidHandlerWithResp(p, &fakeBankSvc{}, resp)
 
-func (testDiscard) Write(p []byte) (int, error) { return len(p), nil }
+	req := httptest.NewRequest(http.MethodPost, "/plaid/link-token", nil).WithContext(ctxWithUID(context.Background()))
+	rr := httptest.NewRecorder()
+
+	h.CreateLinkToken(rr, req)
+
+	if !resp.handleErrorCalled {
+		t.Fatalf("expected HandleError to be called")
+	}
+}
+
+func TestLinkBankHandlerInvalidJSON(t *testing.T) {
+	p := &fakePlaidSvc{}
+	resp := &plaidStubResponseHandler{}
+	h := newTestPlaidHandlerWithResp(p, &fakeBankSvc{}, resp)
+
+	req := httptest.NewRequest(http.MethodPost, "/banks", strings.NewReader("not-json")).WithContext(ctxWithUID(context.Background()))
+	rr := httptest.NewRecorder()
+
+	h.LinkBank(rr, req)
+
+	if !resp.handleErrorCalled {
+		t.Fatalf("expected HandleError to be called")
+	}
+	if p.gotExchange.uid != "" {
+		t.Fatalf("service should not be called on invalid JSON")
+	}
+}
+
+func TestListBanksHandlerServiceError(t *testing.T) {
+	p := &fakePlaidSvc{}
+	b := &fakeBankSvc{err: errors.New("boom")}
+	resp := &plaidStubResponseHandler{}
+	h := newTestPlaidHandlerWithResp(p, b, resp)
+
+	req := httptest.NewRequest(http.MethodGet, "/banks", nil).WithContext(ctxWithUID(context.Background()))
+	rr := httptest.NewRecorder()
+
+	h.ListBanks(rr, req)
+
+	if !resp.handleErrorCalled {
+		t.Fatalf("expected HandleError to be called")
+	}
+}
+
+func TestDeleteBankHandlerServiceError(t *testing.T) {
+	p := &fakePlaidSvc{}
+	b := &fakeBankSvc{err: errors.New("boom")}
+	resp := &plaidStubResponseHandler{}
+	h := newTestPlaidHandlerWithResp(p, b, resp)
+
+	req := httptest.NewRequest(http.MethodDelete, "/banks/b1", nil).WithContext(ctxWithUID(context.Background()))
+	rr := httptest.NewRecorder()
+
+	h.DeleteBank(rr, req)
+
+	if !resp.handleErrorCalled {
+		t.Fatalf("expected HandleError to be called")
+	}
+}
+
+func TestSyncTransactionsHandlerInvalidJSON(t *testing.T) {
+	p := &fakePlaidSvc{}
+	resp := &plaidStubResponseHandler{}
+	h := newTestPlaidHandlerWithResp(p, &fakeBankSvc{}, resp)
+
+	req := httptest.NewRequest(http.MethodPost, "/transactions/sync", strings.NewReader("not-json")).WithContext(ctxWithUID(context.Background()))
+	rr := httptest.NewRecorder()
+
+	h.SyncTransactions(rr, req)
+
+	if !resp.handleErrorCalled {
+		t.Fatalf("expected HandleError to be called")
+	}
+}

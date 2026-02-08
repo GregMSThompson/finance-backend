@@ -50,7 +50,8 @@ func TestBankServiceListBanks(t *testing.T) {
 	expected := []*models.Bank{{BankID: "b1"}, {BankID: "b2"}}
 	svc := NewBankService(testLogger(), &bankFakeBankStore{list: expected}, &bankFakeTxStore{})
 
-	got, err := svc.ListBanks(context.Background(), "uid-1")
+	ctx := logger.ToContext(context.Background(), testLogger())
+	got, err := svc.ListBanks(ctx, "uid-1")
 	if err != nil {
 		t.Fatalf("ListBanks returned error: %v", err)
 	}
@@ -64,7 +65,8 @@ func TestBankServiceDeleteBankSuccess(t *testing.T) {
 	txs := &bankFakeTxStore{}
 	svc := NewBankService(testLogger(), banks, txs)
 
-	if err := svc.DeleteBank(context.Background(), "uid-1", "bank-1"); err != nil {
+	ctx := logger.ToContext(context.Background(), testLogger())
+	if err := svc.DeleteBank(ctx, "uid-1", "bank-1"); err != nil {
 		t.Fatalf("DeleteBank returned error: %v", err)
 	}
 	if len(txs.calls) != 2 {
@@ -84,7 +86,8 @@ func TestBankServiceDeleteBankStopsOnDeleteByBankError(t *testing.T) {
 	txs := &bankFakeTxStore{deleteByBankErr: expectedErr}
 	svc := NewBankService(testLogger(), banks, txs)
 
-	if err := svc.DeleteBank(context.Background(), "uid-1", "bank-1"); err != expectedErr {
+	ctx := logger.ToContext(context.Background(), testLogger())
+	if err := svc.DeleteBank(ctx, "uid-1", "bank-1"); err != expectedErr {
 		t.Fatalf("DeleteBank error = %v, want %v", err, expectedErr)
 	}
 	if len(txs.calls) != 1 || txs.calls[0] != "txs:uid-1:bank-1" {
@@ -101,7 +104,8 @@ func TestBankServiceDeleteBankStopsOnDeleteCursorError(t *testing.T) {
 	txs := &bankFakeTxStore{deleteCursorErr: expectedErr}
 	svc := NewBankService(testLogger(), banks, txs)
 
-	if err := svc.DeleteBank(context.Background(), "uid-1", "bank-1"); err != expectedErr {
+	ctx := logger.ToContext(context.Background(), testLogger())
+	if err := svc.DeleteBank(ctx, "uid-1", "bank-1"); err != expectedErr {
 		t.Fatalf("DeleteBank error = %v, want %v", err, expectedErr)
 	}
 	if len(txs.calls) != 2 {
