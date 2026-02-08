@@ -256,71 +256,94 @@ func (s *aiService) saveMessage(ctx context.Context, uid, sessionID string, msg 
 func (s *aiService) executeTool(ctx context.Context, uid string, call dto.VertexToolCall) (dto.VertexToolResult, error) {
 	switch call.Name {
 	case "get_spend_total":
-		args, err := decodeArgs[dto.AnalyticsSpendTotalArgs](call.Args)
-		if err != nil {
-			return dto.VertexToolResult{}, err
-		}
-		if err := s.applyDefaults(&args.Pending, &args.DateFrom, &args.DateTo); err != nil {
-			return dto.VertexToolResult{}, err
-		}
-		if err := validatePrimary(args.PFCPrimary); err != nil {
-			return dto.VertexToolResult{}, err
-		}
-		result, err := s.analysis.GetSpendTotal(ctx, uid, args)
-		if err != nil {
-			return dto.VertexToolResult{}, err
-		}
-		payload, err := toMap(result)
-		if err != nil {
-			return dto.VertexToolResult{}, err
-		}
-		return dto.VertexToolResult{Name: call.Name, Response: payload}, nil
+		return executeAnalyticsTool(
+			ctx,
+			uid,
+			call,
+			func(a *dto.AnalyticsSpendTotalArgs) **bool { return &a.Pending },
+			func(a *dto.AnalyticsSpendTotalArgs) **string { return &a.DateFrom },
+			func(a *dto.AnalyticsSpendTotalArgs) **string { return &a.DateTo },
+			func(a *dto.AnalyticsSpendTotalArgs) *string { return a.PFCPrimary },
+			nil,
+			s.applyDefaults,
+			s.analysis.GetSpendTotal,
+		)
 	case "get_spend_breakdown":
-		args, err := decodeArgs[dto.AnalyticsSpendBreakdownArgs](call.Args)
-		if err != nil {
-			return dto.VertexToolResult{}, err
-		}
-		if err := s.applyDefaults(&args.Pending, &args.DateFrom, &args.DateTo); err != nil {
-			return dto.VertexToolResult{}, err
-		}
-		if err := validatePrimary(args.PFCPrimary); err != nil {
-			return dto.VertexToolResult{}, err
-		}
-		result, err := s.analysis.GetSpendBreakdown(ctx, uid, args)
-		if err != nil {
-			return dto.VertexToolResult{}, err
-		}
-		payload, err := toMap(result)
-		if err != nil {
-			return dto.VertexToolResult{}, err
-		}
-		return dto.VertexToolResult{Name: call.Name, Response: payload}, nil
+		return executeAnalyticsTool(
+			ctx,
+			uid,
+			call,
+			func(a *dto.AnalyticsSpendBreakdownArgs) **bool { return &a.Pending },
+			func(a *dto.AnalyticsSpendBreakdownArgs) **string { return &a.DateFrom },
+			func(a *dto.AnalyticsSpendBreakdownArgs) **string { return &a.DateTo },
+			func(a *dto.AnalyticsSpendBreakdownArgs) *string { return a.PFCPrimary },
+			func(a *dto.AnalyticsSpendBreakdownArgs) error {
+				if a.GroupBy == "" {
+					return errs.NewValidationError("groupBy is required")
+				}
+				return nil
+			},
+			s.applyDefaults,
+			s.analysis.GetSpendBreakdown,
+		)
 	case "get_transactions":
-		args, err := decodeArgs[dto.AnalyticsTransactionsArgs](call.Args)
-		if err != nil {
-			return dto.VertexToolResult{}, err
-		}
-		if err := s.applyDefaults(&args.Pending, &args.DateFrom, &args.DateTo); err != nil {
-			return dto.VertexToolResult{}, err
-		}
-		if args.Limit == 0 {
-			args.Limit = 25
-		}
-		if err := validatePrimary(args.PFCPrimary); err != nil {
-			return dto.VertexToolResult{}, err
-		}
-		result, err := s.analysis.GetTransactions(ctx, uid, args)
-		if err != nil {
-			return dto.VertexToolResult{}, err
-		}
-		payload, err := toMap(result)
-		if err != nil {
-			return dto.VertexToolResult{}, err
-		}
-		return dto.VertexToolResult{Name: call.Name, Response: payload}, nil
+		return executeAnalyticsTool(
+			ctx,
+			uid,
+			call,
+			func(a *dto.AnalyticsTransactionsArgs) **bool { return &a.Pending },
+			func(a *dto.AnalyticsTransactionsArgs) **string { return &a.DateFrom },
+			func(a *dto.AnalyticsTransactionsArgs) **string { return &a.DateTo },
+			func(a *dto.AnalyticsTransactionsArgs) *string { return a.PFCPrimary },
+			nil,
+			s.applyDefaults,
+			s.analysis.GetTransactions,
+		)
 	default:
 		return dto.VertexToolResult{}, errs.NewValidationError(fmt.Sprintf("unsupported tool: %s", call.Name))
 	}
+}
+
+func executeAnalyticsTool[T any, R any](
+	ctx context.Context,
+	uid string,
+	call dto.VertexToolCall,
+	pending func(*T) **bool,
+	dateFrom func(*T) **string,
+	dateTo func(*T) **string,
+	primary func(*T) *string,
+	validate func(*T) error,
+	applyDefaults func(pending **bool, dateFrom **string, dateTo **string) error,
+	exec func(context.Context, string, T) (R, error),
+) (dto.VertexToolResult, error) {
+	// This helper centralizes shared tool prep (decode, defaults, primary validation) across
+	// the analytics tools. It uses small accessors because Go generics can't access struct
+	// fields by name, and it needs ** pointers to set default values when optional fields
+	// are nil.
+	args, err := decodeArgs[T](call.Args)
+	if err != nil {
+		return dto.VertexToolResult{}, err
+	}
+	if err := applyDefaults(pending(&args), dateFrom(&args), dateTo(&args)); err != nil {
+		return dto.VertexToolResult{}, err
+	}
+	if err := validatePrimary(primary(&args)); err != nil {
+		return dto.VertexToolResult{}, err
+	}
+	if validate != nil {
+		if err := validate(&args); err != nil {
+			return dto.VertexToolResult{}, err
+		}
+	}
+	result, err := exec(ctx, uid, args)
+	if err != nil {
+		return dto.VertexToolResult{}, err
+	}
+	payload, err := toMap(result)
+	if err != nil {
+		return dto.VertexToolResult{}, err
+	}
+	return dto.VertexToolResult{Name: call.Name, Response: payload}, nil
 }
 
 func toolSchemas() []dto.VertexTool {
