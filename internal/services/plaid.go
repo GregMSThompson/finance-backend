@@ -13,20 +13,20 @@ import (
 
 // --- Dependencies (minimal interfaces scoped to this service) ---
 
-// bankPSStore is the slice of methods Plaid needs; Firestore impl just has to satisfy this.
+// bankPSStore keeps the service decoupled from the concrete storage implementation.
 type bankPSStore interface {
 	Create(ctx context.Context, uid string, bank *models.Bank) error
 	List(ctx context.Context, uid string) ([]*models.Bank, error)
 }
 
-// transactionPSStore is what sync uses; shape it to your Firestore model.
+// transactionPSStore is the minimal surface required for sync operations.
 type transactionPSStore interface {
 	UpsertBatch(ctx context.Context, uid string, txs []models.Transaction) error
 	GetCursor(ctx context.Context, uid, bankID string) (string, error)
 	SetCursor(ctx context.Context, uid, bankID, cursor string) error
 }
 
-// plaidClient plaid sdk adapter
+// plaidClient is the Plaid SDK adapter surface used by this service.
 type plaidClient interface {
 	CreateLinkToken(ctx context.Context, uid string) (linkToken string, err error)
 	ExchangePublicToken(ctx context.Context, publicToken string) (itemID string, accessToken string, err error)

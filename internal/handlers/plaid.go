@@ -112,7 +112,7 @@ func (h *plaidHandlers) SyncTransactions(w http.ResponseWriter, r *http.Request)
 	var body struct {
 		BankID *string `json:"bankId,omitempty"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil && errors.Is(err, io.EOF) { // allow empty body
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil && !errors.Is(err, io.EOF) { // allow empty body
 		h.ResponseHandler.HandleError(w, r, err)
 		return
 	}

@@ -178,11 +178,9 @@ func (s *aiService) Query(ctx context.Context, uid, sessionID, message string) (
 func convertMessagesToContents(history []models.AIMessage, currentMessage string) []dto.VertexContent {
 	contents := make([]dto.VertexContent, 0, len(history)+1)
 
-	// Convert history messages to structured contents
 	for _, msg := range history {
 		switch msg.Role {
 		case "user":
-			// User message with text
 			contents = append(contents, dto.VertexContent{
 				Role: "user",
 				Parts: []dto.VertexPart{
@@ -191,7 +189,6 @@ func convertMessagesToContents(history []models.AIMessage, currentMessage string
 			})
 
 		case "assistant":
-			// Assistant response with text
 			if msg.Content != "" {
 				contents = append(contents, dto.VertexContent{
 					Role: "model",
@@ -202,8 +199,7 @@ func convertMessagesToContents(history []models.AIMessage, currentMessage string
 			}
 
 		case "tool":
-			// Tool calls and results need special handling
-			// Tool call from assistant
+			// Tool calls and results need explicit function call/response parts.
 			if msg.ToolName != "" && msg.ToolArgs != nil {
 				contents = append(contents, dto.VertexContent{
 					Role: "model",
@@ -216,7 +212,6 @@ func convertMessagesToContents(history []models.AIMessage, currentMessage string
 				})
 			}
 
-			// Tool result from user
 			if msg.ToolName != "" && msg.ToolResult != nil {
 				contents = append(contents, dto.VertexContent{
 					Role: "user",
@@ -231,7 +226,6 @@ func convertMessagesToContents(history []models.AIMessage, currentMessage string
 		}
 	}
 
-	// Add the current user message
 	contents = append(contents, dto.VertexContent{
 		Role: "user",
 		Parts: []dto.VertexPart{

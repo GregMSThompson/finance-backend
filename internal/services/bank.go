@@ -34,7 +34,7 @@ func (s *bankService) ListBanks(ctx context.Context, uid string) ([]*models.Bank
 }
 
 func (s *bankService) DeleteBank(ctx context.Context, uid, bankID string) error {
-	// TODO: Make deletions atomic or add retries to avoid partial cleanup on failure.
+	// TODO: Make deletions retryable or async; partial cleanup is possible mid-flight.
 	if err := s.txs.DeleteByBank(ctx, uid, bankID); err != nil {
 		return err
 	}

@@ -75,7 +75,7 @@ func (a *Adapter) GenerateContent(ctx context.Context, req dto.VertexGenerateReq
 		}
 	}
 
-	// Only process expensive debug data if debug is enabled
+	// Only build tool summaries for debug logs when debug is enabled.
 	if logger.IsDebugEnabled(ctx) {
 		log := logger.FromContext(ctx)
 		toolSummary := make([]map[string]any, 0, len(req.Tools))
@@ -161,7 +161,7 @@ func (a *Adapter) GenerateContent(ctx context.Context, req dto.VertexGenerateReq
 		return out, errs.NewExternalServiceError("vertex", "response blocked by safety filters", false, nil)
 	}
 
-	// Only process expensive debug data if debug is enabled
+	// Only build response-part summaries for debug logs when debug is enabled.
 	if logger.IsDebugEnabled(ctx) {
 		log := logger.FromContext(ctx)
 		finishReasons := make([]string, 0, len(resp.Candidates))
