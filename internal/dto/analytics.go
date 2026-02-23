@@ -6,6 +6,7 @@ type AnalyticsSpendTotalArgs struct {
 	Pending    *bool
 	PFCPrimary *string
 	BankID     *string
+	Merchant   *string
 	DateFrom   *string
 	DateTo     *string
 }
@@ -44,6 +45,7 @@ type AnalyticsTransactionsArgs struct {
 	Pending    *bool
 	PFCPrimary *string
 	BankID     *string
+	Merchant   *string
 	DateFrom   *string
 	DateTo     *string
 	OrderBy    string

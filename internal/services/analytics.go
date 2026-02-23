@@ -33,6 +33,7 @@ func (s *analyticsService) GetSpendTotal(ctx context.Context, uid string, args d
 		Pending:    args.Pending,
 		PFCPrimary: args.PFCPrimary,
 		BankID:     args.BankID,
+		Merchant:   args.Merchant,
 		DateFrom:   args.DateFrom,
 		DateTo:     args.DateTo,
 	}, func(tx *models.Transaction) error {
@@ -101,6 +102,7 @@ func (s *analyticsService) GetTransactions(ctx context.Context, uid string, args
 		Pending:    args.Pending,
 		PFCPrimary: args.PFCPrimary,
 		BankID:     args.BankID,
+		Merchant:   args.Merchant,
 		DateFrom:   args.DateFrom,
 		DateTo:     args.DateTo,
 		OrderBy:    args.OrderBy,

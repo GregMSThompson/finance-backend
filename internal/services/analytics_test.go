@@ -139,12 +139,14 @@ func TestAnalyticsTransactionsPassesFilters(t *testing.T) {
 	pending := true
 	primary := "food"
 	bankID := "bank-1"
+	merchant := "amazon"
 	from := "2025-01-01"
 	to := "2025-01-31"
 	args := dto.AnalyticsTransactionsArgs{
 		Pending:    &pending,
 		PFCPrimary: &primary,
 		BankID:     &bankID,
+		Merchant:   &merchant,
 		DateFrom:   &from,
 		DateTo:     &to,
 		OrderBy:    "amount",
@@ -170,6 +172,37 @@ func TestAnalyticsTransactionsPassesFilters(t *testing.T) {
 	}
 	if store.lastQuery.BankID == nil || *store.lastQuery.BankID != "bank-1" {
 		t.Fatalf("bankId mismatch: %+v", store.lastQuery.BankID)
+	}
+	if store.lastQuery.Merchant == nil || *store.lastQuery.Merchant != "amazon" {
+		t.Fatalf("merchant mismatch: %+v", store.lastQuery.Merchant)
+	}
+	if store.lastQuery.DateFrom == nil || *store.lastQuery.DateFrom != "2025-01-01" {
+		t.Fatalf("dateFrom mismatch: %+v", store.lastQuery.DateFrom)
+	}
+	if store.lastQuery.DateTo == nil || *store.lastQuery.DateTo != "2025-01-31" {
+		t.Fatalf("dateTo mismatch: %+v", store.lastQuery.DateTo)
+	}
+}
+
+func TestAnalyticsSpendTotalPassesFilters(t *testing.T) {
+	store := &fakeAnalyticsStore{}
+	svc := NewAnalyticsService(store)
+
+	merchant := "starbucks"
+	from := "2025-01-01"
+	to := "2025-01-31"
+	args := dto.AnalyticsSpendTotalArgs{
+		Merchant: &merchant,
+		DateFrom: &from,
+		DateTo:   &to,
+	}
+
+	_, err := svc.GetSpendTotal(context.Background(), "user-123", args)
+	if err != nil {
+		t.Fatalf("GetSpendTotal error: %v", err)
+	}
+	if store.lastQuery.Merchant == nil || *store.lastQuery.Merchant != "starbucks" {
+		t.Fatalf("merchant mismatch: %+v", store.lastQuery.Merchant)
 	}
 	if store.lastQuery.DateFrom == nil || *store.lastQuery.DateFrom != "2025-01-01" {
 		t.Fatalf("dateFrom mismatch: %+v", store.lastQuery.DateFrom)

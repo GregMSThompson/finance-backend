@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"cloud.google.com/go/firestore"
@@ -12,6 +13,7 @@ import (
 	"github.com/GregMSThompson/finance-backend/internal/dto"
 	"github.com/GregMSThompson/finance-backend/internal/errs"
 	"github.com/GregMSThompson/finance-backend/internal/models"
+	"github.com/GregMSThompson/finance-backend/pkg/helpers"
 )
 
 type transactionStore struct {
@@ -114,6 +116,10 @@ func (s *transactionStore) query(ctx context.Context, uid string, q dto.Transact
 			if err := doc.DataTo(&tx); err != nil {
 				errCh <- errs.NewDatabaseError("read", "failed to parse transaction data", err)
 				return
+			}
+
+			if merchant := helpers.Value(q.Merchant); merchant != "" && !strings.Contains(strings.ToLower(tx.Name), strings.ToLower(merchant)) {
+				continue
 			}
 
 			select {
