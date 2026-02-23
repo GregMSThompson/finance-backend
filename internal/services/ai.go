@@ -23,6 +23,7 @@ type analyticsClient interface {
 	GetSpendTotal(ctx context.Context, uid string, args dto.AnalyticsSpendTotalArgs) (dto.AnalyticsSpendTotalResult, error)
 	GetSpendBreakdown(ctx context.Context, uid string, args dto.AnalyticsSpendBreakdownArgs) (dto.AnalyticsSpendBreakdownResult, error)
 	GetTransactions(ctx context.Context, uid string, args dto.AnalyticsTransactionsArgs) (dto.AnalyticsTransactionsResult, error)
+	GetPeriodComparison(ctx context.Context, uid string, args dto.AnalyticsPeriodComparisonArgs) (dto.AnalyticsPeriodComparisonResult, error)
 }
 
 type aiStore interface {
@@ -293,6 +294,29 @@ func (s *aiService) executeTool(ctx context.Context, uid string, call dto.Vertex
 			s.applyDefaults,
 			s.analysis.GetTransactions,
 		)
+	case "get_period_comparison":
+		args, err := decodeArgs[dto.AnalyticsPeriodComparisonArgs](call.Args)
+		if err != nil {
+			return dto.VertexToolResult{}, err
+		}
+		if args.Pending == nil {
+			args.Pending = helpers.Ptr(false)
+		}
+		if err := validatePrimary(args.PFCPrimary); err != nil {
+			return dto.VertexToolResult{}, err
+		}
+		if args.CurrentFrom == "" || args.CurrentTo == "" || args.PreviousFrom == "" || args.PreviousTo == "" {
+			return dto.VertexToolResult{}, errs.NewValidationError("currentFrom, currentTo, previousFrom, and previousTo are all required")
+		}
+		result, err := s.analysis.GetPeriodComparison(ctx, uid, args)
+		if err != nil {
+			return dto.VertexToolResult{}, err
+		}
+		payload, err := toMap(result)
+		if err != nil {
+			return dto.VertexToolResult{}, err
+		}
+		return dto.VertexToolResult{Name: call.Name, Response: payload}, nil
 	default:
 		return dto.VertexToolResult{}, errs.NewValidationError(fmt.Sprintf("unsupported tool: %s", call.Name))
 	}
@@ -395,6 +419,29 @@ func toolSchemas() []dto.VertexTool {
 				},
 			},
 		},
+		{
+			Name:        "get_period_comparison",
+			Description: "Compare spending totals between two explicit time periods with optional grouping.",
+			Parameters: &dto.VertexSchema{
+				Type: "object",
+				Properties: map[string]*dto.VertexSchema{
+					"currentFrom":  {Type: "string", Description: "YYYY-MM-DD start date of the current period. Required."},
+					"currentTo":    {Type: "string", Description: "YYYY-MM-DD end date of the current period. Required."},
+					"previousFrom": {Type: "string", Description: "YYYY-MM-DD start date of the previous period. Required."},
+					"previousTo":   {Type: "string", Description: "YYYY-MM-DD end date of the previous period. Required."},
+					"groupBy": {Type: "string", Enum: []string{
+						"pfcPrimary",
+						"merchant",
+						"day",
+					}, Description: "Optional. Group comparison by category, merchant, or day. Omit for totals only."},
+					"pfcPrimary": {Type: "string", Enum: taxonomy.PFCPrimaryList, Description: "Primary category filter."},
+					"pending":    {Type: "boolean", Description: "Defaults to false if omitted."},
+					"bankId":     {Type: "string", Description: "Filter by bank id."},
+					"merchant":   {Type: "string", Description: "Partial, case-insensitive merchant name filter."},
+				},
+				Required: []string{"currentFrom", "currentTo", "previousFrom", "previousTo"},
+			},
+		},
 	}
 }
 
@@ -471,9 +518,10 @@ func toMap(value any) (map[string]any, error) {
 
 func isValidToolName(name string) bool {
 	validTools := map[string]bool{
-		"get_spend_total":     true,
-		"get_spend_breakdown": true,
-		"get_transactions":    true,
+		"get_spend_total":      true,
+		"get_spend_breakdown":  true,
+		"get_transactions":     true,
+		"get_period_comparison": true,
 	}
 	return validTools[name]
 }

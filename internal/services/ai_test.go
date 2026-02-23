@@ -47,6 +47,10 @@ type fakeAnalyticsClient struct {
 	transactionsArgs  dto.AnalyticsTransactionsArgs
 	transactionsResp  dto.AnalyticsTransactionsResult
 	transactionsErr   error
+	comparisonCalls   int
+	comparisonArgs    dto.AnalyticsPeriodComparisonArgs
+	comparisonResp    dto.AnalyticsPeriodComparisonResult
+	comparisonErr     error
 }
 
 func (f *fakeAnalyticsClient) GetSpendTotal(ctx context.Context, uid string, args dto.AnalyticsSpendTotalArgs) (dto.AnalyticsSpendTotalResult, error) {
@@ -74,6 +78,15 @@ func (f *fakeAnalyticsClient) GetTransactions(ctx context.Context, uid string, a
 		return dto.AnalyticsTransactionsResult{}, f.transactionsErr
 	}
 	return f.transactionsResp, nil
+}
+
+func (f *fakeAnalyticsClient) GetPeriodComparison(ctx context.Context, uid string, args dto.AnalyticsPeriodComparisonArgs) (dto.AnalyticsPeriodComparisonResult, error) {
+	f.comparisonCalls++
+	f.comparisonArgs = args
+	if f.comparisonErr != nil {
+		return dto.AnalyticsPeriodComparisonResult{}, f.comparisonErr
+	}
+	return f.comparisonResp, nil
 }
 
 type fakeAIStore struct {

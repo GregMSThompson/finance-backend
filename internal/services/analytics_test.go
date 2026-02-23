@@ -8,6 +8,7 @@ import (
 	"github.com/GregMSThompson/finance-backend/internal/dto"
 	"github.com/GregMSThompson/finance-backend/internal/errs"
 	"github.com/GregMSThompson/finance-backend/internal/models"
+	"github.com/GregMSThompson/finance-backend/pkg/helpers"
 )
 
 type fakeAnalyticsStore struct {
@@ -209,5 +210,213 @@ func TestAnalyticsSpendTotalPassesFilters(t *testing.T) {
 	}
 	if store.lastQuery.DateTo == nil || *store.lastQuery.DateTo != "2025-01-31" {
 		t.Fatalf("dateTo mismatch: %+v", store.lastQuery.DateTo)
+	}
+}
+
+// funcAnalyticsStore routes each Query call through a user-supplied function,
+// allowing tests to return different transactions for different date ranges.
+type funcAnalyticsStore struct {
+	fn func(q dto.TransactionQuery) ([]*models.Transaction, error)
+}
+
+func (f *funcAnalyticsStore) Query(_ context.Context, _ string, q dto.TransactionQuery, handle func(*models.Transaction) error) error {
+	txs, err := f.fn(q)
+	if err != nil {
+		return err
+	}
+	for _, tx := range txs {
+		if err := handle(tx); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func TestGetPeriodComparisonBasicTotal(t *testing.T) {
+	store := &funcAnalyticsStore{
+		fn: func(q dto.TransactionQuery) ([]*models.Transaction, error) {
+			if helpers.Value(q.DateFrom) == "2025-02-01" {
+				return []*models.Transaction{
+					{Amount: 30, Currency: "USD"},
+					{Amount: 20, Currency: "USD"},
+				}, nil
+			}
+			return []*models.Transaction{
+				{Amount: 40, Currency: "USD"},
+			}, nil
+		},
+	}
+	svc := NewAnalyticsService(store)
+
+	got, err := svc.GetPeriodComparison(context.Background(), "user", dto.AnalyticsPeriodComparisonArgs{
+		CurrentFrom:  "2025-02-01",
+		CurrentTo:    "2025-02-28",
+		PreviousFrom: "2025-01-01",
+		PreviousTo:   "2025-01-31",
+	})
+	if err != nil {
+		t.Fatalf("GetPeriodComparison error: %v", err)
+	}
+
+	if got.Current.Total != 50 || got.Current.Count != 2 {
+		t.Fatalf("current mismatch: total=%v count=%v", got.Current.Total, got.Current.Count)
+	}
+	if got.Previous.Total != 40 || got.Previous.Count != 1 {
+		t.Fatalf("previous mismatch: total=%v count=%v", got.Previous.Total, got.Previous.Count)
+	}
+	if got.Change.AbsoluteChange != 10 {
+		t.Fatalf("absolute change mismatch: %v", got.Change.AbsoluteChange)
+	}
+	if got.Change.PercentageChange == nil {
+		t.Fatal("expected non-nil percentage change")
+	}
+	if helpers.Value(got.Change.PercentageChange) != 25 {
+		t.Fatalf("percentage change mismatch: %v", helpers.Value(got.Change.PercentageChange))
+	}
+	if got.Change.CountChange != 1 {
+		t.Fatalf("count change mismatch: %v", got.Change.CountChange)
+	}
+	if got.Current.Currency != "USD" {
+		t.Fatalf("currency mismatch: %q", got.Current.Currency)
+	}
+	if got.Current.Items != nil || got.Previous.Items != nil || got.Change.Items != nil {
+		t.Fatal("expected nil items when no groupBy")
+	}
+}
+
+func TestGetPeriodComparisonNilPercentageWhenPreviousZero(t *testing.T) {
+	store := &funcAnalyticsStore{
+		fn: func(q dto.TransactionQuery) ([]*models.Transaction, error) {
+			if helpers.Value(q.DateFrom) == "2025-02-01" {
+				return []*models.Transaction{
+					{Amount: 30, Currency: "USD"},
+				}, nil
+			}
+			return nil, nil
+		},
+	}
+	svc := NewAnalyticsService(store)
+
+	got, err := svc.GetPeriodComparison(context.Background(), "user", dto.AnalyticsPeriodComparisonArgs{
+		CurrentFrom:  "2025-02-01",
+		CurrentTo:    "2025-02-28",
+		PreviousFrom: "2025-01-01",
+		PreviousTo:   "2025-01-31",
+	})
+	if err != nil {
+		t.Fatalf("GetPeriodComparison error: %v", err)
+	}
+
+	if got.Change.PercentageChange != nil {
+		t.Fatalf("expected nil percentage change when previous=0, got %v", *got.Change.PercentageChange)
+	}
+	if got.Change.AbsoluteChange != 30 {
+		t.Fatalf("absolute change mismatch: %v", got.Change.AbsoluteChange)
+	}
+}
+
+func TestGetPeriodComparisonWithGroupBy(t *testing.T) {
+	store := &funcAnalyticsStore{
+		fn: func(q dto.TransactionQuery) ([]*models.Transaction, error) {
+			if helpers.Value(q.DateFrom) == "2025-02-01" {
+				return []*models.Transaction{
+					{Name: "Coffee", Amount: 5, Currency: "USD"},
+					{Name: "Lunch", Amount: 10, Currency: "USD"},
+				}, nil
+			}
+			return []*models.Transaction{
+				{Name: "Coffee", Amount: 4, Currency: "USD"},
+				{Name: "Dinner", Amount: 8, Currency: "USD"},
+			}, nil
+		},
+	}
+	svc := NewAnalyticsService(store)
+
+	got, err := svc.GetPeriodComparison(context.Background(), "user", dto.AnalyticsPeriodComparisonArgs{
+		CurrentFrom:  "2025-02-01",
+		CurrentTo:    "2025-02-28",
+		PreviousFrom: "2025-01-01",
+		PreviousTo:   "2025-01-31",
+		GroupBy:      "merchant",
+	})
+	if err != nil {
+		t.Fatalf("GetPeriodComparison error: %v", err)
+	}
+
+	if len(got.Current.Items) != 2 {
+		t.Fatalf("current items length mismatch: %d", len(got.Current.Items))
+	}
+	if len(got.Previous.Items) != 2 {
+		t.Fatalf("previous items length mismatch: %d", len(got.Previous.Items))
+	}
+	// Union of Coffee, Lunch, Dinner = 3 change items
+	if len(got.Change.Items) != 3 {
+		t.Fatalf("change items length mismatch: %d", len(got.Change.Items))
+	}
+
+	changeByKey := map[string]dto.BreakdownItemChange{}
+	for _, item := range got.Change.Items {
+		changeByKey[item.Key] = item
+	}
+
+	coffee := changeByKey["Coffee"]
+	if coffee.AbsoluteChange != 1 {
+		t.Fatalf("Coffee absolute change mismatch: %v", coffee.AbsoluteChange)
+	}
+	if coffee.PercentageChange == nil || helpers.Value(coffee.PercentageChange) != 25 {
+		t.Fatalf("Coffee percentage change mismatch: %v", coffee.PercentageChange)
+	}
+
+	lunch := changeByKey["Lunch"]
+	if lunch.AbsoluteChange != 10 {
+		t.Fatalf("Lunch absolute change mismatch: %v", lunch.AbsoluteChange)
+	}
+	if lunch.PercentageChange != nil {
+		t.Fatalf("Lunch expected nil percentage (previous=0), got %v", *lunch.PercentageChange)
+	}
+
+	dinner := changeByKey["Dinner"]
+	if dinner.AbsoluteChange != -8 {
+		t.Fatalf("Dinner absolute change mismatch: %v", dinner.AbsoluteChange)
+	}
+}
+
+func TestGetPeriodComparisonInvalidGroupBy(t *testing.T) {
+	store := &funcAnalyticsStore{fn: func(_ dto.TransactionQuery) ([]*models.Transaction, error) { return nil, nil }}
+	svc := NewAnalyticsService(store)
+
+	_, err := svc.GetPeriodComparison(context.Background(), "user", dto.AnalyticsPeriodComparisonArgs{
+		CurrentFrom:  "2025-02-01",
+		CurrentTo:    "2025-02-28",
+		PreviousFrom: "2025-01-01",
+		PreviousTo:   "2025-01-31",
+		GroupBy:      "unknown",
+	})
+	if err == nil {
+		t.Fatal("expected error for invalid groupBy")
+	}
+	var groupErr *errs.UnsupportedGroupByError
+	if !errors.As(err, &groupErr) {
+		t.Fatalf("expected UnsupportedGroupByError, got %T", err)
+	}
+}
+
+func TestGetPeriodComparisonStoreErrorPropagates(t *testing.T) {
+	storeErr := errors.New("store down")
+	store := &funcAnalyticsStore{
+		fn: func(_ dto.TransactionQuery) ([]*models.Transaction, error) {
+			return nil, storeErr
+		},
+	}
+	svc := NewAnalyticsService(store)
+
+	_, err := svc.GetPeriodComparison(context.Background(), "user", dto.AnalyticsPeriodComparisonArgs{
+		CurrentFrom:  "2025-02-01",
+		CurrentTo:    "2025-02-28",
+		PreviousFrom: "2025-01-01",
+		PreviousTo:   "2025-01-31",
+	})
+	if err == nil {
+		t.Fatal("expected error from store")
 	}
 }
