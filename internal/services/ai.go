@@ -24,6 +24,7 @@ type analyticsClient interface {
 	GetSpendBreakdown(ctx context.Context, uid string, args dto.AnalyticsSpendBreakdownArgs) (dto.AnalyticsSpendBreakdownResult, error)
 	GetTransactions(ctx context.Context, uid string, args dto.AnalyticsTransactionsArgs) (dto.AnalyticsTransactionsResult, error)
 	GetPeriodComparison(ctx context.Context, uid string, args dto.AnalyticsPeriodComparisonArgs) (dto.AnalyticsPeriodComparisonResult, error)
+	GetRecurringTransactions(ctx context.Context, uid string, args dto.AnalyticsRecurringArgs) (dto.RecurringTransactionsResult, error)
 }
 
 type aiStore interface {
@@ -317,6 +318,23 @@ func (s *aiService) executeTool(ctx context.Context, uid string, call dto.Vertex
 			return dto.VertexToolResult{}, err
 		}
 		return dto.VertexToolResult{Name: call.Name, Response: payload}, nil
+	case "get_recurring_transactions":
+		args, err := decodeArgs[dto.AnalyticsRecurringArgs](call.Args)
+		if err != nil {
+			return dto.VertexToolResult{}, err
+		}
+		if args.DateFrom == "" || args.DateTo == "" {
+			return dto.VertexToolResult{}, errs.NewValidationError("dateFrom and dateTo are required")
+		}
+		result, err := s.analysis.GetRecurringTransactions(ctx, uid, args)
+		if err != nil {
+			return dto.VertexToolResult{}, err
+		}
+		payload, err := toMap(result)
+		if err != nil {
+			return dto.VertexToolResult{}, err
+		}
+		return dto.VertexToolResult{Name: call.Name, Response: payload}, nil
 	default:
 		return dto.VertexToolResult{}, errs.NewValidationError(fmt.Sprintf("unsupported tool: %s", call.Name))
 	}
@@ -420,6 +438,22 @@ func toolSchemas() []dto.VertexTool {
 			},
 		},
 		{
+			Name: "get_recurring_transactions",
+			Description: "Detect recurring transactions such as subscriptions and regular payments. " +
+				"Identifies weekly, biweekly, monthly, and quarterly payments only. " +
+				"Cannot detect annual subscriptions — if the user asks about annual payments, inform them this tool cannot detect them. " +
+				"Always provide dateFrom and dateTo; default to 3 months ago through today if the user does not specify.",
+			Parameters: &dto.VertexSchema{
+				Type: "object",
+				Properties: map[string]*dto.VertexSchema{
+					"dateFrom": {Type: "string", Description: "YYYY-MM-DD start of the lookback window. Required. Default to 3 months ago."},
+					"dateTo":   {Type: "string", Description: "YYYY-MM-DD end of the lookback window. Required. Default to today."},
+					"bankId":   {Type: "string", Description: "Filter by bank id."},
+				},
+				Required: []string{"dateFrom", "dateTo"},
+			},
+		},
+		{
 			Name:        "get_period_comparison",
 			Description: "Compare spending totals between two explicit time periods with optional grouping.",
 			Parameters: &dto.VertexSchema{
@@ -518,10 +552,11 @@ func toMap(value any) (map[string]any, error) {
 
 func isValidToolName(name string) bool {
 	validTools := map[string]bool{
-		"get_spend_total":      true,
-		"get_spend_breakdown":  true,
-		"get_transactions":     true,
-		"get_period_comparison": true,
+		"get_spend_total":          true,
+		"get_spend_breakdown":      true,
+		"get_transactions":         true,
+		"get_period_comparison":    true,
+		"get_recurring_transactions": true,
 	}
 	return validTools[name]
 }

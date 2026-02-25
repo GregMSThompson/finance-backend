@@ -98,3 +98,28 @@ type AnalyticsPeriodComparisonResult struct {
 	Previous PeriodSummary `json:"previous"`
 	Change   PeriodChange  `json:"change"`
 }
+
+type AnalyticsRecurringArgs struct {
+	BankID   *string
+	DateFrom string
+	DateTo   string
+}
+
+type RecurringItem struct {
+	Merchant          string  `json:"merchant"`
+	Frequency         string  `json:"frequency"`
+	TypicalAmount     float64 `json:"typicalAmount"`
+	AmountIsVariable  bool    `json:"amountIsVariable"`
+	Currency          string  `json:"currency"`
+	OccurrenceCount   int     `json:"occurrenceCount"`
+	LastDate          string  `json:"lastDate"`
+	MonthlyEquivalent float64 `json:"monthlyEquivalent"`
+}
+
+type RecurringTransactionsResult struct {
+	Items                  []RecurringItem `json:"items"`
+	TotalMonthlyEquivalent float64         `json:"totalMonthlyEquivalent"`
+	Currency               string          `json:"currency"`
+	From                   string          `json:"from"`
+	To                     string          `json:"to"`
+}

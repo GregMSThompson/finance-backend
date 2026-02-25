@@ -51,6 +51,10 @@ type fakeAnalyticsClient struct {
 	comparisonArgs    dto.AnalyticsPeriodComparisonArgs
 	comparisonResp    dto.AnalyticsPeriodComparisonResult
 	comparisonErr     error
+	recurringCalls    int
+	recurringArgs     dto.AnalyticsRecurringArgs
+	recurringResp     dto.RecurringTransactionsResult
+	recurringErr      error
 }
 
 func (f *fakeAnalyticsClient) GetSpendTotal(ctx context.Context, uid string, args dto.AnalyticsSpendTotalArgs) (dto.AnalyticsSpendTotalResult, error) {
@@ -87,6 +91,15 @@ func (f *fakeAnalyticsClient) GetPeriodComparison(ctx context.Context, uid strin
 		return dto.AnalyticsPeriodComparisonResult{}, f.comparisonErr
 	}
 	return f.comparisonResp, nil
+}
+
+func (f *fakeAnalyticsClient) GetRecurringTransactions(ctx context.Context, uid string, args dto.AnalyticsRecurringArgs) (dto.RecurringTransactionsResult, error) {
+	f.recurringCalls++
+	f.recurringArgs = args
+	if f.recurringErr != nil {
+		return dto.RecurringTransactionsResult{}, f.recurringErr
+	}
+	return f.recurringResp, nil
 }
 
 type fakeAIStore struct {

@@ -2,7 +2,9 @@ package services
 
 import (
 	"context"
+	"sort"
 	"sync"
+	"time"
 
 	"github.com/GregMSThompson/finance-backend/internal/dto"
 	"github.com/GregMSThompson/finance-backend/internal/errs"
@@ -258,6 +260,170 @@ func buildChange(current, previous periodData, groupBy string) dto.PeriodChange 
 	}
 
 	return change
+}
+
+func (s *analyticsService) GetRecurringTransactions(ctx context.Context, uid string, args dto.AnalyticsRecurringArgs) (dto.RecurringTransactionsResult, error) {
+	result := dto.RecurringTransactionsResult{
+		Items: []dto.RecurringItem{},
+		From:  args.DateFrom,
+		To:    args.DateTo,
+	}
+
+	type merchantGroup struct {
+		dates    []string
+		amounts  []float64
+		currency string
+	}
+
+	pending := false
+	groups := map[string]*merchantGroup{}
+
+	if err := s.txs.Query(ctx, uid, dto.TransactionQuery{
+		Pending:  &pending,
+		BankID:   args.BankID,
+		DateFrom: &args.DateFrom,
+		DateTo:   &args.DateTo,
+	}, func(tx *models.Transaction) error {
+		g, ok := groups[tx.Name]
+		if !ok {
+			g = &merchantGroup{}
+			groups[tx.Name] = g
+		}
+		g.dates = append(g.dates, tx.Date)
+		g.amounts = append(g.amounts, tx.Amount)
+		if g.currency == "" && tx.Currency != "" {
+			g.currency = tx.Currency
+		}
+		return nil
+	}); err != nil {
+		return result, err
+	}
+
+	var totalMonthly float64
+	var currency string
+
+	for name, g := range groups {
+		if len(g.dates) < 2 {
+			continue
+		}
+
+		sort.Strings(g.dates)
+		gaps, err := computeGaps(g.dates)
+		if err != nil {
+			return result, err
+		}
+		if len(gaps) == 0 {
+			continue
+		}
+
+		freq := classifyFrequency(medianInt(gaps))
+		if freq == "" {
+			continue
+		}
+
+		typical, variable := amountStats(g.amounts)
+		monthly := recurringMonthlyEquivalent(typical, freq)
+
+		result.Items = append(result.Items, dto.RecurringItem{
+			Merchant:          name,
+			Frequency:         freq,
+			TypicalAmount:     typical,
+			AmountIsVariable:  variable,
+			Currency:          g.currency,
+			OccurrenceCount:   len(g.dates),
+			LastDate:          g.dates[len(g.dates)-1],
+			MonthlyEquivalent: monthly,
+		})
+		totalMonthly += monthly
+		if currency == "" && g.currency != "" {
+			currency = g.currency
+		}
+	}
+
+	result.TotalMonthlyEquivalent = totalMonthly
+	result.Currency = currency
+	return result, nil
+}
+
+// computeGaps returns the gap in days between each consecutive pair of sorted YYYY-MM-DD dates,
+// skipping same-day duplicates.
+func computeGaps(sortedDates []string) ([]int, error) {
+	gaps := make([]int, 0, len(sortedDates)-1)
+	for i := 1; i < len(sortedDates); i++ {
+		prev, err := time.Parse("2006-01-02", sortedDates[i-1])
+		if err != nil {
+			return nil, err
+		}
+		curr, err := time.Parse("2006-01-02", sortedDates[i])
+		if err != nil {
+			return nil, err
+		}
+		if gap := int(curr.Sub(prev).Hours() / 24); gap > 0 {
+			gaps = append(gaps, gap)
+		}
+	}
+	return gaps, nil
+}
+
+// medianInt returns the median value of a non-empty slice of ints.
+func medianInt(vals []int) int {
+	sorted := make([]int, len(vals))
+	copy(sorted, vals)
+	sort.Ints(sorted)
+	return sorted[len(sorted)/2]
+}
+
+// amountStats returns the median amount and whether the spread exceeds 10% of the median.
+func amountStats(amounts []float64) (median float64, variable bool) {
+	sorted := make([]float64, len(amounts))
+	copy(sorted, amounts)
+	sort.Float64s(sorted)
+	n := len(sorted)
+	if n%2 == 0 {
+		median = (sorted[n/2-1] + sorted[n/2]) / 2
+	} else {
+		median = sorted[n/2]
+	}
+	if median > 0 {
+		variable = (sorted[n-1]-sorted[0])/median > 0.10
+	}
+	return
+}
+
+// classifyFrequency maps a median gap in days to a frequency label, or "" if unrecognised.
+func classifyFrequency(medianGap int) string {
+	switch {
+	case medianGap >= 5 && medianGap <= 9:
+		return "weekly"
+	case medianGap >= 10 && medianGap <= 18:
+		return "biweekly"
+	case medianGap >= 25 && medianGap <= 35:
+		return "monthly"
+	case medianGap >= 80 && medianGap <= 100:
+		return "quarterly"
+	default:
+		return ""
+	}
+}
+
+// recurringMonthlyEquivalent normalises an amount to a monthly cost for a given frequency.
+func recurringMonthlyEquivalent(amount float64, frequency string) float64 {
+	switch frequency {
+	case "weekly":
+		// 52 weeks / 12 months = 4.33 recurring charges per month.
+		return amount * 4.33
+	case "biweekly":
+		// 26 biweekly periods / 12 months = 2.17 recurring charges per month.
+		return amount * 2.17
+	case "monthly":
+		// Already monthly, so no adjustment.
+		return amount
+	case "quarterly":
+		// 1 quarterly charge every 3 months, so divide by 3 for monthly equivalent.
+		return amount / 3
+	default:
+		return 0
+	}
 }
 
 func percentageChange(current, previous float64) *float64 {

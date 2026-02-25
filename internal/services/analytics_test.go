@@ -420,3 +420,163 @@ func TestGetPeriodComparisonStoreErrorPropagates(t *testing.T) {
 		t.Fatal("expected error from store")
 	}
 }
+
+func TestGetRecurringTransactionsMonthly(t *testing.T) {
+	store := &fakeAnalyticsStore{
+		txs: []*models.Transaction{
+			{Name: "Netflix", Amount: 15.99, Currency: "USD", Date: "2025-01-15"},
+			{Name: "Netflix", Amount: 15.99, Currency: "USD", Date: "2025-02-14"},
+			{Name: "Netflix", Amount: 15.99, Currency: "USD", Date: "2025-03-15"},
+		},
+	}
+	svc := NewAnalyticsService(store)
+
+	got, err := svc.GetRecurringTransactions(context.Background(), "user", dto.AnalyticsRecurringArgs{
+		DateFrom: "2025-01-01",
+		DateTo:   "2025-03-31",
+	})
+	if err != nil {
+		t.Fatalf("GetRecurringTransactions error: %v", err)
+	}
+	if len(got.Items) != 1 {
+		t.Fatalf("expected 1 item, got %d", len(got.Items))
+	}
+	item := got.Items[0]
+	if item.Merchant != "Netflix" {
+		t.Fatalf("merchant mismatch: %q", item.Merchant)
+	}
+	if item.Frequency != "monthly" {
+		t.Fatalf("frequency mismatch: %q", item.Frequency)
+	}
+	if item.TypicalAmount != 15.99 {
+		t.Fatalf("typical amount mismatch: %v", item.TypicalAmount)
+	}
+	if item.AmountIsVariable {
+		t.Fatal("expected amount not variable")
+	}
+	if item.OccurrenceCount != 3 {
+		t.Fatalf("occurrence count mismatch: %d", item.OccurrenceCount)
+	}
+	if item.LastDate != "2025-03-15" {
+		t.Fatalf("last date mismatch: %q", item.LastDate)
+	}
+	if item.MonthlyEquivalent != 15.99 {
+		t.Fatalf("monthly equivalent mismatch: %v", item.MonthlyEquivalent)
+	}
+	if got.TotalMonthlyEquivalent != 15.99 {
+		t.Fatalf("total monthly equivalent mismatch: %v", got.TotalMonthlyEquivalent)
+	}
+	if got.Currency != "USD" {
+		t.Fatalf("currency mismatch: %q", got.Currency)
+	}
+}
+
+func TestGetRecurringTransactionsWeekly(t *testing.T) {
+	store := &fakeAnalyticsStore{
+		txs: []*models.Transaction{
+			{Name: "Gym", Amount: 10, Currency: "USD", Date: "2025-01-06"},
+			{Name: "Gym", Amount: 10, Currency: "USD", Date: "2025-01-13"},
+			{Name: "Gym", Amount: 10, Currency: "USD", Date: "2025-01-20"},
+		},
+	}
+	svc := NewAnalyticsService(store)
+
+	got, err := svc.GetRecurringTransactions(context.Background(), "user", dto.AnalyticsRecurringArgs{
+		DateFrom: "2025-01-01",
+		DateTo:   "2025-03-31",
+	})
+	if err != nil {
+		t.Fatalf("GetRecurringTransactions error: %v", err)
+	}
+	if len(got.Items) != 1 {
+		t.Fatalf("expected 1 item, got %d", len(got.Items))
+	}
+	if got.Items[0].Frequency != "weekly" {
+		t.Fatalf("frequency mismatch: %q", got.Items[0].Frequency)
+	}
+	// 10 * 4.33 = 43.3
+	if got.TotalMonthlyEquivalent != 43.3 {
+		t.Fatalf("total monthly equivalent mismatch: %v", got.TotalMonthlyEquivalent)
+	}
+}
+
+func TestGetRecurringTransactionsDropsInsufficientOccurrences(t *testing.T) {
+	store := &fakeAnalyticsStore{
+		txs: []*models.Transaction{
+			{Name: "One-off", Amount: 50, Currency: "USD", Date: "2025-01-10"},
+		},
+	}
+	svc := NewAnalyticsService(store)
+
+	got, err := svc.GetRecurringTransactions(context.Background(), "user", dto.AnalyticsRecurringArgs{
+		DateFrom: "2025-01-01",
+		DateTo:   "2025-03-31",
+	})
+	if err != nil {
+		t.Fatalf("GetRecurringTransactions error: %v", err)
+	}
+	if len(got.Items) != 0 {
+		t.Fatalf("expected 0 items, got %d", len(got.Items))
+	}
+}
+
+func TestGetRecurringTransactionsDropsIrregular(t *testing.T) {
+	// gaps: 1, 18, 30 days → sorted median = 18 is biweekly, but let's use
+	// gaps that don't fit any bucket: 60 days between two transactions.
+	store := &fakeAnalyticsStore{
+		txs: []*models.Transaction{
+			{Name: "Irregular", Amount: 20, Currency: "USD", Date: "2025-01-01"},
+			{Name: "Irregular", Amount: 20, Currency: "USD", Date: "2025-03-02"}, // 60 day gap
+		},
+	}
+	svc := NewAnalyticsService(store)
+
+	got, err := svc.GetRecurringTransactions(context.Background(), "user", dto.AnalyticsRecurringArgs{
+		DateFrom: "2025-01-01",
+		DateTo:   "2025-03-31",
+	})
+	if err != nil {
+		t.Fatalf("GetRecurringTransactions error: %v", err)
+	}
+	if len(got.Items) != 0 {
+		t.Fatalf("expected 0 items for irregular gaps, got %d", len(got.Items))
+	}
+}
+
+func TestGetRecurringTransactionsVariableAmount(t *testing.T) {
+	store := &fakeAnalyticsStore{
+		txs: []*models.Transaction{
+			{Name: "Utility", Amount: 80, Currency: "USD", Date: "2025-01-15"},
+			{Name: "Utility", Amount: 110, Currency: "USD", Date: "2025-02-15"},
+			{Name: "Utility", Amount: 95, Currency: "USD", Date: "2025-03-15"},
+		},
+	}
+	svc := NewAnalyticsService(store)
+
+	got, err := svc.GetRecurringTransactions(context.Background(), "user", dto.AnalyticsRecurringArgs{
+		DateFrom: "2025-01-01",
+		DateTo:   "2025-03-31",
+	})
+	if err != nil {
+		t.Fatalf("GetRecurringTransactions error: %v", err)
+	}
+	if len(got.Items) != 1 {
+		t.Fatalf("expected 1 item, got %d", len(got.Items))
+	}
+	if !got.Items[0].AmountIsVariable {
+		t.Fatal("expected AmountIsVariable=true")
+	}
+}
+
+func TestGetRecurringTransactionsStoreErrorPropagates(t *testing.T) {
+	store := &fakeAnalyticsStore{err: errors.New("store down")}
+	svc := NewAnalyticsService(store)
+
+	_, err := svc.GetRecurringTransactions(context.Background(), "user", dto.AnalyticsRecurringArgs{
+		DateFrom: "2025-01-01",
+		DateTo:   "2025-03-31",
+	})
+	if err == nil {
+		t.Fatal("expected error from store")
+	}
+}
