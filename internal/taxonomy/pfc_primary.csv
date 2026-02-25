@@ -1,0 +1,96 @@
+PRIMARY,DETAILED,DESCRIPTION
+INCOME,INCOME_SALARY,Direct deposit and earnings from wages
+INCOME,INCOME_GOVERNMENT_INCOME,Money earned through government sources
+INCOME,INCOME_OTHER,All other types of income
+LOAN_DISBURSEMENTS,LOAN_DISBURSEMENTS_CASH_ADVANCES,Payday loans and cash advances
+LOAN_DISBURSEMENTS,LOAN_DISBURSEMENTS_BNPL_AND_EWA,Buy-now-pay-later and early wage access disbursements
+LOAN_DISBURSEMENTS,LOAN_DISBURSEMENTS_PERSONAL,Secured personal loans
+LOAN_DISBURSEMENTS,LOAN_DISBURSEMENTS_STUDENT,Education related loan disbursements
+LOAN_DISBURSEMENTS,LOAN_DISBURSEMENTS_MORTGAGE_AND_AUTO,Auto and mortage loan disbursements
+LOAN_DISBURSEMENTS,LOAN_DISBURSEMENTS_OTHER,All other types of loan disbursements
+TAX_REFUND,TAX_REFUND_TAX_REFUND,Tax refund disbursements
+INTERESTS_AND_DIVIDENDS,INTERESTS_AND_DIVIDENDS_INTERESTS_AND_DIVIDENDS,Income from interest on savings accounts or dividends
+TRANSFER_IN,TRANSFER_IN_TRANSFER_IN_FROM_APPS,Money transfered into the account from another application
+TRANSFER_IN,TRANSFER_IN_WIRE,Money transferred into the acount from a wire trasnfer from another bank
+TRANSFER_IN,TRANSFER_IN_CHECKS_AND_ATM,Money transfered into the account from a check or ATM deposit
+TRANSFER_IN,TRANSFER_IN_SAVINGS,Money transferred into the account from another savings account
+TRANSFER_IN,TRANSFER_IN_CHECKING,Money transferred into the account from another checking account
+TRANSFER_IN,TRANSFER_IN_INVESTMENT_AND_RETIREMENT_FUNDS,Money transferred into the account from an investment or retirement account
+TRANSFER_IN,TRANSFER_IN_OTHER,All other types of transfer in transactions
+TRANSFER_OUT,TRANSFER_OUT_INVESTMENT_AND_RETIREMENT_FUNDS,Money transferred out of the account into an invesment or retirement account
+TRANSFER_OUT,TRANSFER_OUT_SAVINGS,Money transferred out of the account into a savings account
+TRANSFER_OUT,TRANSFER_OUT_CHECKING,Money transferred out of the account into a checking account
+TRANSFER_OUT,TRANSFER_OUT_CHECKS_AND_ATM,Money transferred out of the account as a check or cash withdrawal
+TRANSFER_OUT,TRANSFER_OUT_TRANSFER_OUT_FROM_APPS,Money transferred out of the account into another application
+TRANSFER_OUT,TRANSFER_OUT_WIRE,Money transferred out of the account from a wire transfer to another bank
+TRANSFER_OUT,TRANSFER_OUT_OTHER,All other types of transfer out transactions
+LOAN_PAYMENTS,LOAN_PAYMENTS_CASH_ADVANCES,Loan payment for cash advances and payday loans
+LOAN_PAYMENTS,LOAN_PAYMENTS_BNPL_AND_EWA,Loan payment for buy-now-pay-later and early wage access loans
+LOAN_PAYMENTS,LOAN_PAYMENTS_PERSONAL_LOAN_PAYMENT,Loan payment for secured personal loans
+LOAN_PAYMENTS,LOAN_PAYMENTS_STUDENT_LOAN_PAYMENT,Loan payment for educational loans
+LOAN_PAYMENTS,LOAN_PAYMENTS_CREDIT_CARD_PAYMENT,Loan payment for credit card statements
+LOAN_PAYMENTS,LOAN_PAYMENTS_MORTGAGE_AND_AUTO,Loan payments for mortgage and auto loans
+LOAN_PAYMENTS,LOAN_PAYMENTS_OTHER,All other types of loan payments
+BANK_FEES,BANK_FEES_ATM,"Fees incurred at a bank, including ATM fees"
+BANK_FEES,BANK_FEES_FOREIGN_TRANSACTION_FEES,Fees incurred at a bank during a foreign transaction
+BANK_FEES,BANK_FEES_OTHER_BANK_FEES,All other types of bank fees
+BANK_PENALTIES,BANK_PENALTIES_CASH_ADVANCE_AND_OVERDRAFT_FEES,Penalty payment for cash advances and overdrafts
+BANK_PENALTIES,BANK_PENALTIES_INSUFFICIENT_AND_LATE_FEES,Penalty payment for insufficient fund transactions or late payment fees
+INTEREST_PAYMENTS,INTEREST_PAYMENTS_INTEREST_CHARGED,"Fees incurred for interest on purchases, including not-paid-in-full or interest on cash advances"
+INTEREST_PAYMENTS,INTEREST_PAYMENTS_INTEREST_RECEIVED,Income from interest on savings accounts
+ENTERTAINMENT,ENTERTAINMENT_EVENTS_AND_TICKETS,"Purchases made at sporting events, music venues, concerts, museums, and amusement parks"
+ENTERTAINMENT,ENTERTAINMENT_MUSIC_VIDEO_GAMES_TV_AND_MOVIES,"Music streaming services, video game purchases, movie streaming services and movie theatres"
+ENTERTAINMENT,ENTERTAINMENT_CASINOS_AND_GAMBLING,"Gambling, casinos, and sports betting"
+ENTERTAINMENT,ENTERTAINMENT_OTHER_ENTERTAINMENT,"Other miscellaneous entertainment purchases, including night life and adult entertainment"
+DINING,DINING_WINE_BARS_AND_PUBS,"Beer, wine and liquor stores"
+DINING,DINING_COFFEE,Purchases at coffee shops or cafes
+DINING,DINING_DINING,"Dining expenses for fast food chains, restaurants, bars, gastropubs, and diners"
+DINING,DINING_FOOD_DELIVERY,Dining expenses from food delivery services
+DINING,DINING_OTHER_DINING,"Other miscellaneous dining expenses, including desserts, juice bars, and delis"
+FOOD_RETAIL,FOOD_RETAIL_GROCERIES,"Purchases for fresh produce and groceries, including farmers' markets"
+FOOD_RETAIL,FOOD_RETAIL_LIQUOR_STORES,"Beer, wine & liquor stores"
+FOOD_RETAIL,FOOD_RETAIL_OTHER,Other miscellaneous food and drink expenses
+GENERAL_MERCHANDISE,GENERAL_MERCHANDISE_APPAREL_AND_ACCESSORIES,"Apparel, shoes, and jewelry"
+GENERAL_MERCHANDISE,GENERAL_MERCHANDISE_CONVENIENCE_STORES,Purchases at convenience stores
+GENERAL_MERCHANDISE,GENERAL_MERCHANDISE_DEPARTMENT_STORES,"Retail stores with wide ranges of consumer goods, typically specializing in clothing and home goods"
+GENERAL_MERCHANDISE,GENERAL_MERCHANDISE_DISCOUNT_STORES,Stores selling goods at a discounted price
+GENERAL_MERCHANDISE,GENERAL_MERCHANDISE_SUPERSTORES,"Superstores such as Target and Walmart, selling both groceries and general merchandise"
+GENERAL_MERCHANDISE,GENERAL_MERCHANDISE_COMPUTERS_AND_ELECTRONICS,Electronics stores and websites
+GENERAL_MERCHANDISE,GENERAL_MERCHANDISE_ONLINE_MARKETPLACES,"Multi-purpose e-commerce platforms such as Etsy, Ebay and Amazon"
+GENERAL_MERCHANDISE,GENERAL_MERCHANDISE_SPORTING_GOODS,"Sporting goods, camping gear, and outdoor equipment"
+GENERAL_MERCHANDISE,GENERAL_MERCHANDISE_FURNITURE_AND_HARDWARE,"Furniture, bedding, home accessories, building materials, hardware stores, paint, and wallpaper"
+GENERAL_MERCHANDISE,GENERAL_MERCHANDISE_OTHER_GENERAL_MERCHANDISE,"Other miscellaneous merchandise, including toys, hobbies, and arts and crafts"
+MEDICAL,MEDICAL_PRIMARY_CARE,Doctors and physicians
+MEDICAL,MEDICAL_DENTAL_AND_VISION,"Dentists and general dental care, optometrists, contacts, and glasses stores"
+MEDICAL,MEDICAL_PHARMACIES_AND_SUPPLEMENTS,Pharmacies and nutrition shops
+MEDICAL,MEDICAL_OTHER_MEDICAL,"Other miscellaneous medical, including blood work, hospitals, and ambulances"
+PERSONAL_CARE,PERSONAL_CARE_HAIR_AND_BEAUTY,"Manicures, haircuts, waxing, spa/massages, and bath and beauty products"
+PERSONAL_CARE,PERSONAL_CARE_GYMS_AND_FITNESS_CENTERS,"Gyms, fitness centers, and workout classes"
+PERSONAL_CARE,PERSONAL_CARE_OTHER_PERSONAL_CARE,"Other miscellaneous personal care, including mental health apps and services"
+PET_CARE_AND_SUPPLIES,PET_CARE_AND_SUPPLIES_VETERINARY_SERVICES,Prevention and care procedures for animals
+PET_CARE_AND_SUPPLIES,PET_CARE_AND_SUPPLIES_PET_SUPPLIES,Pet supplies and pet food
+CHILDCARE_AND_EDUCATION,CHILDCARE_AND_EDUCATION_CHILDCARE_AND_EDUCATION,"Babysitters and daycare, elementary, high school, professional schools, and college tuition"
+GENERAL_SERVICES,GENERAL_SERVICES_ACCOUNTING_AND_FINANCIAL_SERVICES,"Financial planning, and tax and accounting services"
+GENERAL_SERVICES,GENERAL_SERVICES_CONSULTING_AND_LEGAL_SERVICES,Consulting and legal services
+GENERAL_SERVICES,GENERAL_SERVICES_RELIGIOUS_SERVICES,Expenses related to religious services
+GENERAL_SERVICES,GENERAL_SERVICES_OTHER_SERVICES,Other miscellaneous general services
+GENERAL_SERVICES,GENERAL_SERVICES_HOME_IMPROVEMENT_SERVICES,"Plumbing, lighting, gardening, roofing, pool installation and pest control"
+GOVERNMENTS_AND_NON_PROFIT,GOVERNMENTS_AND_NON_PROFIT_GOVERNMENTS_AND_NON_PROFIT,"Government departments and agencies, such as driving licences, and passport renewal"
+GOVERNMENTS_AND_NON_PROFIT,GOVERNMENTS_AND_NON_PROFIT_DONATIONS,"Charitable, political, and religious donations"
+GOVERNMENTS_AND_NON_PROFIT,GOVERNMENTS_AND_NON_PROFIT_OTHER_GOVERNMENTS_AND_NON_PROFIT,Other miscellaneous government and non-profit agencies
+TRAVEL_AND_TRANSPORTATION,TRAVEL_AND_TRANSPORTATION_PUBLIC_TRANSIT,"Public transportation, including rail and train, buses, and metro"
+TRAVEL_AND_TRANSPORTATION,TRAVEL_AND_TRANSPORTATION_TAXIS_AND_RIDE_SHARES,Taxi and ride share services
+TRAVEL_AND_TRANSPORTATION,TRAVEL_AND_TRANSPORTATION_FLIGHTS,Airline expenses
+TRAVEL_AND_TRANSPORTATION,TRAVEL_AND_TRANSPORTATION_AUTOMOTIVE,"Rental cars, charter buses, trucks, oil changes, car washes, repairs, and towing"
+TRAVEL_AND_TRANSPORTATION,TRAVEL_AND_TRANSPORTATION_LODGING,"Hotels, motels, and hosted accommodation such as Airbnb"
+TRAVEL_AND_TRANSPORTATION,TRAVEL_AND_TRANSPORTATION_OTHER_TRAVEL_AND_TRANSPORTATION,Other miscellaneous travel and transportation expenses
+RENT_AND_UTILITIES,RENT_AND_UTILITIES_GAS_AND_ELECTRICITY,Gas and electricity bills
+RENT_AND_UTILITIES,RENT_AND_UTILITIES_INTERNET_AND_CABLE,Internet and cable bills
+RENT_AND_UTILITIES,RENT_AND_UTILITIES_TELECOMMUNICATIONS,Cell phone bills
+RENT_AND_UTILITIES,RENT_AND_UTILITIES_WATER,Water bills
+RENT_AND_UTILITIES,RENT_AND_UTILITIES_OTHER_UTILITIES,Other miscellaneous utility bills
+RENT_AND_UTILITIES,RENT_AND_UTILITIES_RENT,Rent payment
+INSURANCE_AND_TAX,INSURANCE_AND_TAX_INSURANCE,"Insurance for auto, home, and healthcare"
+INSURANCE_AND_TAX,INSURANCE_AND_TAX_TAX_PAYMENT,"Tax payments, including income and property taxes"
+OTHER,OTHER_OTHER,Other miscellaneous category
+UNKNOWN,UNKNOWN_UNKNOWN,Category couldn't be computed due to an internal error

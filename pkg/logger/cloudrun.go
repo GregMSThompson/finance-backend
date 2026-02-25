@@ -3,6 +3,7 @@ package logger
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"os"
 	"time"
@@ -37,7 +38,15 @@ func (h *CloudRunHandler) Handle(_ context.Context, r slog.Record) error {
 		data := make(map[string]any)
 
 		r.Attrs(func(a slog.Attr) bool {
-			data[a.Key] = a.Value.Any()
+			v := a.Value.Any()
+			switch val := v.(type) {
+			case error:
+				data[a.Key] = val.Error()
+			case fmt.Stringer:
+				data[a.Key] = val.String()
+			default:
+				data[a.Key] = v
+			}
 			return true
 		})
 

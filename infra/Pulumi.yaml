@@ -1,0 +1,7 @@
+name: finance
+description: finance app backend
+runtime: go
+config:
+  pulumi:tags:
+    value:
+      pulumi:template: gcp-go

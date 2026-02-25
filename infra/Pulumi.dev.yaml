@@ -1,0 +1,17 @@
+config:
+  gcp:project: finance-app-479321
+  gcp:region: us-central1
+  cloudrun:minScale: "0"
+  cloudrun:maxScale: "1"
+  cloudrun:cpu: "1"
+  cloudrun:memory: 512Mi
+  cloudrun:concurrency: "80"
+  cloudrun:logLevel: debug
+  cloudrun:timeout: "60"
+  plaid:secret:
+    secure: AAABAL1WDYS2U6eqWeFA3fElips7UPCkK/tc8Mk+qaOXQOUWEZ37zOHo6tCdYbHxIcA8LiITOgAtqWGNBzA=
+  plaid:clientId:
+    secure: AAABANYr5O88K0ZmqGin9TYUwao3knREFRDSZPBLFJznXjecESzKlU1Msuqt7v3Nphfx7tvQOA4=
+  plaid:environment: sandbox
+  vertex:model: gemini-2.5-flash-lite
+  app:aiTtl: 168h
