@@ -783,3 +783,194 @@ func TestGetMovingAverageStoreErrorPropagates(t *testing.T) {
 		t.Fatal("expected error from store")
 	}
 }
+
+func TestGetTopNByMerchantTop(t *testing.T) {
+	// Alpha=60, Beta=30, Gamma=10, total=100. Top 2: Alpha then Beta.
+	store := &fakeAnalyticsStore{
+		txs: []*models.Transaction{
+			{Name: "Alpha", Amount: 60, Currency: "USD", Date: "2025-01-10"},
+			{Name: "Beta", Amount: 30, Currency: "USD", Date: "2025-01-11"},
+			{Name: "Gamma", Amount: 10, Currency: "USD", Date: "2025-01-12"},
+		},
+	}
+	svc := NewAnalyticsService(store)
+
+	got, err := svc.GetTopN(context.Background(), "user", dto.AnalyticsTopNArgs{
+		Dimension: "merchant",
+		Direction: "top",
+		Limit:     2,
+		DateFrom:  "2025-01-01",
+		DateTo:    "2025-01-31",
+	})
+	if err != nil {
+		t.Fatalf("GetTopN error: %v", err)
+	}
+	if got.TotalSpend != 100 {
+		t.Fatalf("totalSpend mismatch: got %v", got.TotalSpend)
+	}
+	if got.Currency != "USD" {
+		t.Fatalf("currency mismatch: got %q", got.Currency)
+	}
+	if len(got.Items) != 2 {
+		t.Fatalf("items length mismatch: got %d", len(got.Items))
+	}
+	if got.Items[0].Key != "Alpha" || got.Items[1].Key != "Beta" {
+		t.Fatalf("item order mismatch: %+v", got.Items)
+	}
+	if got.Items[0].Total != 60 || got.Items[1].Total != 30 {
+		t.Fatalf("item totals mismatch: %+v", got.Items)
+	}
+	if got.Items[0].Percentage != 60 || got.Items[1].Percentage != 30 {
+		t.Fatalf("item percentages mismatch: %+v", got.Items)
+	}
+}
+
+func TestGetTopNByCategoryReturnsAll(t *testing.T) {
+	// 2 categories, limit=5 → returns both.
+	store := &fakeAnalyticsStore{
+		txs: []*models.Transaction{
+			{PFCPrimary: "Food", Amount: 80, Currency: "USD", Date: "2025-01-10"},
+			{PFCPrimary: "Food", Amount: 20, Currency: "USD", Date: "2025-01-15"},
+			{PFCPrimary: "Transport", Amount: 50, Currency: "USD", Date: "2025-01-12"},
+		},
+	}
+	svc := NewAnalyticsService(store)
+
+	got, err := svc.GetTopN(context.Background(), "user", dto.AnalyticsTopNArgs{
+		Dimension: "category",
+		Direction: "top",
+		Limit:     5,
+		DateFrom:  "2025-01-01",
+		DateTo:    "2025-01-31",
+	})
+	if err != nil {
+		t.Fatalf("GetTopN error: %v", err)
+	}
+	if len(got.Items) != 2 {
+		t.Fatalf("expected 2 items, got %d", len(got.Items))
+	}
+	// Food=100, Transport=50 → top order.
+	if got.Items[0].Key != "Food" || got.Items[1].Key != "Transport" {
+		t.Fatalf("item order mismatch: %+v", got.Items)
+	}
+	if got.Items[0].Count != 2 || got.Items[1].Count != 1 {
+		t.Fatalf("item counts mismatch: %+v", got.Items)
+	}
+}
+
+func TestGetTopNBottom(t *testing.T) {
+	// Alpha=60, Beta=30, Gamma=10, total=100. Bottom 2: Gamma then Beta.
+	store := &fakeAnalyticsStore{
+		txs: []*models.Transaction{
+			{Name: "Alpha", Amount: 60, Currency: "USD", Date: "2025-01-10"},
+			{Name: "Beta", Amount: 30, Currency: "USD", Date: "2025-01-11"},
+			{Name: "Gamma", Amount: 10, Currency: "USD", Date: "2025-01-12"},
+		},
+	}
+	svc := NewAnalyticsService(store)
+
+	got, err := svc.GetTopN(context.Background(), "user", dto.AnalyticsTopNArgs{
+		Dimension: "merchant",
+		Direction: "bottom",
+		Limit:     2,
+		DateFrom:  "2025-01-01",
+		DateTo:    "2025-01-31",
+	})
+	if err != nil {
+		t.Fatalf("GetTopN error: %v", err)
+	}
+	if len(got.Items) != 2 {
+		t.Fatalf("items length mismatch: got %d", len(got.Items))
+	}
+	if got.Items[0].Key != "Gamma" || got.Items[1].Key != "Beta" {
+		t.Fatalf("item order mismatch: %+v", got.Items)
+	}
+}
+
+func TestGetTopNMinCountFilter(t *testing.T) {
+	// Alpha has 1 tx, Beta has 2. MinCount=2 → only Beta included.
+	store := &fakeAnalyticsStore{
+		txs: []*models.Transaction{
+			{Name: "Alpha", Amount: 60, Currency: "USD", Date: "2025-01-10"},
+			{Name: "Beta", Amount: 30, Currency: "USD", Date: "2025-01-11"},
+			{Name: "Beta", Amount: 20, Currency: "USD", Date: "2025-01-15"},
+		},
+	}
+	svc := NewAnalyticsService(store)
+
+	got, err := svc.GetTopN(context.Background(), "user", dto.AnalyticsTopNArgs{
+		Dimension: "merchant",
+		Direction: "top",
+		Limit:     5,
+		MinCount:  2,
+		DateFrom:  "2025-01-01",
+		DateTo:    "2025-01-31",
+	})
+	if err != nil {
+		t.Fatalf("GetTopN error: %v", err)
+	}
+	if len(got.Items) != 1 {
+		t.Fatalf("expected 1 item after MinCount filter, got %d", len(got.Items))
+	}
+	if got.Items[0].Key != "Beta" {
+		t.Fatalf("expected Beta, got %q", got.Items[0].Key)
+	}
+	if got.Items[0].Count != 2 {
+		t.Fatalf("expected count=2, got %d", got.Items[0].Count)
+	}
+}
+
+func TestGetTopNNoTransactions(t *testing.T) {
+	store := &fakeAnalyticsStore{}
+	svc := NewAnalyticsService(store)
+
+	got, err := svc.GetTopN(context.Background(), "user", dto.AnalyticsTopNArgs{
+		Dimension: "merchant",
+		Direction: "top",
+		DateFrom:  "2025-01-01",
+		DateTo:    "2025-01-31",
+	})
+	if err != nil {
+		t.Fatalf("GetTopN error: %v", err)
+	}
+	if len(got.Items) != 0 {
+		t.Fatalf("expected empty items, got %d", len(got.Items))
+	}
+	if got.TotalSpend != 0 {
+		t.Fatalf("expected totalSpend=0, got %v", got.TotalSpend)
+	}
+}
+
+func TestGetTopNInvalidDimension(t *testing.T) {
+	store := &fakeAnalyticsStore{}
+	svc := NewAnalyticsService(store)
+
+	_, err := svc.GetTopN(context.Background(), "user", dto.AnalyticsTopNArgs{
+		Dimension: "day",
+		Direction: "top",
+		DateFrom:  "2025-01-01",
+		DateTo:    "2025-01-31",
+	})
+	if err == nil {
+		t.Fatal("expected error for invalid dimension")
+	}
+	var valErr *errs.ValidationError
+	if !errors.As(err, &valErr) {
+		t.Fatalf("expected ValidationError, got %T", err)
+	}
+}
+
+func TestGetTopNStoreErrorPropagates(t *testing.T) {
+	store := &fakeAnalyticsStore{err: errors.New("store down")}
+	svc := NewAnalyticsService(store)
+
+	_, err := svc.GetTopN(context.Background(), "user", dto.AnalyticsTopNArgs{
+		Dimension: "merchant",
+		Direction: "top",
+		DateFrom:  "2025-01-01",
+		DateTo:    "2025-01-31",
+	})
+	if err == nil {
+		t.Fatal("expected error from store")
+	}
+}

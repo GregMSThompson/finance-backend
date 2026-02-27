@@ -147,6 +147,34 @@ type MovingAverageItem struct {
 	Series           []MovingAverageDataPoint `json:"series"`
 }
 
+type AnalyticsTopNArgs struct {
+	Dimension  string
+	Direction  string // "top" or "bottom"
+	Limit      int
+	MinCount   int
+	PFCPrimary *string
+	BankID     *string
+	DateFrom   string
+	DateTo     string
+}
+
+type TopNItem struct {
+	Key        string  `json:"key"`
+	Total      float64 `json:"total"`
+	Count      int     `json:"count"`
+	Percentage float64 `json:"percentage"`
+}
+
+type AnalyticsTopNResult struct {
+	Dimension  string     `json:"dimension"`
+	Direction  string     `json:"direction"`
+	TotalSpend float64    `json:"totalSpend"`
+	Currency   string     `json:"currency"`
+	From       string     `json:"from"`
+	To         string     `json:"to"`
+	Items      []TopNItem `json:"items"`
+}
+
 type AnalyticsMovingAverageResult struct {
 	Granularity      string                   `json:"granularity"`
 	Scope            string                   `json:"scope"`

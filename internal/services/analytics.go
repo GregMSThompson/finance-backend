@@ -427,6 +427,93 @@ func recurringMonthlyEquivalent(amount float64, frequency string) float64 {
 	}
 }
 
+func (s *analyticsService) GetTopN(ctx context.Context, uid string, args dto.AnalyticsTopNArgs) (dto.AnalyticsTopNResult, error) {
+	result := dto.AnalyticsTopNResult{
+		Dimension: args.Dimension,
+		Direction: args.Direction,
+		From:      args.DateFrom,
+		To:        args.DateTo,
+		Items:     []dto.TopNItem{},
+	}
+
+	groupBy, err := topNGroupBy(args.Dimension)
+	if err != nil {
+		return result, err
+	}
+
+	pending := false
+	data, err := collectPeriod(ctx, s.txs, uid, dto.TransactionQuery{
+		Pending:    &pending,
+		PFCPrimary: args.PFCPrimary,
+		BankID:     args.BankID,
+		DateFrom:   &args.DateFrom,
+		DateTo:     &args.DateTo,
+	}, groupBy)
+	if err != nil {
+		return result, err
+	}
+
+	result.TotalSpend = data.total
+	result.Currency = data.currency
+
+	limit := args.Limit
+	if limit <= 0 {
+		limit = 5
+	}
+
+	items := make([]dto.TopNItem, 0, len(data.items))
+	for _, item := range data.items {
+		if args.MinCount > 0 && item.Count < args.MinCount {
+			continue
+		}
+		var pct float64
+		if data.total > 0 {
+			pct = item.Total / data.total * 100
+		}
+		items = append(items, dto.TopNItem{
+			Key:        item.Key,
+			Total:      item.Total,
+			Count:      item.Count,
+			Percentage: pct,
+		})
+	}
+
+	desc := args.Direction != "bottom"
+	sort.Slice(items, func(i, j int) bool {
+		if items[i].Total != items[j].Total {
+			if desc {
+				return items[i].Total > items[j].Total
+			}
+			return items[i].Total < items[j].Total
+		}
+		if items[i].Count != items[j].Count {
+			if desc {
+				return items[i].Count > items[j].Count
+			}
+			return items[i].Count < items[j].Count
+		}
+		return items[i].Key < items[j].Key
+	})
+
+	if limit < len(items) {
+		items = items[:limit]
+	}
+	result.Items = items
+	return result, nil
+}
+
+// topNGroupBy translates a GetTopN dimension to the groupBy key used by collectPeriod.
+func topNGroupBy(dimension string) (string, error) {
+	switch dimension {
+	case "merchant":
+		return "merchant", nil
+	case "category":
+		return "pfcPrimary", nil
+	default:
+		return "", errs.NewValidationError("dimension must be merchant or category")
+	}
+}
+
 // maBucket holds accumulated spend totals for a single moving-average period bucket.
 type maBucket struct {
 	total float64

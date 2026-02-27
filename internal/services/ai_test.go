@@ -59,6 +59,10 @@ type fakeAnalyticsClient struct {
 	movingAvgArgs     dto.AnalyticsMovingAverageArgs
 	movingAvgResp     dto.AnalyticsMovingAverageResult
 	movingAvgErr      error
+	topNCalls         int
+	topNArgs          dto.AnalyticsTopNArgs
+	topNResp          dto.AnalyticsTopNResult
+	topNErr           error
 }
 
 func (f *fakeAnalyticsClient) GetSpendTotal(ctx context.Context, uid string, args dto.AnalyticsSpendTotalArgs) (dto.AnalyticsSpendTotalResult, error) {
@@ -113,6 +117,15 @@ func (f *fakeAnalyticsClient) GetMovingAverage(ctx context.Context, uid string, 
 		return dto.AnalyticsMovingAverageResult{}, f.movingAvgErr
 	}
 	return f.movingAvgResp, nil
+}
+
+func (f *fakeAnalyticsClient) GetTopN(ctx context.Context, uid string, args dto.AnalyticsTopNArgs) (dto.AnalyticsTopNResult, error) {
+	f.topNCalls++
+	f.topNArgs = args
+	if f.topNErr != nil {
+		return dto.AnalyticsTopNResult{}, f.topNErr
+	}
+	return f.topNResp, nil
 }
 
 type fakeAIStore struct {

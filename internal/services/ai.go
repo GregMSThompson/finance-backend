@@ -26,6 +26,7 @@ type analyticsClient interface {
 	GetPeriodComparison(ctx context.Context, uid string, args dto.AnalyticsPeriodComparisonArgs) (dto.AnalyticsPeriodComparisonResult, error)
 	GetRecurringTransactions(ctx context.Context, uid string, args dto.AnalyticsRecurringArgs) (dto.RecurringTransactionsResult, error)
 	GetMovingAverage(ctx context.Context, uid string, args dto.AnalyticsMovingAverageArgs) (dto.AnalyticsMovingAverageResult, error)
+	GetTopN(ctx context.Context, uid string, args dto.AnalyticsTopNArgs) (dto.AnalyticsTopNResult, error)
 }
 
 type aiStore interface {
@@ -359,6 +360,32 @@ func (s *aiService) executeTool(ctx context.Context, uid string, call dto.Vertex
 			return dto.VertexToolResult{}, err
 		}
 		return dto.VertexToolResult{Name: call.Name, Response: payload}, nil
+	case "get_top_n":
+		args, err := decodeArgs[dto.AnalyticsTopNArgs](call.Args)
+		if err != nil {
+			return dto.VertexToolResult{}, err
+		}
+		if args.DateFrom == "" || args.DateTo == "" {
+			return dto.VertexToolResult{}, errs.NewValidationError("dateFrom and dateTo are required")
+		}
+		if args.Direction == "" {
+			args.Direction = "top"
+		}
+		if args.Limit == 0 {
+			args.Limit = 5
+		}
+		if err := validatePrimary(args.PFCPrimary); err != nil {
+			return dto.VertexToolResult{}, err
+		}
+		result, err := s.analysis.GetTopN(ctx, uid, args)
+		if err != nil {
+			return dto.VertexToolResult{}, err
+		}
+		payload, err := toMap(result)
+		if err != nil {
+			return dto.VertexToolResult{}, err
+		}
+		return dto.VertexToolResult{Name: call.Name, Response: payload}, nil
 	default:
 		return dto.VertexToolResult{}, errs.NewValidationError(fmt.Sprintf("unsupported tool: %s", call.Name))
 	}
@@ -497,6 +524,26 @@ func toolSchemas() []dto.VertexTool {
 			},
 		},
 		{
+			Name: "get_top_n",
+			Description: "Rank spending by merchant or category, returning the top or bottom N results. " +
+				"Use for questions like 'what are my top 5 merchants' or 'which categories do I spend least on'. " +
+				"Always provide dateFrom and dateTo; default to 30 days ago through today if the user does not specify.",
+			Parameters: &dto.VertexSchema{
+				Type: "object",
+				Properties: map[string]*dto.VertexSchema{
+					"dimension":  {Type: "string", Enum: []string{"merchant", "category"}, Description: "Rank by merchant or spending category. Required."},
+					"direction":  {Type: "string", Enum: []string{"top", "bottom"}, Description: "Return highest (top) or lowest (bottom) spenders. Defaults to top."},
+					"limit":      {Type: "integer", Description: "Number of results to return. Defaults to 5."},
+					"minCount":   {Type: "integer", Description: "Minimum transaction count for a result to be included. Optional."},
+					"pfcPrimary": {Type: "string", Enum: taxonomy.PFCPrimaryList, Description: "Filter to a specific category. Most useful with dimension=merchant."},
+					"bankId":     {Type: "string", Description: "Filter by bank id."},
+					"dateFrom":   {Type: "string", Description: "YYYY-MM-DD start of the window. Required. Default to 30 days ago."},
+					"dateTo":     {Type: "string", Description: "YYYY-MM-DD end of the window. Required. Default to today."},
+				},
+				Required: []string{"dimension", "dateFrom", "dateTo"},
+			},
+		},
+		{
 			Name:        "get_period_comparison",
 			Description: "Compare spending totals between two explicit time periods with optional grouping.",
 			Parameters: &dto.VertexSchema{
@@ -601,6 +648,7 @@ func isValidToolName(name string) bool {
 		"get_period_comparison":      true,
 		"get_recurring_transactions": true,
 		"get_moving_average":         true,
+		"get_top_n":                  true,
 	}
 	return validTools[name]
 }
