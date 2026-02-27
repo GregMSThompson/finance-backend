@@ -25,6 +25,7 @@ type analyticsClient interface {
 	GetTransactions(ctx context.Context, uid string, args dto.AnalyticsTransactionsArgs) (dto.AnalyticsTransactionsResult, error)
 	GetPeriodComparison(ctx context.Context, uid string, args dto.AnalyticsPeriodComparisonArgs) (dto.AnalyticsPeriodComparisonResult, error)
 	GetRecurringTransactions(ctx context.Context, uid string, args dto.AnalyticsRecurringArgs) (dto.RecurringTransactionsResult, error)
+	GetMovingAverage(ctx context.Context, uid string, args dto.AnalyticsMovingAverageArgs) (dto.AnalyticsMovingAverageResult, error)
 }
 
 type aiStore interface {
@@ -335,6 +336,29 @@ func (s *aiService) executeTool(ctx context.Context, uid string, call dto.Vertex
 			return dto.VertexToolResult{}, err
 		}
 		return dto.VertexToolResult{Name: call.Name, Response: payload}, nil
+	case "get_moving_average":
+		args, err := decodeArgs[dto.AnalyticsMovingAverageArgs](call.Args)
+		if err != nil {
+			return dto.VertexToolResult{}, err
+		}
+		if args.DateFrom == "" || args.DateTo == "" {
+			return dto.VertexToolResult{}, errs.NewValidationError("dateFrom and dateTo are required")
+		}
+		if args.Granularity == "" {
+			args.Granularity = "month"
+		}
+		if args.Scope == "" {
+			args.Scope = "overall"
+		}
+		result, err := s.analysis.GetMovingAverage(ctx, uid, args)
+		if err != nil {
+			return dto.VertexToolResult{}, err
+		}
+		payload, err := toMap(result)
+		if err != nil {
+			return dto.VertexToolResult{}, err
+		}
+		return dto.VertexToolResult{Name: call.Name, Response: payload}, nil
 	default:
 		return dto.VertexToolResult{}, errs.NewValidationError(fmt.Sprintf("unsupported tool: %s", call.Name))
 	}
@@ -454,6 +478,25 @@ func toolSchemas() []dto.VertexTool {
 			},
 		},
 		{
+			Name: "get_moving_average",
+			Description: "Calculate average spending over a date range with a time-series breakdown. " +
+				"Returns an overall average per time unit (day/week/month) and a series of period totals for trend analysis. " +
+				"Always provide dateFrom and dateTo; default to 30 days ago through today if the user does not specify.",
+			Parameters: &dto.VertexSchema{
+				Type: "object",
+				Properties: map[string]*dto.VertexSchema{
+					"dateFrom":    {Type: "string", Description: "YYYY-MM-DD start of the window. Required. Default to 30 days ago."},
+					"dateTo":      {Type: "string", Description: "YYYY-MM-DD end of the window. Required. Default to today."},
+					"granularity": {Type: "string", Enum: []string{"day", "week", "month"}, Description: "Time unit for the average and series. Defaults to month."},
+					"scope":       {Type: "string", Enum: []string{"overall", "category", "merchant"}, Description: "Group the breakdown by category or merchant. Defaults to overall."},
+					"pfcPrimary":  {Type: "string", Enum: taxonomy.PFCPrimaryList, Description: "Filter by category."},
+					"merchant":    {Type: "string", Description: "Partial, case-insensitive merchant name filter."},
+					"bankId":      {Type: "string", Description: "Filter by bank id."},
+				},
+				Required: []string{"dateFrom", "dateTo"},
+			},
+		},
+		{
 			Name:        "get_period_comparison",
 			Description: "Compare spending totals between two explicit time periods with optional grouping.",
 			Parameters: &dto.VertexSchema{
@@ -552,11 +595,12 @@ func toMap(value any) (map[string]any, error) {
 
 func isValidToolName(name string) bool {
 	validTools := map[string]bool{
-		"get_spend_total":          true,
-		"get_spend_breakdown":      true,
-		"get_transactions":         true,
-		"get_period_comparison":    true,
+		"get_spend_total":            true,
+		"get_spend_breakdown":        true,
+		"get_transactions":           true,
+		"get_period_comparison":      true,
 		"get_recurring_transactions": true,
+		"get_moving_average":         true,
 	}
 	return validTools[name]
 }

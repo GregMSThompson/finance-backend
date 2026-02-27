@@ -123,3 +123,39 @@ type RecurringTransactionsResult struct {
 	From                   string          `json:"from"`
 	To                     string          `json:"to"`
 }
+
+type AnalyticsMovingAverageArgs struct {
+	Granularity string
+	Scope       string
+	PFCPrimary  *string
+	Merchant    *string
+	BankID      *string
+	DateFrom    string
+	DateTo      string
+}
+
+type MovingAverageDataPoint struct {
+	Period           string  `json:"period"`
+	Total            float64 `json:"total"`
+	TransactionCount int     `json:"transactionCount"`
+}
+
+type MovingAverageItem struct {
+	Key              string                   `json:"key"`
+	AveragePerUnit   float64                  `json:"averagePerUnit"`
+	TransactionCount int                      `json:"transactionCount"`
+	Series           []MovingAverageDataPoint `json:"series"`
+}
+
+type AnalyticsMovingAverageResult struct {
+	Granularity      string                   `json:"granularity"`
+	Scope            string                   `json:"scope"`
+	AveragePerUnit   float64                  `json:"averagePerUnit"`
+	TransactionCount int                      `json:"transactionCount"`
+	DaysAnalyzed     int                      `json:"daysAnalyzed"`
+	Currency         string                   `json:"currency"`
+	From             string                   `json:"from"`
+	To               string                   `json:"to"`
+	Series           []MovingAverageDataPoint `json:"series,omitempty"`
+	Items            []MovingAverageItem      `json:"items,omitempty"`
+}

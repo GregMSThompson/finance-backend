@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"fmt"
 	"sort"
 	"sync"
 	"time"
@@ -423,6 +424,210 @@ func recurringMonthlyEquivalent(amount float64, frequency string) float64 {
 		return amount / 3
 	default:
 		return 0
+	}
+}
+
+// maBucket holds accumulated spend totals for a single moving-average period bucket.
+type maBucket struct {
+	total float64
+	count int
+}
+
+func (s *analyticsService) GetMovingAverage(ctx context.Context, uid string, args dto.AnalyticsMovingAverageArgs) (dto.AnalyticsMovingAverageResult, error) {
+	result := dto.AnalyticsMovingAverageResult{
+		Granularity: args.Granularity,
+		Scope:       args.Scope,
+		From:        args.DateFrom,
+		To:          args.DateTo,
+	}
+
+	if err := validateGranularity(args.Granularity); err != nil {
+		return result, err
+	}
+	if err := validateScope(args.Scope); err != nil {
+		return result, err
+	}
+
+	from, err := time.Parse("2006-01-02", args.DateFrom)
+	if err != nil {
+		return result, errs.NewValidationError("invalid dateFrom: " + args.DateFrom)
+	}
+	to, err := time.Parse("2006-01-02", args.DateTo)
+	if err != nil {
+		return result, errs.NewValidationError("invalid dateTo: " + args.DateTo)
+	}
+	daysAnalyzed := int(to.Sub(from).Hours()/24) + 1
+	if daysAnalyzed < 1 {
+		daysAnalyzed = 1
+	}
+	result.DaysAnalyzed = daysAnalyzed
+	units := maUnits(args.Granularity, daysAnalyzed)
+
+	overallSeries := map[string]*maBucket{}
+	var overallTotal float64
+	var overallCount int
+	var currency string
+
+	scopeSeries := map[string]map[string]*maBucket{}
+	scopeTotals := map[string]float64{}
+	scopeCounts := map[string]int{}
+
+	pending := false
+	if err := s.txs.Query(ctx, uid, dto.TransactionQuery{
+		Pending:    &pending,
+		PFCPrimary: args.PFCPrimary,
+		BankID:     args.BankID,
+		Merchant:   args.Merchant,
+		DateFrom:   &args.DateFrom,
+		DateTo:     &args.DateTo,
+	}, func(tx *models.Transaction) error {
+		pk, err := maPeriodKey(tx.Date, args.Granularity)
+		if err != nil {
+			return err
+		}
+
+		if _, ok := overallSeries[pk]; !ok {
+			overallSeries[pk] = &maBucket{}
+		}
+		overallSeries[pk].total += tx.Amount
+		overallSeries[pk].count++
+		overallTotal += tx.Amount
+		overallCount++
+		if currency == "" && tx.Currency != "" {
+			currency = tx.Currency
+		}
+
+		if args.Scope != "overall" {
+			sk := maScopeKey(tx, args.Scope)
+			if sk != "" {
+				if _, ok := scopeSeries[sk]; !ok {
+					scopeSeries[sk] = map[string]*maBucket{}
+				}
+				if _, ok := scopeSeries[sk][pk]; !ok {
+					scopeSeries[sk][pk] = &maBucket{}
+				}
+				scopeSeries[sk][pk].total += tx.Amount
+				scopeSeries[sk][pk].count++
+				scopeTotals[sk] += tx.Amount
+				scopeCounts[sk]++
+			}
+		}
+
+		return nil
+	}); err != nil {
+		return result, err
+	}
+
+	if units > 0 {
+		result.AveragePerUnit = overallTotal / units
+	}
+	result.TransactionCount = overallCount
+	result.Currency = currency
+	result.Series = buildMASeries(overallSeries)
+
+	if args.Scope != "overall" {
+		items := make([]dto.MovingAverageItem, 0, len(scopeSeries))
+		for sk, periods := range scopeSeries {
+			var avg float64
+			if units > 0 {
+				avg = scopeTotals[sk] / units
+			}
+			items = append(items, dto.MovingAverageItem{
+				Key:              sk,
+				AveragePerUnit:   avg,
+				TransactionCount: scopeCounts[sk],
+				Series:           buildMASeries(periods),
+			})
+		}
+		sort.Slice(items, func(i, j int) bool { return items[i].Key < items[j].Key })
+		result.Items = items
+	}
+
+	return result, nil
+}
+
+// buildMASeries converts a period-keyed bucket map into a sorted slice of data points.
+func buildMASeries(buckets map[string]*maBucket) []dto.MovingAverageDataPoint {
+	keys := make([]string, 0, len(buckets))
+	for k := range buckets {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	series := make([]dto.MovingAverageDataPoint, 0, len(keys))
+	for _, k := range keys {
+		b := buckets[k]
+		series = append(series, dto.MovingAverageDataPoint{
+			Period:           k,
+			Total:            b.total,
+			TransactionCount: b.count,
+		})
+	}
+	return series
+}
+
+// maUnits returns the number of time units in the window for the given granularity.
+func maUnits(granularity string, daysAnalyzed int) float64 {
+	switch granularity {
+	case "day":
+		return float64(daysAnalyzed)
+	case "week":
+		return float64(daysAnalyzed) / 7.0
+	case "month":
+		return float64(daysAnalyzed) / 30.0
+	default:
+		return 0
+	}
+}
+
+// maPeriodKey maps a YYYY-MM-DD date to the appropriate bucket key for the granularity.
+func maPeriodKey(date, granularity string) (string, error) {
+	switch granularity {
+	case "day":
+		return date, nil
+	case "month":
+		if len(date) < 7 {
+			return "", errs.NewValidationError("invalid date: " + date)
+		}
+		return date[:7], nil
+	case "week":
+		t, err := time.Parse("2006-01-02", date)
+		if err != nil {
+			return "", err
+		}
+		year, week := t.ISOWeek()
+		return fmt.Sprintf("%d-W%02d", year, week), nil
+	default:
+		return "", errs.NewValidationError("unknown granularity: " + granularity)
+	}
+}
+
+// maScopeKey extracts the grouping key from a transaction for the given scope.
+func maScopeKey(tx *models.Transaction, scope string) string {
+	switch scope {
+	case "category":
+		return tx.PFCPrimary
+	case "merchant":
+		return tx.Name
+	default:
+		return ""
+	}
+}
+
+func validateGranularity(g string) error {
+	switch g {
+	case "day", "week", "month":
+		return nil
+	default:
+		return errs.NewValidationError("granularity must be day, week, or month")
+	}
+}
+
+func validateScope(scope string) error {
+	switch scope {
+	case "overall", "category", "merchant":
+		return nil
+	default:
+		return errs.NewValidationError("scope must be overall, category, or merchant")
 	}
 }
 

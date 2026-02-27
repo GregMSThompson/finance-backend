@@ -580,3 +580,206 @@ func TestGetRecurringTransactionsStoreErrorPropagates(t *testing.T) {
 		t.Fatal("expected error from store")
 	}
 }
+
+func TestGetMovingAverageOverallMonthly(t *testing.T) {
+	// 3 transactions across 3 months; 2025-01-01 to 2025-03-31 = 90 days → 3 monthly units.
+	store := &fakeAnalyticsStore{
+		txs: []*models.Transaction{
+			{Amount: 100, Currency: "USD", Date: "2025-01-15"},
+			{Amount: 80, Currency: "USD", Date: "2025-02-15"},
+			{Amount: 120, Currency: "USD", Date: "2025-03-15"},
+		},
+	}
+	svc := NewAnalyticsService(store)
+
+	got, err := svc.GetMovingAverage(context.Background(), "user", dto.AnalyticsMovingAverageArgs{
+		Granularity: "month",
+		Scope:       "overall",
+		DateFrom:    "2025-01-01",
+		DateTo:      "2025-03-31",
+	})
+	if err != nil {
+		t.Fatalf("GetMovingAverage error: %v", err)
+	}
+	if got.DaysAnalyzed != 90 {
+		t.Fatalf("daysAnalyzed mismatch: got %d", got.DaysAnalyzed)
+	}
+	if got.TransactionCount != 3 {
+		t.Fatalf("transactionCount mismatch: got %d", got.TransactionCount)
+	}
+	// total=300, units=90/30=3 → average=100
+	if got.AveragePerUnit != 100 {
+		t.Fatalf("averagePerUnit mismatch: got %v", got.AveragePerUnit)
+	}
+	if got.Currency != "USD" {
+		t.Fatalf("currency mismatch: got %q", got.Currency)
+	}
+	if len(got.Series) != 3 {
+		t.Fatalf("series length mismatch: got %d", len(got.Series))
+	}
+	// Series must be sorted by period key.
+	if got.Series[0].Period != "2025-01" || got.Series[1].Period != "2025-02" || got.Series[2].Period != "2025-03" {
+		t.Fatalf("series periods mismatch: %+v", got.Series)
+	}
+	if got.Series[0].Total != 100 || got.Series[1].Total != 80 || got.Series[2].Total != 120 {
+		t.Fatalf("series totals mismatch: %+v", got.Series)
+	}
+	if got.Items != nil {
+		t.Fatal("expected nil items for scope=overall")
+	}
+}
+
+func TestGetMovingAverageWeeklyPeriodKeys(t *testing.T) {
+	// 2025-01-06 = ISO week 2025-W02, 2025-01-13 = ISO week 2025-W03.
+	// Window: Jan 6–19 = 14 days → 2 weekly units.
+	store := &fakeAnalyticsStore{
+		txs: []*models.Transaction{
+			{Amount: 10, Currency: "USD", Date: "2025-01-06"},
+			{Amount: 20, Currency: "USD", Date: "2025-01-13"},
+		},
+	}
+	svc := NewAnalyticsService(store)
+
+	got, err := svc.GetMovingAverage(context.Background(), "user", dto.AnalyticsMovingAverageArgs{
+		Granularity: "week",
+		Scope:       "overall",
+		DateFrom:    "2025-01-06",
+		DateTo:      "2025-01-19",
+	})
+	if err != nil {
+		t.Fatalf("GetMovingAverage error: %v", err)
+	}
+	if got.DaysAnalyzed != 14 {
+		t.Fatalf("daysAnalyzed mismatch: got %d", got.DaysAnalyzed)
+	}
+	if len(got.Series) != 2 {
+		t.Fatalf("series length mismatch: got %d", len(got.Series))
+	}
+	if got.Series[0].Period != "2025-W02" || got.Series[1].Period != "2025-W03" {
+		t.Fatalf("week period keys mismatch: %+v", got.Series)
+	}
+	// total=30, units=14/7=2 → average=15
+	if got.AveragePerUnit != 15 {
+		t.Fatalf("averagePerUnit mismatch: got %v", got.AveragePerUnit)
+	}
+}
+
+func TestGetMovingAverageScopeCategory(t *testing.T) {
+	// 2 categories across a 31-day window.
+	store := &fakeAnalyticsStore{
+		txs: []*models.Transaction{
+			{Amount: 50, Currency: "USD", Date: "2025-01-10", PFCPrimary: "Food"},
+			{Amount: 30, Currency: "USD", Date: "2025-01-15", PFCPrimary: "Food"},
+			{Amount: 20, Currency: "USD", Date: "2025-01-20", PFCPrimary: "Transport"},
+		},
+	}
+	svc := NewAnalyticsService(store)
+
+	got, err := svc.GetMovingAverage(context.Background(), "user", dto.AnalyticsMovingAverageArgs{
+		Granularity: "month",
+		Scope:       "category",
+		DateFrom:    "2025-01-01",
+		DateTo:      "2025-01-31",
+	})
+	if err != nil {
+		t.Fatalf("GetMovingAverage error: %v", err)
+	}
+	if got.TransactionCount != 3 {
+		t.Fatalf("transactionCount mismatch: got %d", got.TransactionCount)
+	}
+	if len(got.Items) != 2 {
+		t.Fatalf("items length mismatch: got %d", len(got.Items))
+	}
+	// Items are sorted by key: Food < Transport.
+	if got.Items[0].Key != "Food" || got.Items[1].Key != "Transport" {
+		t.Fatalf("items key order mismatch: %+v", got.Items)
+	}
+	if got.Items[0].TransactionCount != 2 || got.Items[1].TransactionCount != 1 {
+		t.Fatalf("items transaction counts mismatch")
+	}
+	// Each item must have its own series.
+	if len(got.Items[0].Series) != 1 || got.Items[0].Series[0].Period != "2025-01" {
+		t.Fatalf("food series mismatch: %+v", got.Items[0].Series)
+	}
+	if len(got.Items[1].Series) != 1 || got.Items[1].Series[0].Period != "2025-01" {
+		t.Fatalf("transport series mismatch: %+v", got.Items[1].Series)
+	}
+	// Overall series still present.
+	if len(got.Series) != 1 {
+		t.Fatalf("overall series length mismatch: got %d", len(got.Series))
+	}
+}
+
+func TestGetMovingAverageNoTransactions(t *testing.T) {
+	store := &fakeAnalyticsStore{}
+	svc := NewAnalyticsService(store)
+
+	got, err := svc.GetMovingAverage(context.Background(), "user", dto.AnalyticsMovingAverageArgs{
+		Granularity: "month",
+		Scope:       "overall",
+		DateFrom:    "2025-01-01",
+		DateTo:      "2025-01-31",
+	})
+	if err != nil {
+		t.Fatalf("GetMovingAverage error: %v", err)
+	}
+	if got.TransactionCount != 0 {
+		t.Fatalf("expected transactionCount=0, got %d", got.TransactionCount)
+	}
+	if got.AveragePerUnit != 0 {
+		t.Fatalf("expected averagePerUnit=0, got %v", got.AveragePerUnit)
+	}
+}
+
+func TestGetMovingAverageInvalidGranularity(t *testing.T) {
+	store := &fakeAnalyticsStore{}
+	svc := NewAnalyticsService(store)
+
+	_, err := svc.GetMovingAverage(context.Background(), "user", dto.AnalyticsMovingAverageArgs{
+		Granularity: "year",
+		Scope:       "overall",
+		DateFrom:    "2025-01-01",
+		DateTo:      "2025-01-31",
+	})
+	if err == nil {
+		t.Fatal("expected error for invalid granularity")
+	}
+	var valErr *errs.ValidationError
+	if !errors.As(err, &valErr) {
+		t.Fatalf("expected ValidationError, got %T", err)
+	}
+}
+
+func TestGetMovingAverageInvalidScope(t *testing.T) {
+	store := &fakeAnalyticsStore{}
+	svc := NewAnalyticsService(store)
+
+	_, err := svc.GetMovingAverage(context.Background(), "user", dto.AnalyticsMovingAverageArgs{
+		Granularity: "month",
+		Scope:       "unknown",
+		DateFrom:    "2025-01-01",
+		DateTo:      "2025-01-31",
+	})
+	if err == nil {
+		t.Fatal("expected error for invalid scope")
+	}
+	var valErr *errs.ValidationError
+	if !errors.As(err, &valErr) {
+		t.Fatalf("expected ValidationError, got %T", err)
+	}
+}
+
+func TestGetMovingAverageStoreErrorPropagates(t *testing.T) {
+	store := &fakeAnalyticsStore{err: errors.New("store down")}
+	svc := NewAnalyticsService(store)
+
+	_, err := svc.GetMovingAverage(context.Background(), "user", dto.AnalyticsMovingAverageArgs{
+		Granularity: "month",
+		Scope:       "overall",
+		DateFrom:    "2025-01-01",
+		DateTo:      "2025-01-31",
+	})
+	if err == nil {
+		t.Fatal("expected error from store")
+	}
+}
