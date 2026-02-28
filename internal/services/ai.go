@@ -27,6 +27,7 @@ type analyticsClient interface {
 	GetRecurringTransactions(ctx context.Context, uid string, args dto.AnalyticsRecurringArgs) (dto.RecurringTransactionsResult, error)
 	GetMovingAverage(ctx context.Context, uid string, args dto.AnalyticsMovingAverageArgs) (dto.AnalyticsMovingAverageResult, error)
 	GetTopN(ctx context.Context, uid string, args dto.AnalyticsTopNArgs) (dto.AnalyticsTopNResult, error)
+	GetIncomeVsExpenses(ctx context.Context, uid string, args dto.AnalyticsIncomeVsExpensesArgs) (dto.IncomeVsExpensesResult, error)
 }
 
 type aiStore interface {
@@ -386,6 +387,23 @@ func (s *aiService) executeTool(ctx context.Context, uid string, call dto.Vertex
 			return dto.VertexToolResult{}, err
 		}
 		return dto.VertexToolResult{Name: call.Name, Response: payload}, nil
+	case "get_income_vs_expenses":
+		args, err := decodeArgs[dto.AnalyticsIncomeVsExpensesArgs](call.Args)
+		if err != nil {
+			return dto.VertexToolResult{}, err
+		}
+		if args.DateFrom == "" || args.DateTo == "" {
+			return dto.VertexToolResult{}, errs.NewValidationError("dateFrom and dateTo are required")
+		}
+		result, err := s.analysis.GetIncomeVsExpenses(ctx, uid, args)
+		if err != nil {
+			return dto.VertexToolResult{}, err
+		}
+		payload, err := toMap(result)
+		if err != nil {
+			return dto.VertexToolResult{}, err
+		}
+		return dto.VertexToolResult{Name: call.Name, Response: payload}, nil
 	default:
 		return dto.VertexToolResult{}, errs.NewValidationError(fmt.Sprintf("unsupported tool: %s", call.Name))
 	}
@@ -544,6 +562,22 @@ func toolSchemas() []dto.VertexTool {
 			},
 		},
 		{
+			Name: "get_income_vs_expenses",
+			Description: "Compare total income against total expenses for a given date range. " +
+				"Returns income, expenses, and net (income minus expenses). " +
+				"Income is identified by the INCOME category; all other transactions are treated as expenses. " +
+				"Always provide dateFrom and dateTo; default to the current month if the user does not specify.",
+			Parameters: &dto.VertexSchema{
+				Type: "object",
+				Properties: map[string]*dto.VertexSchema{
+					"dateFrom": {Type: "string", Description: "YYYY-MM-DD start of the window. Required."},
+					"dateTo":   {Type: "string", Description: "YYYY-MM-DD end of the window. Required."},
+					"bankId":   {Type: "string", Description: "Filter by bank id."},
+				},
+				Required: []string{"dateFrom", "dateTo"},
+			},
+		},
+		{
 			Name:        "get_period_comparison",
 			Description: "Compare spending totals between two explicit time periods with optional grouping.",
 			Parameters: &dto.VertexSchema{
@@ -649,6 +683,7 @@ func isValidToolName(name string) bool {
 		"get_recurring_transactions": true,
 		"get_moving_average":         true,
 		"get_top_n":                  true,
+		"get_income_vs_expenses":     true,
 	}
 	return validTools[name]
 }

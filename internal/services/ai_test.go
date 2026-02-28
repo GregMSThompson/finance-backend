@@ -63,6 +63,10 @@ type fakeAnalyticsClient struct {
 	topNArgs          dto.AnalyticsTopNArgs
 	topNResp          dto.AnalyticsTopNResult
 	topNErr           error
+	incomeVsExpCalls  int
+	incomeVsExpArgs   dto.AnalyticsIncomeVsExpensesArgs
+	incomeVsExpResp   dto.IncomeVsExpensesResult
+	incomeVsExpErr    error
 }
 
 func (f *fakeAnalyticsClient) GetSpendTotal(ctx context.Context, uid string, args dto.AnalyticsSpendTotalArgs) (dto.AnalyticsSpendTotalResult, error) {
@@ -126,6 +130,15 @@ func (f *fakeAnalyticsClient) GetTopN(ctx context.Context, uid string, args dto.
 		return dto.AnalyticsTopNResult{}, f.topNErr
 	}
 	return f.topNResp, nil
+}
+
+func (f *fakeAnalyticsClient) GetIncomeVsExpenses(ctx context.Context, uid string, args dto.AnalyticsIncomeVsExpensesArgs) (dto.IncomeVsExpensesResult, error) {
+	f.incomeVsExpCalls++
+	f.incomeVsExpArgs = args
+	if f.incomeVsExpErr != nil {
+		return dto.IncomeVsExpensesResult{}, f.incomeVsExpErr
+	}
+	return f.incomeVsExpResp, nil
 }
 
 type fakeAIStore struct {

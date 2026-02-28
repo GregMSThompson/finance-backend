@@ -974,3 +974,95 @@ func TestGetTopNStoreErrorPropagates(t *testing.T) {
 		t.Fatal("expected error from store")
 	}
 }
+
+func TestGetIncomeVsExpensesBasic(t *testing.T) {
+	// 5000 income, 200+100=300 expenses → net = 4700.
+	store := &fakeAnalyticsStore{
+		txs: []*models.Transaction{
+			{Amount: 5000, Currency: "USD", PFCPrimary: "INCOME"},
+			{Amount: 200, Currency: "USD", PFCPrimary: "DINING"},
+			{Amount: 100, Currency: "USD", PFCPrimary: "ENTERTAINMENT"},
+		},
+	}
+	svc := NewAnalyticsService(store)
+
+	got, err := svc.GetIncomeVsExpenses(context.Background(), "user", dto.AnalyticsIncomeVsExpensesArgs{
+		DateFrom: "2025-01-01",
+		DateTo:   "2025-01-31",
+	})
+	if err != nil {
+		t.Fatalf("GetIncomeVsExpenses error: %v", err)
+	}
+	if got.Income != 5000 {
+		t.Fatalf("income mismatch: got %v", got.Income)
+	}
+	if got.Expenses != 300 {
+		t.Fatalf("expenses mismatch: got %v", got.Expenses)
+	}
+	if got.Net != 4700 {
+		t.Fatalf("net mismatch: got %v", got.Net)
+	}
+	if got.Currency != "USD" {
+		t.Fatalf("currency mismatch: got %q", got.Currency)
+	}
+	if got.From != "2025-01-01" || got.To != "2025-01-31" {
+		t.Fatalf("date range mismatch: from=%q to=%q", got.From, got.To)
+	}
+}
+
+func TestGetIncomeVsExpensesNoIncome(t *testing.T) {
+	// No income transactions → income=0, expenses=150, net=-150.
+	store := &fakeAnalyticsStore{
+		txs: []*models.Transaction{
+			{Amount: 100, Currency: "USD", PFCPrimary: "DINING"},
+			{Amount: 50, Currency: "USD", PFCPrimary: "ENTERTAINMENT"},
+		},
+	}
+	svc := NewAnalyticsService(store)
+
+	got, err := svc.GetIncomeVsExpenses(context.Background(), "user", dto.AnalyticsIncomeVsExpensesArgs{
+		DateFrom: "2025-01-01",
+		DateTo:   "2025-01-31",
+	})
+	if err != nil {
+		t.Fatalf("GetIncomeVsExpenses error: %v", err)
+	}
+	if got.Income != 0 {
+		t.Fatalf("expected income=0, got %v", got.Income)
+	}
+	if got.Expenses != 150 {
+		t.Fatalf("expenses mismatch: got %v", got.Expenses)
+	}
+	if got.Net != -150 {
+		t.Fatalf("net mismatch: got %v", got.Net)
+	}
+}
+
+func TestGetIncomeVsExpensesNoTransactions(t *testing.T) {
+	store := &fakeAnalyticsStore{}
+	svc := NewAnalyticsService(store)
+
+	got, err := svc.GetIncomeVsExpenses(context.Background(), "user", dto.AnalyticsIncomeVsExpensesArgs{
+		DateFrom: "2025-01-01",
+		DateTo:   "2025-01-31",
+	})
+	if err != nil {
+		t.Fatalf("GetIncomeVsExpenses error: %v", err)
+	}
+	if got.Income != 0 || got.Expenses != 0 || got.Net != 0 {
+		t.Fatalf("expected all zeros, got income=%v expenses=%v net=%v", got.Income, got.Expenses, got.Net)
+	}
+}
+
+func TestGetIncomeVsExpensesStoreErrorPropagates(t *testing.T) {
+	store := &fakeAnalyticsStore{err: errors.New("store down")}
+	svc := NewAnalyticsService(store)
+
+	_, err := svc.GetIncomeVsExpenses(context.Background(), "user", dto.AnalyticsIncomeVsExpensesArgs{
+		DateFrom: "2025-01-01",
+		DateTo:   "2025-01-31",
+	})
+	if err == nil {
+		t.Fatal("expected error from store")
+	}
+}

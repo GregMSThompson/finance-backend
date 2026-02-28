@@ -175,6 +175,21 @@ type AnalyticsTopNResult struct {
 	Items      []TopNItem `json:"items"`
 }
 
+type AnalyticsIncomeVsExpensesArgs struct {
+	BankID   *string
+	DateFrom string
+	DateTo   string
+}
+
+type IncomeVsExpensesResult struct {
+	Income   float64 `json:"income"`
+	Expenses float64 `json:"expenses"`
+	Net      float64 `json:"net"`
+	Currency string  `json:"currency"`
+	From     string  `json:"from"`
+	To       string  `json:"to"`
+}
+
 type AnalyticsMovingAverageResult struct {
 	Granularity      string                   `json:"granularity"`
 	Scope            string                   `json:"scope"`

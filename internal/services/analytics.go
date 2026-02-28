@@ -427,6 +427,41 @@ func recurringMonthlyEquivalent(amount float64, frequency string) float64 {
 	}
 }
 
+func (s *analyticsService) GetIncomeVsExpenses(ctx context.Context, uid string, args dto.AnalyticsIncomeVsExpensesArgs) (dto.IncomeVsExpensesResult, error) {
+	result := dto.IncomeVsExpensesResult{
+		From: args.DateFrom,
+		To:   args.DateTo,
+	}
+
+	pending := false
+	var total, income float64
+	var currency string
+
+	if err := s.txs.Query(ctx, uid, dto.TransactionQuery{
+		Pending:  &pending,
+		BankID:   args.BankID,
+		DateFrom: &args.DateFrom,
+		DateTo:   &args.DateTo,
+	}, func(tx *models.Transaction) error {
+		total += tx.Amount
+		if tx.PFCPrimary == "INCOME" {
+			income += tx.Amount
+		}
+		if currency == "" && tx.Currency != "" {
+			currency = tx.Currency
+		}
+		return nil
+	}); err != nil {
+		return result, err
+	}
+
+	result.Income = income
+	result.Expenses = total - income
+	result.Net = income - result.Expenses
+	result.Currency = currency
+	return result, nil
+}
+
 func (s *analyticsService) GetTopN(ctx context.Context, uid string, args dto.AnalyticsTopNArgs) (dto.AnalyticsTopNResult, error) {
 	result := dto.AnalyticsTopNResult{
 		Dimension: args.Dimension,
