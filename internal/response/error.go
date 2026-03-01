@@ -11,6 +11,7 @@ import (
 )
 
 type ErrorResponse struct {
+	Success bool   `json:"success"`
 	Code    string `json:"code"`
 	Message string `json:"message"`
 }
@@ -20,6 +21,7 @@ func (h *responseHandler) WriteError(w http.ResponseWriter, r *http.Request, sta
 	w.WriteHeader(status)
 
 	if err := json.NewEncoder(w).Encode(ErrorResponse{
+		Success: false,
 		Code:    code,
 		Message: message,
 	}); err != nil {
