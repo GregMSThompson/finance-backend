@@ -270,31 +270,3 @@ func TestGetWidgetData_OK(t *testing.T) {
 	}
 }
 
-func TestGetWidgetTypes_OK(t *testing.T) {
-	resp := &stubResponseHandler{}
-	h := NewDashboardHandlers(&Deps{ResponseHandler: resp, DashboardSvc: &stubDashboardService{}})
-
-	req := httptest.NewRequest(http.MethodGet, "/dashboard/widget-types", nil)
-	rr := httptest.NewRecorder()
-	h.GetWidgetTypes(rr, req)
-
-	if !resp.writeSuccessCalled {
-		t.Fatal("expected WriteSuccess")
-	}
-	catalog, ok := resp.writeSuccessData.([]widgetTypeEntry)
-	if !ok {
-		t.Fatalf("expected []widgetTypeEntry, got %T", resp.writeSuccessData)
-	}
-	if len(catalog) == 0 {
-		t.Fatal("catalog should not be empty")
-	}
-	found := false
-	for _, e := range catalog {
-		if e.Type == dto.WidgetTypeTopSpenders {
-			found = true
-		}
-	}
-	if !found {
-		t.Error("expected topSpenders in catalog")
-	}
-}

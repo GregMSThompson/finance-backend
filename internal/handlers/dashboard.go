@@ -42,7 +42,6 @@ func (h *dashboardHandlers) DashboardRoutes() chi.Router {
 	r.Put("/widgets/{widgetId}", h.UpdateWidgetConfig)
 	r.Delete("/widgets/{widgetId}", h.DeleteWidget)
 	r.Get("/widgets/{widgetId}", h.GetWidgetData)
-	r.Get("/widget-types", h.GetWidgetTypes)
 	return r
 }
 
@@ -122,63 +121,3 @@ func (h *dashboardHandlers) GetWidgetData(w http.ResponseWriter, r *http.Request
 	h.ResponseHandler.WriteSuccess(w, r, http.StatusOK, data)
 }
 
-// GetWidgetTypes returns the hardcoded catalog of supported widget types and their valid configurations.
-func (h *dashboardHandlers) GetWidgetTypes(w http.ResponseWriter, r *http.Request) {
-	h.ResponseHandler.WriteSuccess(w, r, http.StatusOK, widgetTypeCatalog)
-}
-
-type widgetTypeEntry struct {
-	Type           string         `json:"type"`
-	Visualizations []string       `json:"visualizations"`
-	ConfigOptions  map[string]any `json:"configOptions"`
-}
-
-var widgetTypeCatalog = []widgetTypeEntry{
-	{
-		Type:           dto.WidgetTypeTopSpenders,
-		Visualizations: []string{dto.VisPie, dto.VisBar, dto.VisList},
-		ConfigOptions: map[string]any{
-			"dateRange": "required",
-			"dimension": []string{dto.DimensionCategory, dto.DimensionMerchant},
-			"limit":     "3-20 (default 10)",
-			"category":  "optional PFC primary filter",
-			"bankId":    "optional",
-		},
-	},
-	{
-		Type:           dto.WidgetTypeSpendingTrend,
-		Visualizations: []string{dto.VisLine, dto.VisBar},
-		ConfigOptions: map[string]any{
-			"window":    []string{dto.Window7Day, dto.Window30Day, dto.Window60Day, dto.Window90Day},
-			"dimension": []string{dto.DimensionOverall, dto.DimensionCategory, dto.DimensionMerchant},
-			"category":  "optional PFC primary filter",
-			"bankId":    "optional",
-		},
-	},
-	{
-		Type:           dto.WidgetTypePeriodComparison,
-		Visualizations: []string{dto.VisSummary, dto.VisBar},
-		ConfigOptions: map[string]any{
-			"preset": []string{dto.PeriodMonthOverMonth, dto.PeriodWeekOverWeek, dto.PeriodQuarterOverQuarter, dto.PeriodYearOverYear},
-			"bankId": "optional",
-		},
-	},
-	{
-		Type:           dto.WidgetTypeLargestTransactions,
-		Visualizations: []string{dto.VisList, dto.VisTable},
-		ConfigOptions: map[string]any{
-			"dateRange": "required",
-			"limit":     "5-20 (default 10)",
-			"category":  "optional PFC primary filter",
-			"bankId":    "optional",
-		},
-	},
-	{
-		Type:           dto.WidgetTypeRecurringSubscriptions,
-		Visualizations: []string{dto.VisList, dto.VisTable},
-		ConfigOptions: map[string]any{
-			"dateRange": "optional (default: last 6 months)",
-			"bankId":    "optional",
-		},
-	},
-}
