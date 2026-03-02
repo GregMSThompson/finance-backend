@@ -101,6 +101,9 @@ func (s *dashboardService) ReorderWidgets(ctx context.Context, uid string, req d
 }
 
 func (s *dashboardService) DeleteWidget(ctx context.Context, uid, widgetID string) error {
+	if _, err := s.store.Get(ctx, uid, widgetID); err != nil {
+		return err
+	}
 	return s.store.Delete(ctx, uid, widgetID)
 }
 

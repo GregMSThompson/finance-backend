@@ -296,6 +296,15 @@ func TestDeleteWidget_OK(t *testing.T) {
 	}
 }
 
+func TestDeleteWidget_NotFound(t *testing.T) {
+	svc := NewDashboardService(newFakeStore(), &fakeDashboardAnalytics{})
+	err := svc.DeleteWidget(context.Background(), "uid1", "nonexistent")
+	var nfe *errs.NotFoundError
+	if !errors.As(err, &nfe) {
+		t.Fatalf("expected NotFoundError, got %T: %v", err, err)
+	}
+}
+
 // --- GetWidgetData tests ---
 
 func TestGetWidgetData_WidgetNotFound(t *testing.T) {
