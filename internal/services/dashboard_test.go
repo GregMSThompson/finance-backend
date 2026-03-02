@@ -11,6 +11,20 @@ import (
 	"github.com/GregMSThompson/finance-backend/internal/models"
 )
 
+// fixedClock returns a constructor option that overrides the service clock with a fixed time.
+func withFixedClock(t time.Time) func(*dashboardService) {
+	return func(s *dashboardService) { s.clockNow = func() time.Time { return t } }
+}
+
+// newSvc creates a dashboardService with optional overrides applied.
+func newSvc(store dashboardStore, an dashboardAnalytics, opts ...func(*dashboardService)) *dashboardService {
+	s := NewDashboardService(store, an)
+	for _, o := range opts {
+		o(s)
+	}
+	return s
+}
+
 // --- Fakes ---
 
 type fakeDashboardStore struct {
@@ -488,7 +502,8 @@ func TestGetWidgetData_RecurringSubscriptions(t *testing.T) {
 			Currency:               "USD",
 		},
 	}
-	svc := NewDashboardService(store, an)
+	fixedNow := time.Date(2026, 3, 15, 12, 0, 0, 0, time.UTC)
+	svc := newSvc(store, an, withFixedClock(fixedNow))
 
 	resp, err := svc.GetWidgetData(context.Background(), "uid1", "w1")
 	if err != nil {
@@ -504,9 +519,12 @@ func TestGetWidgetData_RecurringSubscriptions(t *testing.T) {
 	if data.TotalMonthly != 15.99 {
 		t.Errorf("unexpected totalMonthly: %f", data.TotalMonthly)
 	}
-	// Verify date range is ~12 months
-	if an.lastRecurringArgs.DateFrom == "" {
-		t.Error("expected DateFrom to be set")
+	// Verify 6-month default date range
+	if an.lastRecurringArgs.DateFrom != "2025-09-15" {
+		t.Errorf("expected DateFrom=2025-09-15 (6 months back), got %s", an.lastRecurringArgs.DateFrom)
+	}
+	if an.lastRecurringArgs.DateTo != "2026-03-15" {
+		t.Errorf("expected DateTo=2026-03-15, got %s", an.lastRecurringArgs.DateTo)
 	}
 }
 

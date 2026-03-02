@@ -177,7 +177,8 @@ var widgetTypeCatalog = []widgetTypeEntry{
 		Type:           dto.WidgetTypeRecurringSubscriptions,
 		Visualizations: []string{dto.VisList, dto.VisTable},
 		ConfigOptions: map[string]any{
-			"bankId": "optional",
+			"dateRange": "optional (default: last 6 months)",
+			"bankId":    "optional",
 		},
 	},
 }

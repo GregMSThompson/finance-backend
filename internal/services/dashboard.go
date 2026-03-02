@@ -37,10 +37,11 @@ type dashboardAnalytics interface {
 type dashboardService struct {
 	store     dashboardStore
 	analytics dashboardAnalytics
+	clockNow  func() time.Time
 }
 
 func NewDashboardService(store dashboardStore, analytics dashboardAnalytics) *dashboardService {
-	return &dashboardService{store: store, analytics: analytics}
+	return &dashboardService{store: store, analytics: analytics, clockNow: time.Now}
 }
 
 // --- Public service methods ---
@@ -133,14 +134,14 @@ func (s *dashboardService) GetWidgetData(ctx context.Context, uid, widgetID stri
 	return dto.WidgetDataResponse{
 		WidgetID:    widgetID,
 		Data:        data,
-		LastUpdated: time.Now(),
+		LastUpdated: s.clockNow(),
 	}, nil
 }
 
 // --- Private fetch methods ---
 
 func (s *dashboardService) fetchTopSpenders(ctx context.Context, uid string, cfg models.WidgetConfig) (dto.TopSpendersData, error) {
-	from, to, err := resolveDateRange(*cfg.DateRange, time.Now())
+	from, to, err := resolveDateRange(*cfg.DateRange, s.clockNow())
 	if err != nil {
 		return dto.TopSpendersData{}, err
 	}
@@ -176,7 +177,7 @@ func (s *dashboardService) fetchTopSpenders(ctx context.Context, uid string, cfg
 }
 
 func (s *dashboardService) fetchSpendingTrend(ctx context.Context, uid string, cfg models.WidgetConfig) (dto.AnalyticsMovingAverageResult, error) {
-	from, to, err := resolveWindow(cfg.Window, time.Now())
+	from, to, err := resolveWindow(cfg.Window, s.clockNow())
 	if err != nil {
 		return dto.AnalyticsMovingAverageResult{}, err
 	}
@@ -191,7 +192,7 @@ func (s *dashboardService) fetchSpendingTrend(ctx context.Context, uid string, c
 }
 
 func (s *dashboardService) fetchPeriodComparison(ctx context.Context, uid string, cfg models.WidgetConfig) (dto.PeriodComparisonWidgetData, error) {
-	currFrom, currTo, prevFrom, prevTo, err := resolvePeriodPreset(cfg.Preset, time.Now())
+	currFrom, currTo, prevFrom, prevTo, err := resolvePeriodPreset(cfg.Preset, s.clockNow())
 	if err != nil {
 		return dto.PeriodComparisonWidgetData{}, err
 	}
@@ -229,7 +230,7 @@ func (s *dashboardService) fetchPeriodComparison(ctx context.Context, uid string
 }
 
 func (s *dashboardService) fetchLargestTransactions(ctx context.Context, uid string, cfg models.WidgetConfig) (dto.LargestTransactionsData, error) {
-	from, to, err := resolveDateRange(*cfg.DateRange, time.Now())
+	from, to, err := resolveDateRange(*cfg.DateRange, s.clockNow())
 	if err != nil {
 		return dto.LargestTransactionsData{}, err
 	}
@@ -259,9 +260,18 @@ func (s *dashboardService) fetchLargestTransactions(ctx context.Context, uid str
 }
 
 func (s *dashboardService) fetchRecurringSubscriptions(ctx context.Context, uid string, cfg models.WidgetConfig) (dto.RecurringSubscriptionsData, error) {
-	now := time.Now()
-	from := now.AddDate(-1, 0, 0).Format(dashDateLayout)
-	to := now.Format(dashDateLayout)
+	var from, to string
+	if cfg.DateRange != nil {
+		var err error
+		from, to, err = resolveDateRange(*cfg.DateRange, s.clockNow())
+		if err != nil {
+			return dto.RecurringSubscriptionsData{}, err
+		}
+	} else {
+		now := s.clockNow()
+		from = now.AddDate(0, -6, 0).Format(dashDateLayout)
+		to = now.Format(dashDateLayout)
+	}
 	result, err := s.analytics.GetRecurringTransactions(ctx, uid, dto.AnalyticsRecurringArgs{
 		BankID:   optString(cfg.BankID),
 		DateFrom: from,
@@ -378,7 +388,11 @@ func validateConfig(widgetType string, cfg models.WidgetConfig) error {
 		}
 
 	case dto.WidgetTypeRecurringSubscriptions:
-		// No required config fields.
+		if cfg.DateRange != nil {
+			if err := validateDateRange(*cfg.DateRange); err != nil {
+				return err
+			}
+		}
 	}
 	return nil
 }
