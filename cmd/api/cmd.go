@@ -37,6 +37,7 @@ func main() {
 	tstore := store.NewTransactionStore(bs.Firestore)
 	bstore := store.NewBankStore(bs.Firestore, kmsHelper)
 	astore := store.NewAIStore(bs.Firestore)
+	dstore := store.NewDashboardStore(bs.Firestore)
 
 	// services
 	userv := services.NewUserService(ustore)
@@ -44,6 +45,7 @@ func main() {
 	plserv := services.NewPlaidService(bs.PlaidAdapter, bstore, tstore)
 	anserv := services.NewAnalyticsService(tstore)
 	aiserv := services.NewAIService(bs.VertexAdapter, anserv, astore, cfg.AITTL)
+	dashsvc := services.NewDashboardService(dstore, anserv)
 
 	// response handler
 	rh := response.New(bs.Log)
@@ -57,6 +59,7 @@ func main() {
 	deps.BankSvc = bserv
 	deps.PlaidSvc = plserv
 	deps.AISvc = aiserv
+	deps.DashboardSvc = dashsvc
 
 	// router
 	r := router.NewRouter(deps)
