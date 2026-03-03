@@ -2,6 +2,7 @@ package response
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -14,6 +15,17 @@ type ErrorResponse struct {
 	Success bool   `json:"success"`
 	Code    string `json:"code"`
 	Message string `json:"message"`
+}
+
+func errorChain(err error) []string {
+	if err == nil {
+		return nil
+	}
+	chain := make([]string, 0, 4)
+	for e := err; e != nil; e = errors.Unwrap(e) {
+		chain = append(chain, e.Error())
+	}
+	return chain
 }
 
 func (h *responseHandler) WriteError(w http.ResponseWriter, r *http.Request, status int, code, message string) {
@@ -54,7 +66,8 @@ func (h *responseHandler) HandleError(w http.ResponseWriter, r *http.Request, er
 	case *errs.DatabaseError:
 		log.Error("database error",
 			"operation", e.Operation,
-			"error", e.Message)
+			"error", e.Message,
+			"error_chain", errorChain(e))
 		h.WriteError(w, r, http.StatusInternalServerError, "internal_error",
 			"An error occurred")
 
@@ -66,7 +79,8 @@ func (h *responseHandler) HandleError(w http.ResponseWriter, r *http.Request, er
 		log.Log(r.Context(), level, "external service error",
 			"service", e.Service,
 			"transient", e.Transient,
-			"error", e.Message)
+			"error", e.Message,
+			"error_chain", errorChain(e))
 
 		status := http.StatusBadGateway
 		if e.Transient {
@@ -76,13 +90,16 @@ func (h *responseHandler) HandleError(w http.ResponseWriter, r *http.Request, er
 			"Service temporarily unavailable")
 
 	case *errs.EncryptionError:
-		log.Error("encryption error", "error", e.Message)
+		log.Error("encryption error",
+			"error", e.Message,
+			"error_chain", errorChain(e))
 		h.WriteError(w, r, http.StatusInternalServerError, "internal_error",
 			"An error occurred")
 
 	default:
 		log.Error("unexpected error",
 			"error", err,
+			"error_chain", errorChain(err),
 			"type", fmt.Sprintf("%T", err))
 		h.WriteError(w, r, http.StatusInternalServerError, "internal_error",
 			"An unexpected error occurred")
