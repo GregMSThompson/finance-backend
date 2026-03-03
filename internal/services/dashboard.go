@@ -10,6 +10,7 @@ import (
 	"github.com/GregMSThompson/finance-backend/internal/dto"
 	"github.com/GregMSThompson/finance-backend/internal/errs"
 	"github.com/GregMSThompson/finance-backend/internal/models"
+	"github.com/GregMSThompson/finance-backend/pkg/helpers"
 )
 
 const dashDateLayout = "2006-01-02"
@@ -235,6 +236,7 @@ func (s *dashboardService) fetchLargestTransactions(ctx context.Context, uid str
 		return dto.LargestTransactionsData{}, err
 	}
 	result, err := s.analytics.GetTransactions(ctx, uid, dto.AnalyticsTransactionsArgs{
+		Pending:    helpers.Ptr(false),
 		PFCPrimary: optString(cfg.Category),
 		BankID:     optString(cfg.BankID),
 		DateFrom:   &from,
