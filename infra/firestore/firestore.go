@@ -82,6 +82,12 @@ func setupTransactionIndexes(ctx *pulumi.Context, prov *gcp.Provider, db *firest
 		{name: "txPendingBankIdDateAsc", fields: indexFields("pending", "ASCENDING", "bankId", "ASCENDING", "date", "ASCENDING")},
 		{name: "txPendingBankIdDateDesc", fields: indexFields("pending", "ASCENDING", "bankId", "ASCENDING", "date", "DESCENDING")},
 		{name: "txPendingBankIdDateDescNameDesc", fields: indexFieldsWithNameOrder("DESCENDING", "pending", "ASCENDING", "bankId", "ASCENDING", "date", "DESCENDING")},
+		// largestTransactions query support:
+		// pending == false, optional bankId/pfcPrimary filters, date range on date, order by amount desc
+		{name: "txPendingAmountDescDateDescNameDesc", fields: indexFieldsWithNameOrder("DESCENDING", "pending", "ASCENDING", "amount", "DESCENDING", "date", "DESCENDING")},
+		{name: "txPendingBankIdAmountDescDateDescNameDesc", fields: indexFieldsWithNameOrder("DESCENDING", "pending", "ASCENDING", "bankId", "ASCENDING", "amount", "DESCENDING", "date", "DESCENDING")},
+		{name: "txPendingPfcPrimaryAmountDescDateDescNameDesc", fields: indexFieldsWithNameOrder("DESCENDING", "pending", "ASCENDING", "pfcPrimary", "ASCENDING", "amount", "DESCENDING", "date", "DESCENDING")},
+		{name: "txPendingPfcPrimaryBankIdAmountDescDateDescNameDesc", fields: indexFieldsWithNameOrder("DESCENDING", "pending", "ASCENDING", "pfcPrimary", "ASCENDING", "bankId", "ASCENDING", "amount", "DESCENDING", "date", "DESCENDING")},
 	}
 
 	for _, idx := range indexes {
@@ -89,7 +95,7 @@ func setupTransactionIndexes(ctx *pulumi.Context, prov *gcp.Provider, db *firest
 			Project:    pulumi.String(projectID),
 			Database:   db.Name,
 			Collection: pulumi.String("transactions"),
-			QueryScope: pulumi.String("COLLECTION_GROUP"),
+			QueryScope: pulumi.String("COLLECTION"),
 			Fields:     idx.fields,
 		},
 			pulumi.Provider(prov),
