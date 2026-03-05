@@ -16,13 +16,15 @@ type Widget struct {
 // WidgetConfig holds all possible configuration fields for any widget type.
 // Not all fields are valid for all types; the service layer enforces per-type rules.
 type WidgetConfig struct {
-	DateRange *DateRangeConfig `firestore:"dateRange,omitempty" json:"dateRange,omitempty"`
-	Window    string           `firestore:"window,omitempty" json:"window,omitempty"`    // "7day","30day","60day","90day"
-	Preset    string           `firestore:"preset,omitempty" json:"preset,omitempty"`    // period comparison preset
-	Dimension string           `firestore:"dimension,omitempty" json:"dimension,omitempty"` // "category","merchant","overall"
-	Limit     int              `firestore:"limit,omitempty" json:"limit,omitempty"`
-	Category  string           `firestore:"category,omitempty" json:"category,omitempty"` // optional PFC primary filter
-	BankID    string           `firestore:"bankId,omitempty" json:"bankId,omitempty"`
+	DateRange    *DateRangeConfig   `firestore:"dateRange,omitempty" json:"dateRange,omitempty"`
+	Window       string             `firestore:"window,omitempty" json:"window,omitempty"`       // "7day","30day","60day","90day"
+	Preset       string             `firestore:"preset,omitempty" json:"preset,omitempty"`       // period comparison preset
+	CurrentRange *ExplicitDateRange `firestore:"currentRange,omitempty" json:"currentRange,omitempty"` // periodComparison custom current period
+	PreviousRange *ExplicitDateRange `firestore:"previousRange,omitempty" json:"previousRange,omitempty"` // periodComparison custom previous period
+	Dimension    string             `firestore:"dimension,omitempty" json:"dimension,omitempty"` // "category","merchant","overall"
+	Limit        int                `firestore:"limit,omitempty" json:"limit,omitempty"`
+	Category     string             `firestore:"category,omitempty" json:"category,omitempty"` // optional PFC primary filter
+	BankID       string             `firestore:"bankId,omitempty" json:"bankId,omitempty"`
 }
 
 // DateRangeConfig represents either a named preset or an explicit custom range.
@@ -30,4 +32,11 @@ type DateRangeConfig struct {
 	Preset    string `firestore:"preset,omitempty" json:"preset,omitempty"`
 	StartDate string `firestore:"startDate,omitempty" json:"startDate,omitempty"`
 	EndDate   string `firestore:"endDate,omitempty" json:"endDate,omitempty"`
+}
+
+// ExplicitDateRange is used for custom period comparison ranges.
+// Unlike DateRangeConfig it does not support presets — only explicit YYYY-MM-DD dates.
+type ExplicitDateRange struct {
+	StartDate string `firestore:"startDate" json:"startDate"`
+	EndDate   string `firestore:"endDate" json:"endDate"`
 }

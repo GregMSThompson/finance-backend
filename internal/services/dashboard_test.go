@@ -663,3 +663,135 @@ func TestResolvePeriodPreset_WeekOverWeek(t *testing.T) {
 		t.Errorf("expected prev to=2026-03-08, got %s", pTo)
 	}
 }
+
+// --- spendingTrend dateRange tests ---
+
+func TestAddWidget_SpendingTrend_WithDateRange(t *testing.T) {
+	svc := NewDashboardService(newFakeStore(), &fakeDashboardAnalytics{})
+	_, err := svc.AddWidget(context.Background(), "uid1", dto.CreateWidgetRequest{
+		Type:          dto.WidgetTypeSpendingTrend,
+		Visualization: dto.VisLine,
+		Config: models.WidgetConfig{
+			DateRange: &models.DateRangeConfig{Preset: dto.DateRangeLastMonth},
+			Dimension: dto.DimensionOverall,
+		},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestAddWidget_SpendingTrend_BothWindowAndDateRange(t *testing.T) {
+	svc := NewDashboardService(newFakeStore(), &fakeDashboardAnalytics{})
+	_, err := svc.AddWidget(context.Background(), "uid1", dto.CreateWidgetRequest{
+		Type:          dto.WidgetTypeSpendingTrend,
+		Visualization: dto.VisLine,
+		Config: models.WidgetConfig{
+			Window:    dto.Window30Day,
+			DateRange: &models.DateRangeConfig{Preset: dto.DateRangeLastMonth},
+			Dimension: dto.DimensionOverall,
+		},
+	})
+	var ve *errs.ValidationError
+	if !errors.As(err, &ve) {
+		t.Fatalf("expected ValidationError, got %T: %v", err, err)
+	}
+}
+
+func TestGetWidgetData_SpendingTrend_WithDateRange(t *testing.T) {
+	store := newFakeStore()
+	store.widgets["w1"] = &models.Widget{
+		WidgetID: "w1",
+		Type:     dto.WidgetTypeSpendingTrend,
+		Config: models.WidgetConfig{
+			DateRange: &models.DateRangeConfig{StartDate: "2025-07-01", EndDate: "2025-09-30"},
+			Dimension: dto.DimensionOverall,
+		},
+	}
+	an := &fakeDashboardAnalytics{}
+	svc := NewDashboardService(store, an)
+
+	if _, err := svc.GetWidgetData(context.Background(), "uid1", "w1"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if an.lastMovingAvgArgs.DateFrom != "2025-07-01" {
+		t.Errorf("expected DateFrom=2025-07-01, got %s", an.lastMovingAvgArgs.DateFrom)
+	}
+	if an.lastMovingAvgArgs.DateTo != "2025-09-30" {
+		t.Errorf("expected DateTo=2025-09-30, got %s", an.lastMovingAvgArgs.DateTo)
+	}
+}
+
+// --- periodComparison custom range tests ---
+
+func TestAddWidget_PeriodComparison_CustomRanges(t *testing.T) {
+	svc := NewDashboardService(newFakeStore(), &fakeDashboardAnalytics{})
+	_, err := svc.AddWidget(context.Background(), "uid1", dto.CreateWidgetRequest{
+		Type:          dto.WidgetTypePeriodComparison,
+		Visualization: dto.VisSummary,
+		Config: models.WidgetConfig{
+			CurrentRange:  &models.ExplicitDateRange{StartDate: "2025-07-01", EndDate: "2025-09-30"},
+			PreviousRange: &models.ExplicitDateRange{StartDate: "2024-07-01", EndDate: "2024-09-30"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+
+func TestAddWidget_PeriodComparison_BothPresetAndCustom(t *testing.T) {
+	svc := NewDashboardService(newFakeStore(), &fakeDashboardAnalytics{})
+	_, err := svc.AddWidget(context.Background(), "uid1", dto.CreateWidgetRequest{
+		Type:          dto.WidgetTypePeriodComparison,
+		Visualization: dto.VisSummary,
+		Config: models.WidgetConfig{
+			Preset:       dto.PeriodMonthOverMonth,
+			CurrentRange: &models.ExplicitDateRange{StartDate: "2025-07-01", EndDate: "2025-07-31"},
+		},
+	})
+	var ve *errs.ValidationError
+	if !errors.As(err, &ve) {
+		t.Fatalf("expected ValidationError, got %T: %v", err, err)
+	}
+}
+
+func TestAddWidget_PeriodComparison_OnlyOneCustomRange(t *testing.T) {
+	svc := NewDashboardService(newFakeStore(), &fakeDashboardAnalytics{})
+	_, err := svc.AddWidget(context.Background(), "uid1", dto.CreateWidgetRequest{
+		Type:          dto.WidgetTypePeriodComparison,
+		Visualization: dto.VisSummary,
+		Config: models.WidgetConfig{
+			CurrentRange: &models.ExplicitDateRange{StartDate: "2025-07-01", EndDate: "2025-07-31"},
+			// PreviousRange intentionally omitted
+		},
+	})
+	var ve *errs.ValidationError
+	if !errors.As(err, &ve) {
+		t.Fatalf("expected ValidationError, got %T: %v", err, err)
+	}
+}
+
+func TestGetWidgetData_PeriodComparison_CustomRanges(t *testing.T) {
+	store := newFakeStore()
+	store.widgets["w1"] = &models.Widget{
+		WidgetID: "w1",
+		Type:     dto.WidgetTypePeriodComparison,
+		Config: models.WidgetConfig{
+			CurrentRange:  &models.ExplicitDateRange{StartDate: "2025-07-01", EndDate: "2025-09-30"},
+			PreviousRange: &models.ExplicitDateRange{StartDate: "2024-07-01", EndDate: "2024-09-30"},
+		},
+	}
+	an := &fakeDashboardAnalytics{}
+	svc := NewDashboardService(store, an)
+
+	if _, err := svc.GetWidgetData(context.Background(), "uid1", "w1"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if an.lastPeriodArgs.CurrentFrom != "2025-07-01" || an.lastPeriodArgs.CurrentTo != "2025-09-30" {
+		t.Errorf("unexpected current range: %s - %s", an.lastPeriodArgs.CurrentFrom, an.lastPeriodArgs.CurrentTo)
+	}
+	if an.lastPeriodArgs.PreviousFrom != "2024-07-01" || an.lastPeriodArgs.PreviousTo != "2024-09-30" {
+		t.Errorf("unexpected previous range: %s - %s", an.lastPeriodArgs.PreviousFrom, an.lastPeriodArgs.PreviousTo)
+	}
+}

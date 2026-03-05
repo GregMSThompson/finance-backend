@@ -178,7 +178,13 @@ func (s *dashboardService) fetchTopSpenders(ctx context.Context, uid string, cfg
 }
 
 func (s *dashboardService) fetchSpendingTrend(ctx context.Context, uid string, cfg models.WidgetConfig) (dto.AnalyticsMovingAverageResult, error) {
-	from, to, err := resolveWindow(cfg.Window, s.clockNow())
+	var from, to string
+	var err error
+	if cfg.DateRange != nil {
+		from, to, err = resolveDateRange(*cfg.DateRange, s.clockNow())
+	} else {
+		from, to, err = resolveWindow(cfg.Window, s.clockNow())
+	}
 	if err != nil {
 		return dto.AnalyticsMovingAverageResult{}, err
 	}
@@ -193,9 +199,16 @@ func (s *dashboardService) fetchSpendingTrend(ctx context.Context, uid string, c
 }
 
 func (s *dashboardService) fetchPeriodComparison(ctx context.Context, uid string, cfg models.WidgetConfig) (dto.PeriodComparisonWidgetData, error) {
-	currFrom, currTo, prevFrom, prevTo, err := resolvePeriodPreset(cfg.Preset, s.clockNow())
-	if err != nil {
-		return dto.PeriodComparisonWidgetData{}, err
+	var currFrom, currTo, prevFrom, prevTo string
+	var err error
+	if cfg.CurrentRange != nil && cfg.PreviousRange != nil {
+		currFrom, currTo = cfg.CurrentRange.StartDate, cfg.CurrentRange.EndDate
+		prevFrom, prevTo = cfg.PreviousRange.StartDate, cfg.PreviousRange.EndDate
+	} else {
+		currFrom, currTo, prevFrom, prevTo, err = resolvePeriodPreset(cfg.Preset, s.clockNow())
+		if err != nil {
+			return dto.PeriodComparisonWidgetData{}, err
+		}
 	}
 	result, err := s.analytics.GetPeriodComparison(ctx, uid, dto.AnalyticsPeriodComparisonArgs{
 		BankID:       optString(cfg.BankID),
@@ -334,6 +347,10 @@ func applyDefaults(widgetType string, cfg models.WidgetConfig) models.WidgetConf
 		if cfg.Limit == 0 {
 			cfg.Limit = 10
 		}
+	case dto.WidgetTypeSpendingTrend:
+		if cfg.Window == "" && cfg.DateRange == nil {
+			cfg.Window = dto.Window30Day
+		}
 	case dto.WidgetTypeLargestTransactions:
 		if cfg.Limit == 0 {
 			cfg.Limit = 10
@@ -359,10 +376,20 @@ func validateConfig(widgetType string, cfg models.WidgetConfig) error {
 		}
 
 	case dto.WidgetTypeSpendingTrend:
-		switch cfg.Window {
-		case dto.Window7Day, dto.Window30Day, dto.Window60Day, dto.Window90Day:
-		default:
-			return errs.NewValidationError("config.window must be one of: 7day, 30day, 60day, 90day")
+		if cfg.Window != "" && cfg.DateRange != nil {
+			return errs.NewValidationError("config.spendingTrend: set window or dateRange, not both")
+		}
+		if cfg.Window != "" {
+			switch cfg.Window {
+			case dto.Window7Day, dto.Window30Day, dto.Window60Day, dto.Window90Day:
+			default:
+				return errs.NewValidationError("config.window must be one of: 7day, 30day, 60day, 90day")
+			}
+		}
+		if cfg.DateRange != nil {
+			if err := validateDateRange(*cfg.DateRange); err != nil {
+				return err
+			}
 		}
 		switch cfg.Dimension {
 		case dto.DimensionOverall, dto.DimensionCategory, dto.DimensionMerchant:
@@ -371,11 +398,28 @@ func validateConfig(widgetType string, cfg models.WidgetConfig) error {
 		}
 
 	case dto.WidgetTypePeriodComparison:
-		switch cfg.Preset {
-		case dto.PeriodMonthOverMonth, dto.PeriodWeekOverWeek,
-			dto.PeriodQuarterOverQuarter, dto.PeriodYearOverYear:
-		default:
-			return errs.NewValidationError("config.preset must be one of: monthOverMonth, weekOverWeek, quarterOverQuarter, yearOverYear")
+		hasPreset := cfg.Preset != ""
+		hasCustom := cfg.CurrentRange != nil || cfg.PreviousRange != nil
+		if hasPreset && hasCustom {
+			return errs.NewValidationError("config.periodComparison: set preset or custom ranges (currentRange/previousRange), not both")
+		}
+		if hasPreset {
+			switch cfg.Preset {
+			case dto.PeriodMonthOverMonth, dto.PeriodWeekOverWeek,
+				dto.PeriodQuarterOverQuarter, dto.PeriodYearOverYear:
+			default:
+				return errs.NewValidationError("config.preset must be one of: monthOverMonth, weekOverWeek, quarterOverQuarter, yearOverYear")
+			}
+		} else {
+			if cfg.CurrentRange == nil || cfg.PreviousRange == nil {
+				return errs.NewValidationError("config.periodComparison: provide either preset or both currentRange and previousRange")
+			}
+			if err := validateExplicitDateRange(*cfg.CurrentRange); err != nil {
+				return fmt.Errorf("config.currentRange: %w", err)
+			}
+			if err := validateExplicitDateRange(*cfg.PreviousRange); err != nil {
+				return fmt.Errorf("config.previousRange: %w", err)
+			}
 		}
 
 	case dto.WidgetTypeLargestTransactions:
@@ -412,6 +456,24 @@ func validateDateRange(dr models.DateRangeConfig) error {
 	}
 	if dr.StartDate == "" || dr.EndDate == "" {
 		return errs.NewValidationError("config.dateRange requires either a preset or both startDate and endDate")
+	}
+	return nil
+}
+
+func validateExplicitDateRange(r models.ExplicitDateRange) error {
+	if r.StartDate == "" || r.EndDate == "" {
+		return errs.NewValidationError("startDate and endDate are required")
+	}
+	start, err := time.Parse(dashDateLayout, r.StartDate)
+	if err != nil {
+		return errs.NewValidationError("startDate must be in YYYY-MM-DD format")
+	}
+	end, err := time.Parse(dashDateLayout, r.EndDate)
+	if err != nil {
+		return errs.NewValidationError("endDate must be in YYYY-MM-DD format")
+	}
+	if !end.After(start) {
+		return errs.NewValidationError("endDate must be after startDate")
 	}
 	return nil
 }
