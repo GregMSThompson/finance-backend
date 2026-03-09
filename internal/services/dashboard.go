@@ -84,9 +84,13 @@ func (s *dashboardService) UpdateWidgetConfig(ctx context.Context, uid, widgetID
 	if err != nil {
 		return nil, err
 	}
+	if err := validateVisualization(w.Type, req.Visualization); err != nil {
+		return nil, err
+	}
 	if err := validateConfig(w.Type, req.Config); err != nil {
 		return nil, err
 	}
+	w.Visualization = req.Visualization
 	w.Config = req.Config
 	if err := s.store.Update(ctx, uid, w); err != nil {
 		return nil, err

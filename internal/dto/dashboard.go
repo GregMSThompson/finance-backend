@@ -67,7 +67,8 @@ type CreateWidgetRequest struct {
 }
 
 type UpdateWidgetConfigRequest struct {
-	Config models.WidgetConfig `json:"config"`
+	Visualization string             `json:"visualization"`
+	Config        models.WidgetConfig `json:"config"`
 }
 
 type ReorderWidgetItem struct {

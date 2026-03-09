@@ -251,6 +251,7 @@ func TestUpdateWidgetConfig_OK(t *testing.T) {
 	svc := NewDashboardService(store, &fakeDashboardAnalytics{})
 
 	updated, err := svc.UpdateWidgetConfig(context.Background(), "uid1", "w1", dto.UpdateWidgetConfigRequest{
+		Visualization: dto.VisBar,
 		Config: models.WidgetConfig{
 			DateRange: &models.DateRangeConfig{Preset: dto.DateRangeLastMonth},
 			Dimension: dto.DimensionMerchant,
@@ -260,8 +261,39 @@ func TestUpdateWidgetConfig_OK(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+	if updated.Visualization != dto.VisBar {
+		t.Errorf("visualization not updated, got %s", updated.Visualization)
+	}
 	if updated.Config.Dimension != dto.DimensionMerchant {
 		t.Errorf("dimension not updated, got %s", updated.Config.Dimension)
+	}
+}
+
+func TestUpdateWidgetConfig_InvalidVisualization(t *testing.T) {
+	store := newFakeStore()
+	store.widgets["w1"] = &models.Widget{
+		WidgetID:      "w1",
+		Type:          dto.WidgetTypeTopSpenders,
+		Visualization: dto.VisPie,
+		Config: models.WidgetConfig{
+			DateRange: &models.DateRangeConfig{Preset: dto.DateRangeThisMonth},
+			Dimension: dto.DimensionCategory,
+			Limit:     10,
+		},
+	}
+	svc := NewDashboardService(store, &fakeDashboardAnalytics{})
+
+	_, err := svc.UpdateWidgetConfig(context.Background(), "uid1", "w1", dto.UpdateWidgetConfigRequest{
+		Visualization: dto.VisLine, // not valid for topSpenders
+		Config: models.WidgetConfig{
+			DateRange: &models.DateRangeConfig{Preset: dto.DateRangeLastMonth},
+			Dimension: dto.DimensionCategory,
+			Limit:     5,
+		},
+	})
+	var ve *errs.ValidationError
+	if !errors.As(err, &ve) {
+		t.Fatalf("expected ValidationError, got %T: %v", err, err)
 	}
 }
 
