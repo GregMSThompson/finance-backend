@@ -15,7 +15,6 @@ import (
 
 const dashDateLayout = "2006-01-02"
 
-// dashboardStore is the Firestore storage interface for widgets.
 type dashboardStore interface {
 	Create(ctx context.Context, uid string, w *models.Widget) error
 	Get(ctx context.Context, uid, widgetID string) (*models.Widget, error)
@@ -26,7 +25,6 @@ type dashboardStore interface {
 	BulkUpdatePositions(ctx context.Context, uid string, positions map[string]int) error
 }
 
-// dashboardAnalytics is the analytics interface used by dashboardService.
 type dashboardAnalytics interface {
 	GetTopN(ctx context.Context, uid string, args dto.AnalyticsTopNArgs) (dto.AnalyticsTopNResult, error)
 	GetMovingAverage(ctx context.Context, uid string, args dto.AnalyticsMovingAverageArgs) (dto.AnalyticsMovingAverageResult, error)
@@ -44,8 +42,6 @@ type dashboardService struct {
 func NewDashboardService(store dashboardStore, analytics dashboardAnalytics) *dashboardService {
 	return &dashboardService{store: store, analytics: analytics, clockNow: time.Now}
 }
-
-// --- Public service methods ---
 
 func (s *dashboardService) GetDashboard(ctx context.Context, uid string) ([]*models.Widget, error) {
 	return s.store.List(ctx, uid)
@@ -142,8 +138,6 @@ func (s *dashboardService) GetWidgetData(ctx context.Context, uid, widgetID stri
 		LastUpdated: s.clockNow(),
 	}, nil
 }
-
-// --- Private fetch methods ---
 
 func (s *dashboardService) fetchTopSpenders(ctx context.Context, uid string, cfg models.WidgetConfig) (dto.TopSpendersData, error) {
 	from, to, err := resolveDateRange(*cfg.DateRange, s.clockNow())
@@ -316,8 +310,6 @@ func (s *dashboardService) fetchRecurringSubscriptions(ctx context.Context, uid 
 	}, nil
 }
 
-// --- Validation ---
-
 func validateWidgetType(t string) error {
 	switch t {
 	case dto.WidgetTypeTopSpenders, dto.WidgetTypeSpendingTrend,
@@ -482,8 +474,6 @@ func validateExplicitDateRange(r models.ExplicitDateRange) error {
 	return nil
 }
 
-// --- Date resolution ---
-
 func resolveDateRange(dr models.DateRangeConfig, now time.Time) (from, to string, err error) {
 	if dr.Preset != "" {
 		return resolvePreset(dr.Preset, now)
@@ -563,8 +553,6 @@ func resolvePeriodPreset(preset string, now time.Time) (currFrom, currTo, prevFr
 	return "", "", "", "", errs.NewValidationError("unknown period preset: " + preset)
 }
 
-// --- Calendar helpers ---
-
 func firstOfQuarter(t time.Time) time.Time {
 	m := int(t.Month())
 	qStart := ((m-1)/3)*3 + 1
@@ -585,8 +573,6 @@ func mondayOfWeek(t time.Time) time.Time {
 	}
 	return t.AddDate(0, 0, -(weekday - 1))
 }
-
-// --- Helpers ---
 
 func optString(s string) *string {
 	if s == "" {

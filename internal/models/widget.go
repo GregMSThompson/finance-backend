@@ -17,13 +17,13 @@ type Widget struct {
 // Not all fields are valid for all types; the service layer enforces per-type rules.
 type WidgetConfig struct {
 	DateRange    *DateRangeConfig   `firestore:"dateRange,omitempty" json:"dateRange,omitempty"`
-	Window       string             `firestore:"window,omitempty" json:"window,omitempty"`       // "7day","30day","60day","90day"
-	Preset       string             `firestore:"preset,omitempty" json:"preset,omitempty"`       // period comparison preset
-	CurrentRange *ExplicitDateRange `firestore:"currentRange,omitempty" json:"currentRange,omitempty"` // periodComparison custom current period
-	PreviousRange *ExplicitDateRange `firestore:"previousRange,omitempty" json:"previousRange,omitempty"` // periodComparison custom previous period
-	Dimension    string             `firestore:"dimension,omitempty" json:"dimension,omitempty"` // "category","merchant","overall"
-	Limit        int                `firestore:"limit,omitempty" json:"limit,omitempty"`
-	Category     string             `firestore:"category,omitempty" json:"category,omitempty"` // optional PFC primary filter
+	Window        string             `firestore:"window,omitempty" json:"window,omitempty"`
+	Preset        string             `firestore:"preset,omitempty" json:"preset,omitempty"`
+	CurrentRange  *ExplicitDateRange `firestore:"currentRange,omitempty" json:"currentRange,omitempty"`
+	PreviousRange *ExplicitDateRange `firestore:"previousRange,omitempty" json:"previousRange,omitempty"`
+	Dimension     string             `firestore:"dimension,omitempty" json:"dimension,omitempty"`
+	Limit         int                `firestore:"limit,omitempty" json:"limit,omitempty"`
+	Category      string             `firestore:"category,omitempty" json:"category,omitempty"` // maps to PFCPrimary in the analytics layer
 	BankID       string             `firestore:"bankId,omitempty" json:"bankId,omitempty"`
 }
 

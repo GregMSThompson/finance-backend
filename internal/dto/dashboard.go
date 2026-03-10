@@ -6,7 +6,6 @@ import (
 	"github.com/GregMSThompson/finance-backend/internal/models"
 )
 
-// Widget type constants
 const (
 	WidgetTypeTopSpenders            = "topSpenders"
 	WidgetTypeSpendingTrend          = "spendingTrend"
@@ -15,7 +14,6 @@ const (
 	WidgetTypeRecurringSubscriptions = "recurringSubscriptions"
 )
 
-// Visualization constants
 const (
 	VisPie     = "pie"
 	VisBar     = "bar"
@@ -25,7 +23,6 @@ const (
 	VisSummary = "summary"
 )
 
-// Date range presets
 const (
 	DateRangeThisMonth   = "thisMonth"
 	DateRangeLastMonth   = "lastMonth"
@@ -35,7 +32,6 @@ const (
 	DateRangeLastYear    = "lastYear"
 )
 
-// Window presets (for spendingTrend)
 const (
 	Window7Day  = "7day"
 	Window30Day = "30day"
@@ -43,7 +39,6 @@ const (
 	Window90Day = "90day"
 )
 
-// Period comparison presets
 const (
 	PeriodMonthOverMonth     = "monthOverMonth"
 	PeriodWeekOverWeek       = "weekOverWeek"
@@ -51,14 +46,11 @@ const (
 	PeriodYearOverYear       = "yearOverYear"
 )
 
-// Dimension constants
 const (
 	DimensionCategory = "category"
 	DimensionMerchant = "merchant"
 	DimensionOverall  = "overall"
 )
-
-// --- Request types ---
 
 type CreateWidgetRequest struct {
 	Type          string             `json:"type"`
@@ -79,8 +71,6 @@ type ReorderWidgetItem struct {
 type ReorderWidgetsRequest struct {
 	WidgetOrder []ReorderWidgetItem `json:"widgetOrder"`
 }
-
-// --- Widget data response types ---
 
 type WidgetDataResponse struct {
 	WidgetID    string    `json:"widgetId"`
