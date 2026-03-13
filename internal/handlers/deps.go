@@ -17,4 +17,5 @@ type Deps struct {
 	BankSvc         bankService
 	AISvc           aiService
 	DashboardSvc    dashboardService
+	AlertSvc        alertService
 }
