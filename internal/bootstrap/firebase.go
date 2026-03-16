@@ -7,8 +7,10 @@ import (
 	"firebase.google.com/go/v4/auth"
 )
 
-func InitFirebase(ctx context.Context) (*auth.Client, error) {
-	app, err := firebase.NewApp(ctx, nil)
+func InitFirebase(ctx context.Context, projectID string) (*auth.Client, error) {
+	app, err := firebase.NewApp(ctx, &firebase.Config{
+		ProjectID: projectID,
+	})
 	if err != nil {
 		return nil, err
 	}

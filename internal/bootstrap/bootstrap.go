@@ -36,7 +36,7 @@ func Run(cfg *config.Config) (*Bootstrap, error) {
 	if err != nil {
 		return bs, err
 	}
-	bs.Firebase, err = InitFirebase(applicationCtx)
+	bs.Firebase, err = InitFirebase(applicationCtx, cfg.ProjectID)
 	if err != nil {
 		return bs, err
 	}

@@ -13,7 +13,7 @@ func NewRouter(deps *handlers.Deps) chi.Router {
 
 	// middleware
 	loggerMw := middleware.NewLoggerMiddleware(deps.Log)
-	auth := middleware.NewAuthMiddleware(deps.Firebase, deps.Log)
+	auth := middleware.NewAuthMiddleware(deps.Firebase, deps.Log, deps.ResponseHandler)
 
 	r.Use(chimiddleware.RequestID)   // 1. Generate request_id
 	r.Use(loggerMw.LoggerMiddleware) // 2. Add logger with request context

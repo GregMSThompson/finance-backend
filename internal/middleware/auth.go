@@ -8,18 +8,21 @@ import (
 
 	"firebase.google.com/go/v4/auth"
 
+	"github.com/GregMSThompson/finance-backend/internal/response"
 	"github.com/GregMSThompson/finance-backend/pkg/logger"
 )
 
 type authMiddleware struct {
 	AuthClient *auth.Client
 	Log        *slog.Logger
+	Response   response.ResponseHandler
 }
 
-func NewAuthMiddleware(client *auth.Client, log *slog.Logger) *authMiddleware {
+func NewAuthMiddleware(client *auth.Client, log *slog.Logger, rh response.ResponseHandler) *authMiddleware {
 	return &authMiddleware{
 		AuthClient: client,
 		Log:        log,
+		Response:   rh,
 	}
 }
 
@@ -37,14 +40,14 @@ func (m *authMiddleware) FirebaseAuth(next http.Handler) http.Handler {
 		header := r.Header.Get("Authorization")
 		if header == "" {
 			logger.FromContext(ctx).Warn("missing authorization header")
-			http.Error(w, "missing Authorization header", http.StatusUnauthorized)
+			m.Response.WriteError(w, r, http.StatusUnauthorized, "unauthorized", "missing Authorization header")
 			return
 		}
 
 		parts := strings.Fields(header)
 		if len(parts) != 2 || !strings.EqualFold(parts[0], "Bearer") {
 			logger.FromContext(ctx).Warn("invalid authorization header format")
-			http.Error(w, "invalid Authorization header", http.StatusUnauthorized)
+			m.Response.WriteError(w, r, http.StatusUnauthorized, "unauthorized", "invalid Authorization header")
 			return
 		}
 
@@ -54,7 +57,7 @@ func (m *authMiddleware) FirebaseAuth(next http.Handler) http.Handler {
 		token, err := m.AuthClient.VerifyIDToken(ctx, tokenStr)
 		if err != nil {
 			logger.FromContext(ctx).Warn("token verification failed", "error", err)
-			http.Error(w, "invalid or expired token", http.StatusUnauthorized)
+			m.Response.WriteError(w, r, http.StatusUnauthorized, "unauthorized", "invalid or expired token")
 			return
 		}
 
