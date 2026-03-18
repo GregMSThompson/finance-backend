@@ -2,7 +2,6 @@ package middleware
 
 import (
 	"context"
-	"log/slog"
 	"net/http"
 	"strings"
 
@@ -14,14 +13,12 @@ import (
 
 type authMiddleware struct {
 	AuthClient *auth.Client
-	Log        *slog.Logger
 	Response   response.ResponseHandler
 }
 
-func NewAuthMiddleware(client *auth.Client, log *slog.Logger, rh response.ResponseHandler) *authMiddleware {
+func NewAuthMiddleware(client *auth.Client, rh response.ResponseHandler) *authMiddleware {
 	return &authMiddleware{
 		AuthClient: client,
-		Log:        log,
 		Response:   rh,
 	}
 }
@@ -36,17 +33,18 @@ const EmailKey contextKey = "email"
 func (m *authMiddleware) FirebaseAuth(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
+		log := logger.FromContext(ctx)
 
 		header := r.Header.Get("Authorization")
 		if header == "" {
-			logger.FromContext(ctx).Warn("missing authorization header")
+			log.Warn("missing authorization header")
 			m.Response.WriteError(w, r, http.StatusUnauthorized, "unauthorized", "missing Authorization header")
 			return
 		}
 
 		parts := strings.Fields(header)
 		if len(parts) != 2 || !strings.EqualFold(parts[0], "Bearer") {
-			logger.FromContext(ctx).Warn("invalid authorization header format")
+			log.Warn("invalid authorization header format")
 			m.Response.WriteError(w, r, http.StatusUnauthorized, "unauthorized", "invalid Authorization header")
 			return
 		}
@@ -56,7 +54,7 @@ func (m *authMiddleware) FirebaseAuth(next http.Handler) http.Handler {
 		// Verify ID Token
 		token, err := m.AuthClient.VerifyIDToken(ctx, tokenStr)
 		if err != nil {
-			logger.FromContext(ctx).Warn("token verification failed", "error", err)
+			log.Warn("token verification failed", "error", err)
 			m.Response.WriteError(w, r, http.StatusUnauthorized, "unauthorized", "invalid or expired token")
 			return
 		}
@@ -68,7 +66,6 @@ func (m *authMiddleware) FirebaseAuth(next http.Handler) http.Handler {
 			"email", email,
 		)
 
-		// Keep existing context values for backward compatibility
 		ctx = context.WithValue(ctx, UIDKey, token.UID)
 		ctx = context.WithValue(ctx, EmailKey, email)
 

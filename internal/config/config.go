@@ -17,6 +17,8 @@ type Config struct {
 	KMSKeyName       string
 	VertexModel      string
 	AITTL            time.Duration
+	WorkerAudience   string
+	WorkerTestAPIKey string
 }
 
 func New() *Config {
@@ -30,6 +32,8 @@ func New() *Config {
 		KMSKeyName:       os.Getenv("KMSKEYNAME"),
 		VertexModel:      os.Getenv("VERTEXMODEL"),
 		AITTL:            parseDuration(os.Getenv("AITTL")),
+		WorkerAudience:   os.Getenv("WORKERAUDIENCE"),
+		WorkerTestAPIKey: os.Getenv("WORKERTESTAPIKEY"),
 	}
 }
 

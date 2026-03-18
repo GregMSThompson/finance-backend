@@ -12,6 +12,11 @@ type SuccessEnvelope struct {
 	Data    any  `json:"data,omitempty"`
 }
 
+func (h *responseHandler) WriteTaskSuccess(w http.ResponseWriter, r *http.Request) {
+	logger.FromContext(r.Context()).Info("task completed")
+	w.WriteHeader(http.StatusOK)
+}
+
 func (h *responseHandler) WriteSuccess(w http.ResponseWriter, r *http.Request, status int, data any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)

@@ -79,6 +79,14 @@ func (s *plaidStubResponseHandler) HandleError(w http.ResponseWriter, r *http.Re
 	w.WriteHeader(http.StatusInternalServerError)
 }
 
+func (s *plaidStubResponseHandler) WriteTaskSuccess(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusOK)
+}
+
+func (s *plaidStubResponseHandler) WriteTaskError(w http.ResponseWriter, r *http.Request, status int, code, message string) {
+	w.WriteHeader(status)
+}
+
 // helper to build handler
 func newTestPlaidHandler(p *fakePlaidSvc, b *fakeBankSvc) *plaidHandlers {
 	log := slog.New(logger.NewTestHandler(slog.LevelInfo))

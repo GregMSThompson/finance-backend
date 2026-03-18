@@ -67,6 +67,14 @@ func (s *stubResponseHandler) HandleError(w http.ResponseWriter, r *http.Request
 	w.WriteHeader(http.StatusInternalServerError)
 }
 
+func (s *stubResponseHandler) WriteTaskSuccess(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusOK)
+}
+
+func (s *stubResponseHandler) WriteTaskError(w http.ResponseWriter, r *http.Request, status int, code, message string) {
+	w.WriteHeader(status)
+}
+
 func TestCreateUserSuccess(t *testing.T) {
 	userSvc := &stubUserService{}
 	resp := &stubResponseHandler{}

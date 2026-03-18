@@ -59,6 +59,14 @@ func (s *aiStubResponseHandler) HandleError(w http.ResponseWriter, r *http.Reque
 	w.WriteHeader(http.StatusInternalServerError)
 }
 
+func (s *aiStubResponseHandler) WriteTaskSuccess(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusOK)
+}
+
+func (s *aiStubResponseHandler) WriteTaskError(w http.ResponseWriter, r *http.Request, status int, code, message string) {
+	w.WriteHeader(status)
+}
+
 func TestAIQueryHandlerSuccess(t *testing.T) {
 	aiSvc := &stubAIService{resp: dto.AIQueryResponse{Answer: "ok"}}
 	resp := &aiStubResponseHandler{}

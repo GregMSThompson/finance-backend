@@ -28,6 +28,16 @@ func errorChain(err error) []string {
 	return chain
 }
 
+func (h *responseHandler) WriteTaskError(w http.ResponseWriter, r *http.Request, status int, code, message string) {
+	log := logger.FromContext(r.Context())
+	if status >= 500 {
+		log.Error("task failed", "status", status, "code", code, "message", message)
+	} else {
+		log.Warn("task rejected", "status", status, "code", code, "message", message)
+	}
+	w.WriteHeader(status)
+}
+
 func (h *responseHandler) WriteError(w http.ResponseWriter, r *http.Request, status int, code, message string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)

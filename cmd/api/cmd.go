@@ -65,7 +65,7 @@ func main() {
 	deps.AlertSvc = alertsvc
 
 	// router
-	r := router.NewRouter(deps)
+	r := router.NewAPIRouter(deps)
 	err = http.ListenAndServe(":8080", r)
 	exitOnError("server start failed", err, bs.Log)
 }
