@@ -40,15 +40,15 @@ type fakePlaidSvc struct {
 func (f *fakePlaidSvc) CreateLinkToken(ctx context.Context, uid string) (string, error) {
 	return f.linkToken, f.err
 }
-func (f *fakePlaidSvc) ExchangePublicToken(ctx context.Context, uid, publicToken, institutionName string) (string, error) {
+func (f *fakePlaidSvc) ExchangePublicToken(ctx context.Context, uid string, req dto.LinkBankRequest) (string, error) {
 	f.gotExchange.uid = uid
-	f.gotExchange.pubTok = publicToken
-	f.gotExchange.inst = institutionName
+	f.gotExchange.pubTok = req.PublicToken
+	f.gotExchange.inst = req.InstitutionName
 	return f.bankID, f.err
 }
-func (f *fakePlaidSvc) SyncTransactions(ctx context.Context, uid string, bankID *string) (dto.PlaidServiceSyncResult, error) {
+func (f *fakePlaidSvc) SyncTransactions(ctx context.Context, uid string, req dto.SyncTransactionsRequest) (dto.PlaidServiceSyncResult, error) {
 	f.gotSync.uid = uid
-	f.gotSync.bankID = bankID
+	f.gotSync.bankID = req.BankID
 	return f.syncRes, f.err
 }
 

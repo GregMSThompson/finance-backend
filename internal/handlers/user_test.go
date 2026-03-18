@@ -8,24 +8,24 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/GregMSThompson/finance-backend/internal/dto"
 	"github.com/GregMSThompson/finance-backend/internal/middleware"
 )
 
 type stubUserService struct {
-	called          bool
-	ctx             context.Context
-	uid, email      string
-	first, lastName string
-	err             error
+	called     bool
+	ctx        context.Context
+	uid, email string
+	req        dto.CreateUserRequest
+	err        error
 }
 
-func (s *stubUserService) CreateUser(ctx context.Context, uid, email, first, last string) error {
+func (s *stubUserService) CreateUser(ctx context.Context, uid, email string, req dto.CreateUserRequest) error {
 	s.called = true
 	s.ctx = ctx
 	s.uid = uid
 	s.email = email
-	s.first = first
-	s.lastName = last
+	s.req = req
 	return s.err
 }
 
@@ -99,8 +99,8 @@ func TestCreateUserSuccess(t *testing.T) {
 	if userSvc.uid != "uid-123" || userSvc.email != "jane@example.com" {
 		t.Fatalf("service received wrong identifiers: uid=%s email=%s", userSvc.uid, userSvc.email)
 	}
-	if userSvc.first != "Jane" || userSvc.lastName != "Doe" {
-		t.Fatalf("service received wrong name: %s %s", userSvc.first, userSvc.lastName)
+	if userSvc.req.FirstName != "Jane" || userSvc.req.LastName != "Doe" {
+		t.Fatalf("service received wrong name: %s %s", userSvc.req.FirstName, userSvc.req.LastName)
 	}
 
 	if !resp.writeSuccessCalled || resp.writeSuccessStatus != http.StatusOK {

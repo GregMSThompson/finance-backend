@@ -53,15 +53,15 @@ func NewAIService(vertex vertexClient, analysis analyticsClient, store aiStore, 
 	}
 }
 
-func (s *aiService) Query(ctx context.Context, uid, sessionID, message string) (dto.AIQueryResponse, error) {
+func (s *aiService) Query(ctx context.Context, uid string, q dto.AIQueryRequest) (dto.AIQueryResponse, error) {
 	log := logger.FromContext(ctx)
 
-	history, err := s.store.ListMessages(ctx, uid, sessionID, 8)
+	history, err := s.store.ListMessages(ctx, uid, q.SessionID, 8)
 	if err != nil {
 		return dto.AIQueryResponse{}, err
 	}
 
-	contents := convertMessagesToContents(history, message)
+	contents := convertMessagesToContents(history, q.Message)
 	req := dto.VertexGenerateRequest{
 		System:   systemPrompt(s.clockNow()),
 		Contents: contents,
@@ -85,22 +85,22 @@ func (s *aiService) Query(ctx context.Context, uid, sessionID, message string) (
 	}
 
 	if len(resp.ToolCalls) == 0 {
-		if err := s.saveMessage(ctx, uid, sessionID, models.AIMessage{
+		if err := s.saveMessage(ctx, uid, q.SessionID, models.AIMessage{
 			Role:    "user",
-			Content: message,
+			Content: q.Message,
 		}); err != nil {
 			return dto.AIQueryResponse{}, err
 		}
 		// Only save non-empty assistant responses
 		if resp.Text != "" {
-			if err := s.saveMessage(ctx, uid, sessionID, models.AIMessage{
+			if err := s.saveMessage(ctx, uid, q.SessionID, models.AIMessage{
 				Role:    "assistant",
 				Content: resp.Text,
 			}); err != nil {
 				return dto.AIQueryResponse{}, err
 			}
 		}
-		log.Info("ai query completed", "session_id", sessionID)
+		log.Info("ai query completed", "session_id", q.SessionID)
 		return dto.AIQueryResponse{Answer: resp.Text}, nil
 	}
 
@@ -123,13 +123,13 @@ func (s *aiService) Query(ctx context.Context, uid, sessionID, message string) (
 		return dto.AIQueryResponse{}, fmt.Errorf("failed to execute tool %s: %w", toolCall.Name, err)
 	}
 
-	if err := s.saveMessage(ctx, uid, sessionID, models.AIMessage{
+	if err := s.saveMessage(ctx, uid, q.SessionID, models.AIMessage{
 		Role:    "user",
-		Content: message,
+		Content: q.Message,
 	}); err != nil {
 		return dto.AIQueryResponse{}, err
 	}
-	if err := s.saveMessage(ctx, uid, sessionID, models.AIMessage{
+	if err := s.saveMessage(ctx, uid, q.SessionID, models.AIMessage{
 		Role:       "tool",
 		ToolName:   toolCall.Name,
 		ToolArgs:   toolCall.Args,
@@ -163,14 +163,14 @@ func (s *aiService) Query(ctx context.Context, uid, sessionID, message string) (
 		return dto.AIQueryResponse{}, err
 	}
 
-	if err := s.saveMessage(ctx, uid, sessionID, models.AIMessage{
+	if err := s.saveMessage(ctx, uid, q.SessionID, models.AIMessage{
 		Role:    "assistant",
 		Content: finalResp.Text,
 	}); err != nil {
 		return dto.AIQueryResponse{}, err
 	}
 
-	log.Info("ai query completed", "session_id", sessionID, "tool", toolCall.Name)
+	log.Info("ai query completed", "session_id", q.SessionID, "tool", toolCall.Name)
 	return dto.AIQueryResponse{
 		Answer: finalResp.Text,
 		Debug: &dto.AIDebugInfo{

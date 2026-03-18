@@ -178,7 +178,7 @@ func TestAIQueryToolFlow(t *testing.T) {
 	}
 
 	ctx := helpers.TestCtx()
-	resp, err := svc.Query(ctx, "user", "session", "How much did I spend?")
+	resp, err := svc.Query(ctx, "user", dto.AIQueryRequest{SessionID: "session", Message: "How much did I spend?"})
 	if err != nil {
 		t.Fatalf("Query error: %v", err)
 	}
@@ -208,7 +208,7 @@ func TestAIQueryNoToolCall(t *testing.T) {
 	svc := NewAIService(vertex, analytics, store, 0)
 
 	ctx := helpers.TestCtx()
-	resp, err := svc.Query(ctx, "user", "session", "Hi")
+	resp, err := svc.Query(ctx, "user", dto.AIQueryRequest{SessionID: "session", Message: "Hi"})
 	if err != nil {
 		t.Fatalf("Query error: %v", err)
 	}
@@ -235,7 +235,7 @@ func TestAIQueryUnknownTool(t *testing.T) {
 	svc := NewAIService(vertex, analytics, store, 0)
 
 	ctx := helpers.TestCtx()
-	_, err := svc.Query(ctx, "user", "session", "What is this?")
+	_, err := svc.Query(ctx, "user", dto.AIQueryRequest{SessionID: "session", Message: "What is this?"})
 	if err == nil {
 		t.Fatalf("expected error for unknown tool")
 	}
@@ -260,7 +260,7 @@ func TestAIQueryMultipleToolCallsUsesFirst(t *testing.T) {
 	svc := NewAIService(vertex, analytics, store, 0)
 
 	ctx := helpers.TestCtx()
-	_, err := svc.Query(ctx, "user", "session", "Multi")
+	_, err := svc.Query(ctx, "user", dto.AIQueryRequest{SessionID: "session", Message: "Multi"})
 	if err != nil {
 		t.Fatalf("Query error: %v", err)
 	}
@@ -289,7 +289,7 @@ func TestAIQueryAnalyticsErrorPropagates(t *testing.T) {
 	svc := NewAIService(vertex, analytics, store, 0)
 
 	ctx := helpers.TestCtx()
-	_, err := svc.Query(ctx, "user", "session", "How much?")
+	_, err := svc.Query(ctx, "user", dto.AIQueryRequest{SessionID: "session", Message: "How much?"})
 	if err == nil {
 		t.Fatalf("expected error from analytics")
 	}
@@ -306,7 +306,7 @@ func TestAIQueryDoesNotRetryOnOtherErrors(t *testing.T) {
 	svc := NewAIService(vertex, analytics, store, 0)
 
 	ctx := helpers.TestCtx()
-	_, err := svc.Query(ctx, "user", "session", "Hi")
+	_, err := svc.Query(ctx, "user", dto.AIQueryRequest{SessionID: "session", Message: "Hi"})
 	if err == nil {
 		t.Fatalf("expected error")
 	}
@@ -329,7 +329,7 @@ func TestAIQueryRetriesWithStrictPromptOnMalformedCall(t *testing.T) {
 	svc := NewAIService(vertex, analytics, store, 0)
 
 	ctx := helpers.TestCtx()
-	resp, err := svc.Query(ctx, "user", "session", "Hello")
+	resp, err := svc.Query(ctx, "user", dto.AIQueryRequest{SessionID: "session", Message: "Hello"})
 	if err != nil {
 		t.Fatalf("Query error: %v", err)
 	}

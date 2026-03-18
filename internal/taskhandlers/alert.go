@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 
+	"github.com/GregMSThompson/finance-backend/internal/dto"
 	"github.com/GregMSThompson/finance-backend/internal/response"
 	"github.com/GregMSThompson/finance-backend/pkg/logger"
 )
@@ -27,18 +28,13 @@ func NewAlertTaskHandlers(deps *Deps) *alertTaskHandlers {
 	}
 }
 
-type deliverAlertRequest struct {
-	AlertEventID string `json:"alertEventId"`
-	UserID       string `json:"userId"`
-}
-
 // DeliverAlertPush sends a push notification for a triggered alert event.
 // Called by Cloud Tasks; returns 2xx on success so the task is not retried.
 func (h *alertTaskHandlers) DeliverAlertPush(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	log := logger.FromContext(ctx)
 
-	var req deliverAlertRequest
+	var req dto.DeliverAlertPushRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		log.Warn("invalid task payload", "error", err)
 		h.ResponseHandler.WriteTaskError(w, r, http.StatusBadRequest, "bad_request", "invalid payload")

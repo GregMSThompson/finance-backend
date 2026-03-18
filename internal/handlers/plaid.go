@@ -17,8 +17,8 @@ import (
 
 type plaidService interface {
 	CreateLinkToken(ctx context.Context, uid string) (string, error)
-	ExchangePublicToken(ctx context.Context, uid, publicToken, institutionName string) (string, error)
-	SyncTransactions(ctx context.Context, uid string, bankID *string) (dto.PlaidServiceSyncResult, error)
+	ExchangePublicToken(ctx context.Context, uid string, req dto.LinkBankRequest) (string, error)
+	SyncTransactions(ctx context.Context, uid string, req dto.SyncTransactionsRequest) (dto.PlaidServiceSyncResult, error)
 }
 
 type bankService interface {
@@ -65,17 +65,14 @@ func (h *plaidHandlers) CreateLinkToken(w http.ResponseWriter, r *http.Request) 
 }
 
 func (h *plaidHandlers) LinkBank(w http.ResponseWriter, r *http.Request) {
-	var body struct {
-		PublicToken     string `json:"publicToken"`
-		InstitutionName string `json:"institutionName,omitempty"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+	var req dto.LinkBankRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		h.ResponseHandler.HandleError(w, r, err)
 		return
 	}
 
 	uid := middleware.UID(r.Context())
-	bankID, err := h.PlaidSvc.ExchangePublicToken(r.Context(), uid, body.PublicToken, body.InstitutionName)
+	bankID, err := h.PlaidSvc.ExchangePublicToken(r.Context(), uid, req)
 	if err != nil {
 		h.ResponseHandler.HandleError(w, r, err)
 		return
@@ -109,16 +106,14 @@ func (h *plaidHandlers) DeleteBank(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *plaidHandlers) SyncTransactions(w http.ResponseWriter, r *http.Request) {
-	var body struct {
-		BankID *string `json:"bankId,omitempty"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil && !errors.Is(err, io.EOF) { // allow empty body
+	var req dto.SyncTransactionsRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil && !errors.Is(err, io.EOF) { // allow empty body
 		h.ResponseHandler.HandleError(w, r, err)
 		return
 	}
 
 	uid := middleware.UID(r.Context())
-	result, err := h.PlaidSvc.SyncTransactions(r.Context(), uid, body.BankID)
+	result, err := h.PlaidSvc.SyncTransactions(r.Context(), uid, req)
 	if err != nil {
 		h.ResponseHandler.HandleError(w, r, err)
 		return

@@ -16,19 +16,17 @@ import (
 )
 
 type stubAIService struct {
-	called    bool
-	uid       string
-	sessionID string
-	message   string
-	resp      dto.AIQueryResponse
-	err       error
+	called bool
+	uid    string
+	req    dto.AIQueryRequest
+	resp   dto.AIQueryResponse
+	err    error
 }
 
-func (s *stubAIService) Query(ctx context.Context, uid, sessionID, message string) (dto.AIQueryResponse, error) {
+func (s *stubAIService) Query(ctx context.Context, uid string, req dto.AIQueryRequest) (dto.AIQueryResponse, error) {
 	s.called = true
 	s.uid = uid
-	s.sessionID = sessionID
-	s.message = message
+	s.req = req
 	return s.resp, s.err
 }
 
@@ -84,7 +82,7 @@ func TestAIQueryHandlerSuccess(t *testing.T) {
 	if !aiSvc.called {
 		t.Fatalf("expected AI service to be called")
 	}
-	if aiSvc.uid != "uid-123" || aiSvc.sessionID != "s1" || aiSvc.message != "hello" {
+	if aiSvc.uid != "uid-123" || aiSvc.req.SessionID != "s1" || aiSvc.req.Message != "hello" {
 		t.Fatalf("service called with unexpected args: %+v", aiSvc)
 	}
 	if !resp.writeSuccessCalled || resp.writeSuccessStatus != http.StatusOK {

@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/GregMSThompson/finance-backend/internal/dto"
 	"github.com/GregMSThompson/finance-backend/internal/models"
 	"github.com/GregMSThompson/finance-backend/pkg/helpers"
 	"github.com/GregMSThompson/finance-backend/pkg/logger"
@@ -40,7 +41,7 @@ func TestUserServiceCreateUser(t *testing.T) {
 	ctx := helpers.TestCtx()
 	now := time.Now()
 
-	err := svc.CreateUser(ctx, "uid-123", "user@example.com", "Jane", "Doe")
+	err := svc.CreateUser(ctx, "uid-123", "user@example.com", dto.CreateUserRequest{FirstName: "Jane", LastName: "Doe"})
 	if err != nil {
 		t.Fatalf("CreateUser returned error: %v", err)
 	}
@@ -75,7 +76,7 @@ func TestUserServiceCreateUserStoreError(t *testing.T) {
 	svc := NewUserService(store)
 
 	ctx := helpers.TestCtx()
-	err := svc.CreateUser(ctx, "uid-456", "user2@example.com", "John", "Smith")
+	err := svc.CreateUser(ctx, "uid-456", "user2@example.com", dto.CreateUserRequest{FirstName: "John", LastName: "Smith"})
 
 	if err == nil {
 		t.Fatalf("expected error, got nil")

@@ -100,7 +100,7 @@ func TestExchangePublicTokenStoresBank(t *testing.T) {
 	svc := NewPlaidService(pl, banks, txs)
 
 	ctx := helpers.TestCtx()
-	_, err := svc.ExchangePublicToken(ctx, "uid-1", "public-xyz", "Chase")
+	_, err := svc.ExchangePublicToken(ctx, "uid-1", dto.LinkBankRequest{PublicToken: "public-xyz", InstitutionName: "Chase"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -131,7 +131,7 @@ func TestSyncTransactionsUsesCursorAndSetsNewCursor(t *testing.T) {
 	svc.clockNow = func() time.Time { return now }
 
 	ctx := helpers.TestCtx()
-	res, err := svc.SyncTransactions(ctx, "uid-1", nil)
+	res, err := svc.SyncTransactions(ctx, "uid-1", dto.SyncTransactionsRequest{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -154,7 +154,7 @@ func TestSyncTransactionsPropagatesErrors(t *testing.T) {
 
 	svc := NewPlaidService(pl, banks, txs)
 	ctx := helpers.TestCtx()
-	_, err := svc.SyncTransactions(ctx, "uid-1", nil)
+	_, err := svc.SyncTransactions(ctx, "uid-1", dto.SyncTransactionsRequest{})
 	if err == nil {
 		t.Fatalf("expected error, got nil")
 	}
@@ -167,7 +167,7 @@ func TestExchangePublicTokenPropagatesExchangeError(t *testing.T) {
 
 	svc := NewPlaidService(pl, banks, txs)
 	ctx := helpers.TestCtx()
-	_, err := svc.ExchangePublicToken(ctx, "uid-1", "public-xyz", "Chase")
+	_, err := svc.ExchangePublicToken(ctx, "uid-1", dto.LinkBankRequest{PublicToken: "public-xyz", InstitutionName: "Chase"})
 	if err == nil {
 		t.Fatalf("expected error")
 	}
@@ -183,7 +183,7 @@ func TestExchangePublicTokenPropagatesCreateError(t *testing.T) {
 
 	svc := NewPlaidService(pl, banks, txs)
 	ctx := helpers.TestCtx()
-	_, err := svc.ExchangePublicToken(ctx, "uid-1", "public-xyz", "Chase")
+	_, err := svc.ExchangePublicToken(ctx, "uid-1", dto.LinkBankRequest{PublicToken: "public-xyz", InstitutionName: "Chase"})
 	if err == nil {
 		t.Fatalf("expected error")
 	}
@@ -196,7 +196,7 @@ func TestSyncTransactionsMissingAccessToken(t *testing.T) {
 
 	svc := NewPlaidService(pl, banks, txs)
 	ctx := helpers.TestCtx()
-	_, err := svc.SyncTransactions(ctx, "uid-1", nil)
+	_, err := svc.SyncTransactions(ctx, "uid-1", dto.SyncTransactionsRequest{})
 	if err == nil {
 		t.Fatalf("expected error")
 	}
@@ -209,7 +209,7 @@ func TestSyncTransactionsGetCursorError(t *testing.T) {
 
 	svc := NewPlaidService(pl, banks, txs)
 	ctx := helpers.TestCtx()
-	_, err := svc.SyncTransactions(ctx, "uid-1", nil)
+	_, err := svc.SyncTransactions(ctx, "uid-1", dto.SyncTransactionsRequest{})
 	if err == nil {
 		t.Fatalf("expected error")
 	}
@@ -222,7 +222,7 @@ func TestSyncTransactionsPlaidError(t *testing.T) {
 
 	svc := NewPlaidService(pl, banks, txs)
 	ctx := helpers.TestCtx()
-	_, err := svc.SyncTransactions(ctx, "uid-1", nil)
+	_, err := svc.SyncTransactions(ctx, "uid-1", dto.SyncTransactionsRequest{})
 	if err == nil {
 		t.Fatalf("expected error")
 	}
@@ -239,7 +239,7 @@ func TestSyncTransactionsUpsertError(t *testing.T) {
 
 	svc := NewPlaidService(pl, banks, txs)
 	ctx := helpers.TestCtx()
-	_, err := svc.SyncTransactions(ctx, "uid-1", nil)
+	_, err := svc.SyncTransactions(ctx, "uid-1", dto.SyncTransactionsRequest{})
 	if err == nil {
 		t.Fatalf("expected error")
 	}
@@ -256,7 +256,7 @@ func TestSyncTransactionsSetCursorError(t *testing.T) {
 
 	svc := NewPlaidService(pl, banks, txs)
 	ctx := helpers.TestCtx()
-	_, err := svc.SyncTransactions(ctx, "uid-1", nil)
+	_, err := svc.SyncTransactions(ctx, "uid-1", dto.SyncTransactionsRequest{})
 	if err == nil {
 		t.Fatalf("expected error")
 	}

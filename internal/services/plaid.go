@@ -57,15 +57,15 @@ func (s *plaidService) CreateLinkToken(ctx context.Context, uid string) (string,
 	return linkToken, nil
 }
 
-func (s *plaidService) ExchangePublicToken(ctx context.Context, uid, publicToken, institutionName string) (string, error) {
-	itemID, accessToken, err := s.plaid.ExchangePublicToken(ctx, publicToken)
+func (s *plaidService) ExchangePublicToken(ctx context.Context, uid string, req dto.LinkBankRequest) (string, error) {
+	itemID, accessToken, err := s.plaid.ExchangePublicToken(ctx, req.PublicToken)
 	if err != nil {
 		return "", err
 	}
 
 	bank := &models.Bank{
 		BankID:           itemID,
-		Institution:      institutionName,
+		Institution:      req.InstitutionName,
 		Status:           "active",
 		PlaidPublicToken: accessToken,
 		CreatedAt:        s.clockNow(),
@@ -76,11 +76,11 @@ func (s *plaidService) ExchangePublicToken(ctx context.Context, uid, publicToken
 	}
 
 	log := logger.FromContext(ctx)
-	log.Info("bank linked", "bank_id", itemID, "institution", institutionName)
+	log.Info("bank linked", "bank_id", itemID, "institution", req.InstitutionName)
 	return itemID, nil
 }
 
-func (s *plaidService) SyncTransactions(ctx context.Context, uid string, bankID *string) (dto.PlaidServiceSyncResult, error) {
+func (s *plaidService) SyncTransactions(ctx context.Context, uid string, req dto.SyncTransactionsRequest) (dto.PlaidServiceSyncResult, error) {
 	result := dto.PlaidServiceSyncResult{}
 	log := logger.FromContext(ctx)
 
@@ -90,13 +90,13 @@ func (s *plaidService) SyncTransactions(ctx context.Context, uid string, bankID 
 	}
 
 	banksToSync := len(banks)
-	if bankID != nil {
+	if req.BankID != nil {
 		banksToSync = 1
 	}
 	log.Info("transaction sync started", "bank_count", banksToSync)
 
 	for _, b := range banks {
-		if bankID != nil && *bankID != b.BankID {
+		if req.BankID != nil && *req.BankID != b.BankID {
 			continue
 		}
 
@@ -143,7 +143,7 @@ func (s *plaidService) SyncTransactions(ctx context.Context, uid string, bankID 
 		}
 
 		result.BanksSynced++
-		if bankID != nil {
+		if req.BankID != nil {
 			result.Cursor = helpers.Value(cursor)
 			break
 		}

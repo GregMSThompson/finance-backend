@@ -4,6 +4,15 @@ import (
 	"github.com/GregMSThompson/finance-backend/internal/models"
 )
 
+type LinkBankRequest struct {
+	PublicToken     string `json:"publicToken"`
+	InstitutionName string `json:"institutionName,omitempty"`
+}
+
+type SyncTransactionsRequest struct {
+	BankID *string `json:"bankId,omitempty"`
+}
+
 // Metadata from the transaction sync process
 type PlaidServiceSyncResult struct {
 	BanksSynced          int

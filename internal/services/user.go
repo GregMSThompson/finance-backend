@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/GregMSThompson/finance-backend/internal/dto"
 	"github.com/GregMSThompson/finance-backend/internal/models"
 	"github.com/GregMSThompson/finance-backend/pkg/logger"
 )
@@ -24,15 +25,14 @@ func NewUserService(store userUSStore) *userService {
 	}
 }
 
-func (s *userService) CreateUser(ctx context.Context, uid, email, first, last string) error {
-	// Get logger from context - already has uid, email, request_id, method, path
+func (s *userService) CreateUser(ctx context.Context, uid, email string, req dto.CreateUserRequest) error {
 	log := logger.FromContext(ctx)
 
 	user := &models.User{
 		UID:       uid,
 		Email:     email,
-		FirstName: first,
-		LastName:  last,
+		FirstName: req.FirstName,
+		LastName:  req.LastName,
 		CreatedAt: time.Now(),
 		UpdatedAt: time.Now(),
 	}
@@ -43,8 +43,7 @@ func (s *userService) CreateUser(ctx context.Context, uid, email, first, last st
 		return err
 	}
 
-	// uid and email are automatically included from context
-	log.Info("user created successfully", "first_name", first, "last_name", last)
+	log.Info("user created successfully", "first_name", req.FirstName, "last_name", req.LastName)
 	log.Debug("user created with full details", "user", user)
 
 	return nil
