@@ -13,11 +13,11 @@ func NewAPIRouter(deps *handlers.Deps) chi.Router {
 
 	// middleware
 	loggerMw := middleware.NewLoggerMiddleware(deps.Log)
-	auth := middleware.NewAuthMiddleware(deps.Firebase, deps.ResponseHandler)
+	authMw := middleware.NewAuthMiddleware(deps.Firebase, deps.ResponseHandler)
 
 	r.Use(chimiddleware.RequestID)   // 1. Generate request_id
 	r.Use(loggerMw.LoggerMiddleware) // 2. Add logger with request context
-	r.Use(auth.FirebaseAuth)         // 3. Add user context to logger
+	r.Use(authMw.FirebaseAuth)       // 3. Add user context to logger
 	r.Use(chimiddleware.Logger)      // 4. Chi's HTTP logging
 	r.Use(chimiddleware.Recoverer)   // 5. Panic recovery
 
