@@ -9,6 +9,8 @@ import (
 	"github.com/GregMSThompson/finance-backend/internal/config"
 	"github.com/GregMSThompson/finance-backend/internal/response"
 	"github.com/GregMSThompson/finance-backend/internal/router"
+	"github.com/GregMSThompson/finance-backend/internal/services"
+	"github.com/GregMSThompson/finance-backend/internal/store"
 	"github.com/GregMSThompson/finance-backend/internal/taskhandlers"
 )
 
@@ -27,11 +29,16 @@ func main() {
 
 	rh := response.New(bs.Log)
 
+	userStore := store.NewUserStore(bs.Firestore)
+	alertEventStore := store.NewAlertEventStore(bs.Firestore)
+	notificationSvc := services.NewNotificationService(userStore, alertEventStore, bs.Messaging)
+
 	deps := &taskhandlers.Deps{
 		Log:             bs.Log,
 		ResponseHandler: rh,
 		Audience:        cfg.WorkerAudience,
 		TestAPIKey:      cfg.WorkerTestAPIKey,
+		NotificationSvc: notificationSvc,
 	}
 
 	r := router.NewWorkerRouter(deps)

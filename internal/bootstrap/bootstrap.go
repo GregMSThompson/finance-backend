@@ -7,6 +7,7 @@ import (
 	"cloud.google.com/go/firestore"
 	kms "cloud.google.com/go/kms/apiv1"
 	"firebase.google.com/go/v4/auth"
+	"firebase.google.com/go/v4/messaging"
 
 	plaidclient "github.com/GregMSThompson/finance-backend/internal/client/plaid"
 	vertexclient "github.com/GregMSThompson/finance-backend/internal/client/vertex"
@@ -18,6 +19,7 @@ type Bootstrap struct {
 	Log           *slog.Logger
 	Firestore     *firestore.Client
 	Firebase      *auth.Client
+	Messaging     *messaging.Client
 	KMS           *kms.KeyManagementClient
 	PlaidAdapter  *plaidclient.Adapter
 	VertexAdapter *vertexclient.Adapter
@@ -36,10 +38,12 @@ func Run(cfg *config.Config) (*Bootstrap, error) {
 	if err != nil {
 		return bs, err
 	}
-	bs.Firebase, err = InitFirebase(applicationCtx, cfg.ProjectID)
+	fbClients, err := initFirebase(applicationCtx, cfg.ProjectID)
 	if err != nil {
 		return bs, err
 	}
+	bs.Firebase = fbClients.Auth
+	bs.Messaging = fbClients.Messaging
 	bs.KMS, err = kms.NewKeyManagementClient(applicationCtx)
 	if err != nil {
 		return bs, err

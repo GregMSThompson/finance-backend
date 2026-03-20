@@ -17,8 +17,9 @@ type UpdateAlertRequest struct {
 	Config   models.AlertConfig      `json:"config"`
 }
 
-// DeliverAlertPushRequest is the Cloud Tasks payload for push notification delivery.
-type DeliverAlertPushRequest struct {
-	AlertEventID string `json:"alertEventId"`
-	UserID       string `json:"userId"`
+// DeliverAlertRequest is the Cloud Tasks payload for alert notification delivery.
+type DeliverAlertRequest struct {
+	AlertEventID string                `json:"alertEventId"`
+	UserID       string                `json:"userId"`
+	Delivery     models.DeliveryMethod `json:"delivery"`
 }

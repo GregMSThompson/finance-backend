@@ -21,7 +21,7 @@ func NewWorkerRouter(deps *taskhandlers.Deps) chi.Router {
 	r.Use(chimiddleware.Recoverer)
 
 	alh := taskhandlers.NewAlertTaskHandlers(deps)
-	r.Post("/tasks/alert-push", alh.DeliverAlertPush)
+	r.Post("/tasks/alert-deliver", alh.DeliverAlert)
 
 	return r
 }

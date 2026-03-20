@@ -6,13 +6,14 @@ import (
 	"net/http"
 
 	"github.com/GregMSThompson/finance-backend/internal/dto"
+	"github.com/GregMSThompson/finance-backend/internal/models"
 	"github.com/GregMSThompson/finance-backend/internal/response"
 	"github.com/GregMSThompson/finance-backend/pkg/logger"
 )
 
-// notificationService sends push notifications for triggered alert events.
+// notificationService delivers alert notifications across all supported channels.
 type notificationService interface {
-	SendAlertPush(ctx context.Context, userID, alertEventID string) error
+	SendAlertPush(ctx context.Context, req dto.DeliverAlertRequest) error
 }
 
 type alertTaskHandlers struct {
@@ -28,13 +29,13 @@ func NewAlertTaskHandlers(deps *Deps) *alertTaskHandlers {
 	}
 }
 
-// DeliverAlertPush sends a push notification for a triggered alert event.
+// DeliverAlert dispatches an alert notification to the appropriate delivery channel.
 // Called by Cloud Tasks; returns 2xx on success so the task is not retried.
-func (h *alertTaskHandlers) DeliverAlertPush(w http.ResponseWriter, r *http.Request) {
+func (h *alertTaskHandlers) DeliverAlert(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	log := logger.FromContext(ctx)
 
-	var req dto.DeliverAlertPushRequest
+	var req dto.DeliverAlertRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		log.Warn("invalid task payload", "error", err)
 		h.ResponseHandler.WriteTaskError(w, r, http.StatusBadRequest, "bad_request", "invalid payload")
@@ -46,8 +47,23 @@ func (h *alertTaskHandlers) DeliverAlertPush(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	if err := h.NotificationSvc.SendAlertPush(ctx, req.UserID, req.AlertEventID); err != nil {
-		log.Error("failed to send alert push", "error", err, "alertEventId", req.AlertEventID)
+	if req.Delivery == "" {
+		h.ResponseHandler.WriteTaskError(w, r, http.StatusBadRequest, "bad_request", "delivery is required")
+		return
+	}
+
+	var err error
+	switch req.Delivery {
+	case models.DeliveryPush:
+		err = h.NotificationSvc.SendAlertPush(ctx, req)
+	default:
+		log.Warn("unsupported delivery method", "delivery", req.Delivery)
+		h.ResponseHandler.WriteTaskError(w, r, http.StatusBadRequest, "bad_request", "unsupported delivery method")
+		return
+	}
+
+	if err != nil {
+		log.Error("failed to deliver alert", "error", err, "alertEventId", req.AlertEventID, "delivery", req.Delivery)
 		h.ResponseHandler.WriteTaskError(w, r, http.StatusInternalServerError, "internal_error", "delivery failed")
 		return
 	}
