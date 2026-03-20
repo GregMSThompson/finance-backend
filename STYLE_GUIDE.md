@@ -42,6 +42,24 @@ Service validation includes:
 - defaults and normalization
 - state/ownership checks and invariants
 
+## Request DTOs
+
+Goal: keep request handling consistent across handlers and services by using explicit DTO request types.
+
+Rules:
+
+1. HTTP request bodies should be decoded into DTO request structs.
+2. Handlers should pass DTO request objects into services rather than unpacking them into multiple primitive arguments.
+3. Service method signatures should prefer request DTOs for operation inputs when the data originates from an API request.
+4. Request DTOs should live in the `dto` package, not in handlers or services.
+5. Handlers may still pass path parameters or authenticated user context separately when that better reflects the boundary.
+
+Use this pattern:
+
+- handler decodes request body into `dto.SomeRequest`
+- handler passes `dto.SomeRequest` to service
+- service applies business validation and defaults to the DTO or data derived from it
+
 ## Comments
 
 Goal: comments should add context, not restate obvious code.
