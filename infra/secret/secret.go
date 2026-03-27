@@ -7,15 +7,27 @@ import (
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 )
 
-var (
+type Manager struct {
 	provider *gcp.Provider
-	service  *projects.Service
-)
+}
 
-func AddSecret(ctx *pulumi.Context,
+func New(prov *gcp.Provider) *Manager {
+	return &Manager{provider: prov}
+}
+
+func SetupSecretManager(ctx *pulumi.Context, prov *gcp.Provider) (*projects.Service, error) {
+	return projects.NewService(ctx, "secretManagerService", &projects.ServiceArgs{
+		Service: pulumi.String("secretmanager.googleapis.com"),
+	},
+		pulumi.Provider(prov),
+	)
+}
+
+func (m *Manager) CreateSecret(ctx *pulumi.Context,
 	resourceName,
 	secretID string,
-	value pulumi.StringInput) (pulumi.StringOutput, error) {
+	value pulumi.StringInput,
+	res ...pulumi.Resource) (pulumi.StringOutput, error) {
 	emptyString := pulumi.String("").ToStringOutput()
 	s, err := secretmanager.NewSecret(ctx, resourceName, &secretmanager.SecretArgs{
 		SecretId: pulumi.String(secretID),
@@ -23,8 +35,8 @@ func AddSecret(ctx *pulumi.Context,
 			Auto: &secretmanager.SecretReplicationAutoArgs{},
 		},
 	},
-		pulumi.Provider(provider),
-		pulumi.DependsOn([]pulumi.Resource{service}),
+		pulumi.Provider(m.provider),
+		pulumi.DependsOn(res),
 	)
 	if err != nil {
 		return emptyString, err
@@ -34,30 +46,11 @@ func AddSecret(ctx *pulumi.Context,
 		Secret:     s.ID(),
 		SecretData: value,
 	},
-		pulumi.Provider(provider),
+		pulumi.Provider(m.provider),
 	)
 	if err != nil {
 		return emptyString, err
 	}
 
 	return s.SecretId, nil
-}
-
-func SetupSecretManager(ctx *pulumi.Context, prov *gcp.Provider) (*projects.Service, error) {
-	var err error
-	service, err = enableSecretsManager(ctx, prov)
-	if err != nil {
-		return nil, err
-	}
-
-	provider = prov
-	return service, nil
-}
-
-func enableSecretsManager(ctx *pulumi.Context, prov *gcp.Provider) (*projects.Service, error) {
-	return projects.NewService(ctx, "secretManagerService", &projects.ServiceArgs{
-		Service: pulumi.String("secretmanager.googleapis.com"),
-	},
-		pulumi.Provider(prov),
-	)
 }

@@ -15,8 +15,7 @@ var (
 )
 
 func SetupKMS(ctx *pulumi.Context, prov *gcp.Provider) (*projects.Service, error) {
-	var err error
-	service, err = projects.NewService(ctx, "kmsService", &projects.ServiceArgs{
+	service, err := projects.NewService(ctx, "kmsService", &projects.ServiceArgs{
 		Service: pulumi.String("cloudkms.googleapis.com"),
 	}, pulumi.Provider(prov))
 	if err != nil {

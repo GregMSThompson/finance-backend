@@ -20,6 +20,9 @@ func main() {
 		if err != nil {
 			return err
 		}
+		dockerManager := docker.New(prov)
+		secretManager := secret.New(prov)
+		api := cloudrun.NewAPI(prov, dockerManager, secretManager)
 
 		// enable identity service to allow using firebase
 		ident, err := identity.SetupIdentity(ctx, prov)
@@ -45,19 +48,29 @@ func main() {
 			return err
 		}
 
+		artifactRegistry, err := docker.SetupArtifactRegistry(ctx, prov)
+		if err != nil {
+			return err
+		}
+
 		// enable kms service
 		ks, err := kms.SetupKMS(ctx, prov)
 		if err != nil {
 			return err
 		}
 
-		// create docker repo
-		repo, err := docker.CreateCloudrunRepo(ctx, prov)
+		keyID, err := kms.CreateKey(ctx, prov, "app-keys", "user")
 		if err != nil {
 			return err
 		}
 
-		_, err = cloudrun.SetupCloudRun(ctx, prov, ident, repo, sm, ks)
+		// create docker repo
+		repo, err := dockerManager.CreateAPIRepo(ctx, artifactRegistry)
+		if err != nil {
+			return err
+		}
+
+		_, err = api.Deploy(ctx, keyID, ident, repo, ks, sm)
 		if err != nil {
 			return err
 		}

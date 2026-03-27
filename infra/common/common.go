@@ -6,6 +6,8 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
+	"unicode"
 )
 
 func GenerateHash(path string) (string, error) {
@@ -47,9 +49,19 @@ func GetFileMd5Hash(file string) (string, error) {
 	return fmt.Sprintf("%x", h.Sum(nil)), nil
 }
 
-func AppendHash(hash1, hash2 string) string {
+func AppendHash(hash1, hash2 string, moreHashes ...string) string {
 	h := md5.New()
-	io.WriteString(h, fmt.Sprintf("%s%s", hash1, hash2))
+	io.WriteString(h, fmt.Sprintf("%s%s%s", hash1, hash2, strings.Join(moreHashes, "")))
 
 	return fmt.Sprintf("%x", h.Sum(nil))
+}
+
+func CapitalizeFirst(s string) string {
+	if s == "" {
+		return s
+	}
+
+	runes := []rune(s)
+	runes[0] = unicode.ToUpper(runes[0])
+	return string(runes)
 }
