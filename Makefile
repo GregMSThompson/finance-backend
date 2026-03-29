@@ -4,8 +4,11 @@ SHELL = /bin/bash
 
 PROJECT ?=
 
-service:
-	GOOS=darwin GOARCH=arm64 go build -o ../../../../bin/financial-service cmd/api/*.go
+api:
+	GOWORK=off GOOS=darwin GOARCH=arm64 go build -o ../../../../bin/financial-service ./cmd/api
+
+worker:
+	GOWORK=off GOOS=darwin GOARCH=arm64 go build -o ../../../../bin/financial-service ./cmd/worker
 
 gcpbootstrap:
 	@if [ -z "$(PROJECT)" ]; then echo "PROJECT is required. Usage: make gcpbootstrap PROJECT=<gcp-project-id>"; exit 1; fi
