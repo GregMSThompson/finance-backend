@@ -10,12 +10,6 @@ import (
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi/config"
 )
 
-// SecretRefs contains the Secret Manager references injected into the API service.
-type SecretRefs struct {
-	PlaidClientIDName pulumi.StringInput
-	PlaidSecretName   pulumi.StringInput
-}
-
 // SetupCloudRun enables the Cloud Run API for the current project.
 func SetupCloudRun(ctx *pulumi.Context, prov *gcp.Provider) (*projects.Service, error) {
 	return projects.NewService(ctx, "cloudRunService", &projects.ServiceArgs{

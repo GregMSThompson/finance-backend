@@ -10,9 +10,13 @@ import (
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi/config"
 )
 
-var (
-	service *projects.Service
-)
+type Manager struct {
+	provider *gcp.Provider
+}
+
+func New(prov *gcp.Provider) *Manager {
+	return &Manager{provider: prov}
+}
 
 func SetupKMS(ctx *pulumi.Context, prov *gcp.Provider) (*projects.Service, error) {
 	service, err := projects.NewService(ctx, "kmsService", &projects.ServiceArgs{
@@ -26,11 +30,11 @@ func SetupKMS(ctx *pulumi.Context, prov *gcp.Provider) (*projects.Service, error
 }
 
 // CreateKey creates a key ring + crypto key and returns the crypto key ID.
-func CreateKey(
+func (m *Manager) CreateKey(
 	ctx *pulumi.Context,
-	prov *gcp.Provider,
 	keyRingID string,
 	keyID string,
+	res ...pulumi.Resource,
 ) (pulumi.StringOutput, error) {
 	gcpCfg := config.New(ctx, "gcp")
 	location := gcpCfg.Require("region")
@@ -39,8 +43,8 @@ func CreateKey(
 		Location: pulumi.String(location),
 		Name:     pulumi.String(keyRingID),
 	},
-		pulumi.Provider(prov),
-		pulumi.DependsOn([]pulumi.Resource{service}),
+		pulumi.Provider(m.provider),
+		pulumi.DependsOn(res),
 	)
 	if err != nil {
 		return pulumi.String("").ToStringOutput(), err
@@ -52,7 +56,7 @@ func CreateKey(
 		Purpose:        pulumi.String("ENCRYPT_DECRYPT"),
 		RotationPeriod: pulumi.String("7776000s"), // 90 days
 	},
-		pulumi.Provider(prov),
+		pulumi.Provider(m.provider),
 	)
 	if err != nil {
 		return pulumi.String("").ToStringOutput(), err

@@ -20,6 +20,7 @@ func main() {
 		if err != nil {
 			return err
 		}
+		kmsManager := kms.New(prov)
 		dockerManager := docker.New(prov)
 		secretManager := secret.New(prov)
 		api := cloudrun.NewAPI(prov, dockerManager, secretManager)
@@ -59,7 +60,7 @@ func main() {
 			return err
 		}
 
-		keyID, err := kms.CreateKey(ctx, prov, "app-keys", "user")
+		keyID, err := kmsManager.CreateKey(ctx, "app-keys", "user", ks)
 		if err != nil {
 			return err
 		}

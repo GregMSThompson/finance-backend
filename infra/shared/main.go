@@ -19,6 +19,7 @@ func main() {
 		if err != nil {
 			return err
 		}
+		kmsManager := kms.New(prov)
 
 		ident, err := identity.SetupIdentity(ctx, prov)
 		if err != nil {
@@ -45,11 +46,12 @@ func main() {
 			return err
 		}
 
-		if _, err := kms.SetupKMS(ctx, prov); err != nil {
+		kmsService, err := kms.SetupKMS(ctx, prov)
+		if err != nil {
 			return err
 		}
 
-		keyID, err := kms.CreateKey(ctx, prov, "app-keys", "shared")
+		keyID, err := kmsManager.CreateKey(ctx, "app-keys", "shared", kmsService)
 		if err != nil {
 			return err
 		}

@@ -14,6 +14,12 @@ import (
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi/config"
 )
 
+// secretRefs contains the Secret Manager references injected into the API service.
+type secretRefs struct {
+	PlaidClientIDName pulumi.StringInput
+	PlaidSecretName   pulumi.StringInput
+}
+
 type API struct {
 	provider      *gcp.Provider
 	dockerManager *infraDocker.Manager
@@ -66,26 +72,26 @@ func (a *API) Deploy(ctx *pulumi.Context, keyID pulumi.StringInput, res ...pulum
 	return apiSA, nil
 }
 
-func (a *API) createSecrets(ctx *pulumi.Context) (SecretRefs, error) {
+func (a *API) createSecrets(ctx *pulumi.Context) (secretRefs, error) {
 	plaidCfg := config.New(ctx, "plaid")
 
 	plaidClientID, err := a.secretManager.CreateSecret(ctx, "plaidClientIdSecret", "plaidClientId", plaidCfg.RequireSecret("clientId"))
 	if err != nil {
-		return SecretRefs{}, err
+		return secretRefs{}, err
 	}
 
 	plaidSecret, err := a.secretManager.CreateSecret(ctx, "plaidSecretSecret", "plaidSecret", plaidCfg.RequireSecret("secret"))
 	if err != nil {
-		return SecretRefs{}, err
+		return secretRefs{}, err
 	}
 
-	return SecretRefs{
+	return secretRefs{
 		PlaidClientIDName: plaidClientID,
 		PlaidSecretName:   plaidSecret,
 	}, nil
 }
 
-func (a *API) createService(ctx *pulumi.Context, img *pulumidocker.Image, apiSA *serviceaccount.Account, sr SecretRefs, keyID pulumi.StringInput) (*gcpcloudrun.Service, error) {
+func (a *API) createService(ctx *pulumi.Context, img *pulumidocker.Image, apiSA *serviceaccount.Account, sr secretRefs, keyID pulumi.StringInput) (*gcpcloudrun.Service, error) {
 	gcpCfg := config.New(ctx, "gcp")
 	crCfg := config.New(ctx, "cloudrun")
 	plaidCfg := config.New(ctx, "plaid")
@@ -185,7 +191,6 @@ func (a *API) createService(ctx *pulumi.Context, img *pulumidocker.Image, apiSA 
 		},
 	},
 		pulumi.Provider(a.provider),
-		pulumi.DependsOn(res),
 	)
 }
 
