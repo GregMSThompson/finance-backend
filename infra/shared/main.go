@@ -4,6 +4,7 @@ import (
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 
 	"github.com/GregMSThompson/finance-backend/infra/cloudrun"
+	"github.com/GregMSThompson/finance-backend/infra/compute"
 	"github.com/GregMSThompson/finance-backend/infra/docker"
 	"github.com/GregMSThompson/finance-backend/infra/firestore"
 	"github.com/GregMSThompson/finance-backend/infra/identity"
@@ -43,6 +44,10 @@ func main() {
 		}
 
 		if _, err := cloudrun.SetupCloudRun(ctx, prov); err != nil {
+			return err
+		}
+
+		if _, err := compute.SetupCompute(ctx, prov); err != nil {
 			return err
 		}
 
