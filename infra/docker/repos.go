@@ -43,14 +43,14 @@ func (m *Manager) BuildImage(ctx *pulumi.Context, cmdName string, res ...pulumi.
 	projectID := gcpCfg.Require("project")
 	region := gcpCfg.Require("region")
 
-	cmdPath := path.Join("../cmd", cmdName)
+	cmdPath := path.Join("../../cmd", cmdName)
 	dockerfilePath := path.Join(cmdPath, "Dockerfile")
 
-	internalHash, err := common.GenerateHash("../internal")
+	internalHash, err := common.GenerateHash("../../internal")
 	if err != nil {
 		return nil, err
 	}
-	pkgHash, err := common.GenerateHash("../pkg")
+	pkgHash, err := common.GenerateHash("../../pkg")
 	if err != nil {
 		return nil, err
 	}
@@ -63,7 +63,7 @@ func (m *Manager) BuildImage(ctx *pulumi.Context, cmdName string, res ...pulumi.
 	return pulumidocker.NewImage(ctx, "image"+common.CapitalizeFirst(cmdName), &pulumidocker.ImageArgs{
 		Build: pulumidocker.DockerBuildArgs{
 			Platform:   pulumi.String("linux/amd64"),
-			Context:    pulumi.String(".."),
+			Context:    pulumi.String("../.."),
 			Dockerfile: pulumi.String(dockerfilePath),
 		},
 		ImageName: pulumi.String(fmt.Sprintf("%s-docker.pkg.dev/%s/%s/finannce-%s:%s", region, projectID, cmdName, cmdName, hash)),
