@@ -52,10 +52,6 @@ func (a *API) Deploy(ctx *pulumi.Context, keyID pulumi.StringInput, res ...pulum
 		return nil, err
 	}
 
-	if err := grantFirestoreAccess(ctx, a.provider, apiSA, "apiFirestoreAccess"); err != nil {
-		return nil, err
-	}
-
 	svc, err := a.createService(ctx, img, apiSA, sr, keyID)
 	if err != nil {
 		return nil, err
@@ -111,6 +107,55 @@ func (a *API) createService(ctx *pulumi.Context, img *pulumidocker.Image, apiSA 
 	vertexModel := vertexCfg.Require("model")
 	aiTTL := appCfg.Require("aiTtl")
 
+	envs := gcpcloudrun.ServiceTemplateSpecContainerEnvArray{
+		&gcpcloudrun.ServiceTemplateSpecContainerEnvArgs{
+			Name:  pulumi.String("PROJECTID"),
+			Value: pulumi.String(projectID),
+		},
+		&gcpcloudrun.ServiceTemplateSpecContainerEnvArgs{
+			Name:  pulumi.String("REGION"),
+			Value: pulumi.String(region),
+		},
+		&gcpcloudrun.ServiceTemplateSpecContainerEnvArgs{
+			Name:  pulumi.String("LOGLEVEL"),
+			Value: pulumi.String(logLevel),
+		},
+		&gcpcloudrun.ServiceTemplateSpecContainerEnvArgs{
+			Name:  pulumi.String("KMSKEYNAME"),
+			Value: keyID,
+		},
+		&gcpcloudrun.ServiceTemplateSpecContainerEnvArgs{
+			Name:  pulumi.String("PLAIDENVIRONMENT"),
+			Value: pulumi.String(plaidEnv),
+		},
+		&gcpcloudrun.ServiceTemplateSpecContainerEnvArgs{
+			Name:  pulumi.String("VERTEXMODEL"),
+			Value: pulumi.String(vertexModel),
+		},
+		&gcpcloudrun.ServiceTemplateSpecContainerEnvArgs{
+			Name:  pulumi.String("AITTL"),
+			Value: pulumi.String(aiTTL),
+		},
+		&gcpcloudrun.ServiceTemplateSpecContainerEnvArgs{
+			Name: pulumi.String("PLAIDCLIENTID"),
+			ValueFrom: &gcpcloudrun.ServiceTemplateSpecContainerEnvValueFromArgs{
+				SecretKeyRef: &gcpcloudrun.ServiceTemplateSpecContainerEnvValueFromSecretKeyRefArgs{
+					Name: sr.PlaidClientIDName,
+					Key:  pulumi.String("latest"),
+				},
+			},
+		},
+		&gcpcloudrun.ServiceTemplateSpecContainerEnvArgs{
+			Name: pulumi.String("PLAIDSECRET"),
+			ValueFrom: &gcpcloudrun.ServiceTemplateSpecContainerEnvValueFromArgs{
+				SecretKeyRef: &gcpcloudrun.ServiceTemplateSpecContainerEnvValueFromSecretKeyRefArgs{
+					Name: sr.PlaidSecretName,
+					Key:  pulumi.String("latest"),
+				},
+			},
+		},
+	}
+
 	return gcpcloudrun.NewService(ctx, "apiService", &gcpcloudrun.ServiceArgs{
 		Location: pulumi.String(region),
 		Template: &gcpcloudrun.ServiceTemplateArgs{
@@ -137,54 +182,7 @@ func (a *API) createService(ctx *pulumi.Context, img *pulumidocker.Image, apiSA 
 								ContainerPort: pulumi.Int(8080),
 							},
 						},
-						Envs: gcpcloudrun.ServiceTemplateSpecContainerEnvArray{
-							&gcpcloudrun.ServiceTemplateSpecContainerEnvArgs{
-								Name:  pulumi.String("PROJECTID"),
-								Value: pulumi.String(projectID),
-							},
-							&gcpcloudrun.ServiceTemplateSpecContainerEnvArgs{
-								Name:  pulumi.String("REGION"),
-								Value: pulumi.String(region),
-							},
-							&gcpcloudrun.ServiceTemplateSpecContainerEnvArgs{
-								Name:  pulumi.String("LOGLEVEL"),
-								Value: pulumi.String(logLevel),
-							},
-							&gcpcloudrun.ServiceTemplateSpecContainerEnvArgs{
-								Name:  pulumi.String("KMSKEYNAME"),
-								Value: keyID,
-							},
-							&gcpcloudrun.ServiceTemplateSpecContainerEnvArgs{
-								Name:  pulumi.String("PLAIDENVIRONMENT"),
-								Value: pulumi.String(plaidEnv),
-							},
-							&gcpcloudrun.ServiceTemplateSpecContainerEnvArgs{
-								Name:  pulumi.String("VERTEXMODEL"),
-								Value: pulumi.String(vertexModel),
-							},
-							&gcpcloudrun.ServiceTemplateSpecContainerEnvArgs{
-								Name:  pulumi.String("AITTL"),
-								Value: pulumi.String(aiTTL),
-							},
-							&gcpcloudrun.ServiceTemplateSpecContainerEnvArgs{
-								Name: pulumi.String("PLAIDCLIENTID"),
-								ValueFrom: &gcpcloudrun.ServiceTemplateSpecContainerEnvValueFromArgs{
-									SecretKeyRef: &gcpcloudrun.ServiceTemplateSpecContainerEnvValueFromSecretKeyRefArgs{
-										Name: sr.PlaidClientIDName,
-										Key:  pulumi.String("latest"),
-									},
-								},
-							},
-							&gcpcloudrun.ServiceTemplateSpecContainerEnvArgs{
-								Name: pulumi.String("PLAIDSECRET"),
-								ValueFrom: &gcpcloudrun.ServiceTemplateSpecContainerEnvValueFromArgs{
-									SecretKeyRef: &gcpcloudrun.ServiceTemplateSpecContainerEnvValueFromSecretKeyRefArgs{
-										Name: sr.PlaidSecretName,
-										Key:  pulumi.String("latest"),
-									},
-								},
-							},
-						},
+						Envs: envs,
 					},
 				},
 			},
@@ -210,6 +208,10 @@ func (a *API) setIAMAccessPolicy(ctx *pulumi.Context, svc *gcpcloudrun.Service) 
 }
 
 func (a *API) setIAMPermissions(ctx *pulumi.Context, apiSA *serviceaccount.Account, keyID pulumi.StringInput) error {
+	if err := grantFirestoreAccess(ctx, a.provider, apiSA, "apiFirestoreAccess"); err != nil {
+		return err
+	}
+
 	if err := grantProjectRole(ctx, a.provider, apiSA, "apiSecretManagerAdmin", "roles/secretmanager.admin"); err != nil {
 		return err
 	}

@@ -28,3 +28,14 @@ func NewAPI() *APIConfig {
 		AITTL:            parseDuration(os.Getenv("AITTL")),
 	}
 }
+
+func getPlaidEnvironment(env string) dto.PlaidEnvironment {
+	switch env {
+	case "sandbox":
+		return dto.PlaidSandbox
+	case "development":
+		return dto.PalidDevelopment
+	default:
+		return dto.PlaidProduction
+	}
+}

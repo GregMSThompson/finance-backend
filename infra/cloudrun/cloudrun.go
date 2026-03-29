@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp"
+	gcpcloudrun "github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/cloudrun"
 	"github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/projects"
 	"github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/serviceaccount"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
@@ -50,4 +51,9 @@ func serviceAccountMember(email pulumi.StringOutput) pulumi.StringOutput {
 	return email.ApplyT(func(value string) string {
 		return fmt.Sprintf("serviceAccount:%s", value)
 	}).(pulumi.StringOutput)
+}
+
+func exportServiceURL(ctx *pulumi.Context, name string, svc *gcpcloudrun.Service) error {
+	ctx.Export(name, svc.Statuses.Index(pulumi.Int(0)).Url())
+	return nil
 }

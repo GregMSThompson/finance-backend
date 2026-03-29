@@ -6,6 +6,7 @@ import (
 	"github.com/GregMSThompson/finance-backend/infra/cloudrun"
 	"github.com/GregMSThompson/finance-backend/infra/compute"
 	"github.com/GregMSThompson/finance-backend/infra/docker"
+	"github.com/GregMSThompson/finance-backend/infra/fcm"
 	"github.com/GregMSThompson/finance-backend/infra/firestore"
 	"github.com/GregMSThompson/finance-backend/infra/identity"
 	"github.com/GregMSThompson/finance-backend/infra/kms"
@@ -48,6 +49,10 @@ func main() {
 		}
 
 		if _, err := compute.SetupCompute(ctx, prov); err != nil {
+			return err
+		}
+
+		if _, err := fcm.SetupFCM(ctx, prov); err != nil {
 			return err
 		}
 

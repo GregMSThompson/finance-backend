@@ -1,0 +1,11 @@
+config:
+  gcp:project: finance-app-dev-491520
+  gcp:region: us-central1
+  cloudrun:minScale: "0"
+  cloudrun:maxScale: "1"
+  cloudrun:cpu: "1"
+  cloudrun:memory: 512Mi
+  cloudrun:concurrency: "80"
+  cloudrun:logLevel: debug
+  cloudrun:timeout: "60"
+  app:workerAudience: https://worker.example.invalid
