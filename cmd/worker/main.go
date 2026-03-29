@@ -22,8 +22,8 @@ func exitOnError(message string, err error, log *slog.Logger) {
 }
 
 func main() {
-	cfg := config.New()
-	bs, err := bootstrap.Run(cfg)
+	cfg := config.NewWorker()
+	bs, err := bootstrap.RunWorker(cfg)
 	exitOnError("bootstrap failed", err, bs.Log)
 	defer bs.Close()
 
