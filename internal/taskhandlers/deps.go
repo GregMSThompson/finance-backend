@@ -10,6 +10,7 @@ import (
 type Deps struct {
 	Log               *slog.Logger
 	ResponseHandler   response.ResponseHandler
+	AppEnv            string
 	Audience          string // Cloud Tasks OIDC audience (worker service URL)
 	TestAPIKeyEnabled bool
 	TestAPIKey        string // non-empty enables test key bypass for local development

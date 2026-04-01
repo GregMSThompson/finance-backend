@@ -50,6 +50,10 @@ func (w *Worker) Deploy(ctx *pulumi.Context, res ...pulumi.Resource) (*serviceac
 		return nil, err
 	}
 
+	if err := w.setIAMAccessPolicy(ctx, svc); err != nil {
+		return nil, err
+	}
+
 	return workerSA, exportServiceURL(ctx, "workerServiceURL", svc)
 }
 
@@ -67,6 +71,7 @@ func (w *Worker) createService(ctx *pulumi.Context, img *pulumidocker.Image, wor
 	concurrency := crCfg.Require("concurrency")
 	logLevel := crCfg.Require("logLevel")
 	timeout, _ := strconv.Atoi(crCfg.Require("timeout"))
+	appEnv := ctx.Stack()
 	workerAudience := appCfg.Require("workerAudience")
 	workerTestAPIKeyEnabled := appCfg.GetBool("workerTestApiKeyEnabled")
 
@@ -84,6 +89,10 @@ func (w *Worker) createService(ctx *pulumi.Context, img *pulumidocker.Image, wor
 			Value: pulumi.String(logLevel),
 		},
 		&gcpcloudrun.ServiceTemplateSpecContainerEnvArgs{
+			Name:  pulumi.String("APPENV"),
+			Value: pulumi.String(appEnv),
+		},
+		&gcpcloudrun.ServiceTemplateSpecContainerEnvArgs{
 			Name:  pulumi.String("WORKERAUDIENCE"),
 			Value: pulumi.String(workerAudience),
 		},
@@ -94,12 +103,11 @@ func (w *Worker) createService(ctx *pulumi.Context, img *pulumidocker.Image, wor
 	}
 
 	if workerTestAPIKeyEnabled {
-		workerCfg := config.New(ctx, "app")
 		workerTestAPIKey, err := w.secretManager.CreateSecret(
 			ctx,
 			"workerTestApiKeySecret",
 			"workerTestApiKey",
-			workerCfg.RequireSecret("workerTestApiKey"),
+			appCfg.RequireSecret("workerTestApiKey"),
 		)
 		if err != nil {
 			return nil, err
@@ -156,4 +164,25 @@ func (w *Worker) setIAMPermissions(ctx *pulumi.Context, workerSA *serviceaccount
 	}
 
 	return grantProjectRole(ctx, w.provider, workerSA, "workerFirebaseMessagingAccess", "roles/firebasecloudmessaging.admin")
+}
+
+func (w *Worker) setIAMAccessPolicy(ctx *pulumi.Context, svc *gcpcloudrun.Service) error {
+	gcpCfg := config.New(ctx, "gcp")
+	appCfg := config.New(ctx, "app")
+
+	if !appCfg.GetBool("workerAllowPublicInvoker") {
+		return nil
+	}
+
+	region := gcpCfg.Require("region")
+
+	_, err := gcpcloudrun.NewIamMember(ctx, "workerAllowUnauthenticated", &gcpcloudrun.IamMemberArgs{
+		Service:  svc.Name,
+		Location: pulumi.String(region),
+		Role:     pulumi.String("roles/run.invoker"),
+		Member:   pulumi.String("allUsers"),
+	},
+		pulumi.Provider(w.provider),
+	)
+	return err
 }

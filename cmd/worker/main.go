@@ -36,6 +36,7 @@ func main() {
 	deps := &taskhandlers.Deps{
 		Log:               bs.Log,
 		ResponseHandler:   rh,
+		AppEnv:            cfg.AppEnv,
 		Audience:          cfg.WorkerAudience,
 		TestAPIKeyEnabled: cfg.WorkerTestAPIKeyEnabled,
 		TestAPIKey:        cfg.WorkerTestAPIKey,
