@@ -11,19 +11,21 @@ import (
 )
 
 type cloudTasksMiddleware struct {
-	Audience   string
-	TestAPIKey string // empty = disabled; bypass is only active when this is set
-	Response   response.ResponseHandler
+	Audience          string
+	TestAPIKey        string
+	TestAPIKeyEnabled bool
+	Response          response.ResponseHandler
 }
 
 // NewCloudTasksMiddleware creates middleware that authenticates inbound Cloud Tasks requests
-// via Google OIDC token verification. If testAPIKey is non-empty, requests bearing that
-// key are accepted without OIDC validation to support local development.
-func NewCloudTasksMiddleware(audience, testAPIKey string, rh response.ResponseHandler) *cloudTasksMiddleware {
+// via Google OIDC token verification. If the test key bypass is enabled, requests bearing
+// that key are accepted without OIDC validation to support local development.
+func NewCloudTasksMiddleware(audience, testAPIKey string, testAPIKeyEnabled bool, rh response.ResponseHandler) *cloudTasksMiddleware {
 	return &cloudTasksMiddleware{
-		Audience:   audience,
-		TestAPIKey: testAPIKey,
-		Response:   rh,
+		Audience:          audience,
+		TestAPIKey:        testAPIKey,
+		TestAPIKeyEnabled: testAPIKeyEnabled,
+		Response:          rh,
 	}
 }
 
@@ -49,8 +51,8 @@ func (m *cloudTasksMiddleware) CloudTasksAuth(next http.Handler) http.Handler {
 
 		token := parts[1]
 
-		// Test key bypass: only active when TestAPIKey is configured.
-		if m.TestAPIKey != "" && token == m.TestAPIKey {
+		// Test key bypass is only active when explicitly enabled.
+		if m.TestAPIKeyEnabled && m.TestAPIKey != "" && token == m.TestAPIKey {
 			next.ServeHTTP(w, r)
 			return
 		}

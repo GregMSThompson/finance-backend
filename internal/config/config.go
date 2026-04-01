@@ -2,6 +2,7 @@ package config
 
 import (
 	"os"
+	"strconv"
 	"time"
 )
 
@@ -28,4 +29,17 @@ func parseDuration(value string) time.Duration {
 		return 0
 	}
 	return d
+}
+
+func parseBool(value string) bool {
+	if value == "" {
+		return false
+	}
+
+	enabled, err := strconv.ParseBool(value)
+	if err != nil {
+		return false
+	}
+
+	return enabled
 }

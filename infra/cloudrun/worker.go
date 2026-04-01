@@ -4,6 +4,7 @@ import (
 	"strconv"
 
 	infraDocker "github.com/GregMSThompson/finance-backend/infra/docker"
+	"github.com/GregMSThompson/finance-backend/infra/secret"
 	pulumidocker "github.com/pulumi/pulumi-docker/sdk/v4/go/docker"
 	"github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp"
 	gcpcloudrun "github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/cloudrun"
@@ -16,13 +17,15 @@ import (
 type Worker struct {
 	provider      *gcp.Provider
 	dockerManager *infraDocker.Manager
+	secretManager *secret.Manager
 }
 
 // NewWorker creates a worker Cloud Run deployer bound to a provider.
-func NewWorker(prov *gcp.Provider, dockerManager *infraDocker.Manager) *Worker {
+func NewWorker(prov *gcp.Provider, dockerManager *infraDocker.Manager, secretManager *secret.Manager) *Worker {
 	return &Worker{
 		provider:      prov,
 		dockerManager: dockerManager,
+		secretManager: secretManager,
 	}
 }
 
@@ -65,7 +68,7 @@ func (w *Worker) createService(ctx *pulumi.Context, img *pulumidocker.Image, wor
 	logLevel := crCfg.Require("logLevel")
 	timeout, _ := strconv.Atoi(crCfg.Require("timeout"))
 	workerAudience := appCfg.Require("workerAudience")
-	workerTestAPIKey := appCfg.GetSecret("workerTestApiKey")
+	workerTestAPIKeyEnabled := appCfg.GetBool("workerTestApiKeyEnabled")
 
 	envs := gcpcloudrun.ServiceTemplateSpecContainerEnvArray{
 		&gcpcloudrun.ServiceTemplateSpecContainerEnvArgs{
@@ -85,9 +88,32 @@ func (w *Worker) createService(ctx *pulumi.Context, img *pulumidocker.Image, wor
 			Value: pulumi.String(workerAudience),
 		},
 		&gcpcloudrun.ServiceTemplateSpecContainerEnvArgs{
-			Name:  pulumi.String("WORKERTESTAPIKEY"),
-			Value: workerTestAPIKey,
+			Name:  pulumi.String("WORKERTESTAPIKEYENABLED"),
+			Value: pulumi.String(strconv.FormatBool(workerTestAPIKeyEnabled)),
 		},
+	}
+
+	if workerTestAPIKeyEnabled {
+		workerCfg := config.New(ctx, "app")
+		workerTestAPIKey, err := w.secretManager.CreateSecret(
+			ctx,
+			"workerTestApiKeySecret",
+			"workerTestApiKey",
+			workerCfg.RequireSecret("workerTestApiKey"),
+		)
+		if err != nil {
+			return nil, err
+		}
+
+		envs = append(envs, &gcpcloudrun.ServiceTemplateSpecContainerEnvArgs{
+			Name: pulumi.String("WORKERTESTAPIKEY"),
+			ValueFrom: &gcpcloudrun.ServiceTemplateSpecContainerEnvValueFromArgs{
+				SecretKeyRef: &gcpcloudrun.ServiceTemplateSpecContainerEnvValueFromSecretKeyRefArgs{
+					Name: workerTestAPIKey,
+					Key:  pulumi.String("latest"),
+				},
+			},
+		})
 	}
 
 	return gcpcloudrun.NewService(ctx, "workerService", &gcpcloudrun.ServiceArgs{

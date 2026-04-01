@@ -6,6 +6,7 @@ import (
 	"github.com/GregMSThompson/finance-backend/infra/cloudrun"
 	"github.com/GregMSThompson/finance-backend/infra/docker"
 	"github.com/GregMSThompson/finance-backend/infra/provider"
+	"github.com/GregMSThompson/finance-backend/infra/secret"
 )
 
 func main() {
@@ -16,7 +17,8 @@ func main() {
 		}
 
 		dockerManager := docker.New(prov)
-		worker := cloudrun.NewWorker(prov, dockerManager)
+		secretManager := secret.New(prov)
+		worker := cloudrun.NewWorker(prov, dockerManager, secretManager)
 
 		repo, err := dockerManager.CreateWorkerRepo(ctx)
 		if err != nil {

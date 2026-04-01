@@ -8,9 +8,10 @@ import (
 
 // Deps holds the dependencies shared across all task handlers.
 type Deps struct {
-	Log             *slog.Logger
-	ResponseHandler response.ResponseHandler
-	Audience        string // Cloud Tasks OIDC audience (worker service URL)
-	TestAPIKey      string // non-empty enables test key bypass for local development
-	NotificationSvc notificationService
+	Log               *slog.Logger
+	ResponseHandler   response.ResponseHandler
+	Audience          string // Cloud Tasks OIDC audience (worker service URL)
+	TestAPIKeyEnabled bool
+	TestAPIKey        string // non-empty enables test key bypass for local development
+	NotificationSvc   notificationService
 }

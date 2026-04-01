@@ -34,11 +34,12 @@ func main() {
 	notificationSvc := services.NewNotificationService(userStore, alertEventStore, bs.Messaging)
 
 	deps := &taskhandlers.Deps{
-		Log:             bs.Log,
-		ResponseHandler: rh,
-		Audience:        cfg.WorkerAudience,
-		TestAPIKey:      cfg.WorkerTestAPIKey,
-		NotificationSvc: notificationSvc,
+		Log:               bs.Log,
+		ResponseHandler:   rh,
+		Audience:          cfg.WorkerAudience,
+		TestAPIKeyEnabled: cfg.WorkerTestAPIKeyEnabled,
+		TestAPIKey:        cfg.WorkerTestAPIKey,
+		NotificationSvc:   notificationSvc,
 	}
 
 	r := router.NewWorkerRouter(deps)
