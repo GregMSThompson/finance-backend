@@ -161,8 +161,6 @@ func (a *API) createService(ctx *pulumi.Context, img *pulumidocker.Image, apiSA 
 		Template: &gcpcloudrun.ServiceTemplateArgs{
 			Metadata: &gcpcloudrun.ServiceTemplateMetadataArgs{
 				Annotations: pulumi.StringMap{
-					"run.googleapis.com/launch-stage":          pulumi.String("BETA"),
-					"run.googleapis.com/identity-provider":     pulumi.String("firebase"),
 					"autoscaling.knative.dev/minScale":         pulumi.String(minScale),
 					"autoscaling.knative.dev/maxScale":         pulumi.String(maxScale),
 					"run.googleapis.com/cpu":                   pulumi.String(cpu),
