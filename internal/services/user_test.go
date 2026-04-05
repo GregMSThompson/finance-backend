@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"strings"
 	"testing"
 	"time"
 
@@ -16,18 +17,30 @@ import (
 type stubUserStore struct {
 	user            *models.User
 	createUserCalls int
-	err             error
+	createUserErr   error
+
+	getUser    *models.User
+	getUserErr error
+
+	updatedUser    *models.User
+	updateUserCalls int
+	updateUserErr  error
 }
 
 func (s *stubUserStore) CreateUser(_ context.Context, user *models.User) error {
 	s.user = user
 	s.createUserCalls++
-	return s.err
+	return s.createUserErr
 }
 
-func (s *stubUserStore) UpdateUser(_ context.Context, _ *models.User) error { return nil }
+func (s *stubUserStore) UpdateUser(_ context.Context, user *models.User) error {
+	s.updatedUser = user
+	s.updateUserCalls++
+	return s.updateUserErr
+}
+
 func (s *stubUserStore) GetUser(_ context.Context, _ string) (*models.User, error) {
-	return nil, nil
+	return s.getUser, s.getUserErr
 }
 
 func newTestLogger() *slog.Logger {
@@ -72,7 +85,7 @@ func TestUserServiceCreateUser(t *testing.T) {
 }
 
 func TestUserServiceCreateUserStoreError(t *testing.T) {
-	store := &stubUserStore{err: errors.New("store failure")}
+	store := &stubUserStore{createUserErr: errors.New("store failure")}
 	svc := NewUserService(store)
 
 	ctx := helpers.TestCtx()
@@ -88,5 +101,114 @@ func TestUserServiceCreateUserStoreError(t *testing.T) {
 
 	if store.user == nil || store.user.UID != "uid-456" {
 		t.Fatalf("store did not receive expected user payload: %+v", store.user)
+	}
+}
+
+func TestUserServiceCreateUserMissingFields(t *testing.T) {
+	tests := []struct {
+		name        string
+		req         dto.CreateUserRequest
+		wantMissing []string
+	}{
+		{
+			name:        "missing firstName",
+			req:         dto.CreateUserRequest{LastName: "Doe"},
+			wantMissing: []string{"firstName"},
+		},
+		{
+			name:        "missing lastName",
+			req:         dto.CreateUserRequest{FirstName: "Jane"},
+			wantMissing: []string{"lastName"},
+		},
+		{
+			name:        "missing both",
+			req:         dto.CreateUserRequest{},
+			wantMissing: []string{"firstName", "lastName"},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			store := &stubUserStore{}
+			svc := NewUserService(store)
+
+			err := svc.CreateUser(helpers.TestCtx(), "uid-123", "user@example.com", tc.req)
+			if err == nil {
+				t.Fatalf("expected validation error, got nil")
+			}
+			for _, field := range tc.wantMissing {
+				if !strings.Contains(err.Error(), field) {
+					t.Fatalf("error %q does not mention missing field %q", err.Error(), field)
+				}
+			}
+			if store.createUserCalls != 0 {
+				t.Fatalf("store should not be called on validation error")
+			}
+		})
+	}
+}
+
+func TestUserServiceSetFCMToken(t *testing.T) {
+	existing := &models.User{
+		UID:      "uid-123",
+		Email:    "user@example.com",
+		FCMToken: "old-token",
+	}
+	store := &stubUserStore{getUser: existing}
+	svc := NewUserService(store)
+
+	err := svc.SetFCMToken(helpers.TestCtx(), "uid-123", dto.SetFCMTokenRequest{Token: "new-token"})
+	if err != nil {
+		t.Fatalf("SetFCMToken returned error: %v", err)
+	}
+
+	if store.updateUserCalls != 1 {
+		t.Fatalf("UpdateUser called %d times, want 1", store.updateUserCalls)
+	}
+	if store.updatedUser.FCMToken != "new-token" {
+		t.Fatalf("unexpected FCMToken on updated user: %s", store.updatedUser.FCMToken)
+	}
+	if store.updatedUser.UpdatedAt.IsZero() {
+		t.Fatalf("UpdatedAt was not set")
+	}
+}
+
+func TestUserServiceSetFCMTokenEmptyToken(t *testing.T) {
+	store := &stubUserStore{}
+	svc := NewUserService(store)
+
+	err := svc.SetFCMToken(helpers.TestCtx(), "uid-123", dto.SetFCMTokenRequest{Token: ""})
+	if err == nil {
+		t.Fatalf("expected validation error for empty token, got nil")
+	}
+	if store.updateUserCalls != 0 {
+		t.Fatalf("store should not be called on validation error")
+	}
+}
+
+func TestUserServiceSetFCMTokenGetUserError(t *testing.T) {
+	store := &stubUserStore{getUserErr: errors.New("store failure")}
+	svc := NewUserService(store)
+
+	err := svc.SetFCMToken(helpers.TestCtx(), "uid-123", dto.SetFCMTokenRequest{Token: "new-token"})
+	if err == nil {
+		t.Fatalf("expected error from GetUser, got nil")
+	}
+	if store.updateUserCalls != 0 {
+		t.Fatalf("UpdateUser should not be called when GetUser fails")
+	}
+}
+
+func TestUserServiceSetFCMTokenUpdateUserError(t *testing.T) {
+	existing := &models.User{UID: "uid-123"}
+	store := &stubUserStore{
+		getUser:       existing,
+		updateUserErr: errors.New("store failure"),
+	}
+	svc := NewUserService(store)
+
+	err := svc.SetFCMToken(helpers.TestCtx(), "uid-123", dto.SetFCMTokenRequest{Token: "new-token"})
+	if err == nil {
+		t.Fatalf("expected error from UpdateUser, got nil")
 	}
 }

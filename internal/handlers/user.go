@@ -14,6 +14,7 @@ import (
 
 type userService interface {
 	CreateUser(ctx context.Context, uid, email string, req dto.CreateUserRequest) error
+	SetFCMToken(ctx context.Context, uid string, req dto.SetFCMTokenRequest) error
 }
 
 type userHandlers struct {
@@ -31,7 +32,27 @@ func NewUserHandlers(deps *Deps) *userHandlers {
 func (h *userHandlers) UserRoutes() chi.Router {
 	r := chi.NewRouter()
 	r.Post("/", h.CreateUser)
+	r.Put("/fcm-token", h.SetFCMToken)
 	return r
+}
+
+func (h *userHandlers) SetFCMToken(w http.ResponseWriter, r *http.Request) {
+	var req dto.SetFCMTokenRequest
+
+	ctx := r.Context()
+	uid := middleware.UID(ctx)
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		h.ResponseHandler.HandleError(w, r, err)
+		return
+	}
+
+	if err := h.UserSvc.SetFCMToken(ctx, uid, req); err != nil {
+		h.ResponseHandler.HandleError(w, r, err)
+		return
+	}
+
+	h.ResponseHandler.WriteSuccess(w, r, http.StatusOK, nil)
 }
 
 func (h *userHandlers) CreateUser(w http.ResponseWriter, r *http.Request) {
