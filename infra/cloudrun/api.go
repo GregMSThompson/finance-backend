@@ -210,7 +210,7 @@ func (a *API) setIAMPermissions(ctx *pulumi.Context, apiSA *serviceaccount.Accou
 		return err
 	}
 
-	if err := grantProjectRole(ctx, a.provider, apiSA, "apiSecretManagerAdmin", "roles/secretmanager.admin"); err != nil {
+	if err := grantProjectRole(ctx, a.provider, apiSA, "apiSecretManagerAccess", "roles/secretmanager.secretAccessor"); err != nil {
 		return err
 	}
 

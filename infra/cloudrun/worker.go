@@ -163,6 +163,10 @@ func (w *Worker) setIAMPermissions(ctx *pulumi.Context, workerSA *serviceaccount
 		return err
 	}
 
+	if err := grantProjectRole(ctx, w.provider, workerSA, "workerSecretManagerAccess", "roles/secretmanager.secretAccessor"); err != nil {
+		return err
+	}
+
 	return grantProjectRole(ctx, w.provider, workerSA, "workerFirebaseMessagingAccess", "roles/firebasecloudmessaging.admin")
 }
 
