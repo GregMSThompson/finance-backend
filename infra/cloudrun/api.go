@@ -52,16 +52,17 @@ func (a *API) Deploy(ctx *pulumi.Context, keyID pulumi.StringInput, res ...pulum
 		return nil, err
 	}
 
-	svc, err := a.createService(ctx, img, apiSA, sr, keyID)
+	iamResources, err := a.setIAMPermissions(ctx, apiSA, keyID)
+	if err != nil {
+		return nil, err
+	}
+
+	svc, err := a.createService(ctx, img, apiSA, sr, keyID, iamResources...)
 	if err != nil {
 		return nil, err
 	}
 
 	if err := a.setIAMAccessPolicy(ctx, svc); err != nil {
-		return nil, err
-	}
-
-	if err := a.setIAMPermissions(ctx, apiSA, keyID); err != nil {
 		return nil, err
 	}
 
@@ -87,7 +88,7 @@ func (a *API) createSecrets(ctx *pulumi.Context) (secretRefs, error) {
 	}, nil
 }
 
-func (a *API) createService(ctx *pulumi.Context, img *pulumidocker.Image, apiSA *serviceaccount.Account, sr secretRefs, keyID pulumi.StringInput) (*gcpcloudrun.Service, error) {
+func (a *API) createService(ctx *pulumi.Context, img *pulumidocker.Image, apiSA *serviceaccount.Account, sr secretRefs, keyID pulumi.StringInput, res ...pulumi.Resource) (*gcpcloudrun.Service, error) {
 	gcpCfg := config.New(ctx, "gcp")
 	crCfg := config.New(ctx, "cloudrun")
 	plaidCfg := config.New(ctx, "plaid")
@@ -187,6 +188,7 @@ func (a *API) createService(ctx *pulumi.Context, img *pulumidocker.Image, apiSA 
 		},
 	},
 		pulumi.Provider(a.provider),
+		pulumi.DependsOn(res),
 	)
 }
 
@@ -205,16 +207,18 @@ func (a *API) setIAMAccessPolicy(ctx *pulumi.Context, svc *gcpcloudrun.Service) 
 	return err
 }
 
-func (a *API) setIAMPermissions(ctx *pulumi.Context, apiSA *serviceaccount.Account, keyID pulumi.StringInput) error {
-	if err := grantFirestoreAccess(ctx, a.provider, apiSA, "apiFirestoreAccess"); err != nil {
-		return err
+func (a *API) setIAMPermissions(ctx *pulumi.Context, apiSA *serviceaccount.Account, keyID pulumi.StringInput) ([]pulumi.Resource, error) {
+	firestoreAccess, err := grantFirestoreAccess(ctx, a.provider, apiSA, "apiFirestoreAccess")
+	if err != nil {
+		return nil, err
 	}
 
-	if err := grantProjectRole(ctx, a.provider, apiSA, "apiSecretManagerAccess", "roles/secretmanager.secretAccessor"); err != nil {
-		return err
+	secretAccess, err := grantProjectRole(ctx, a.provider, apiSA, "apiSecretManagerAccess", "roles/secretmanager.secretAccessor")
+	if err != nil {
+		return nil, err
 	}
 
-	_, err := gcpkms.NewCryptoKeyIAMMember(ctx, "apiKMSKeyAccess", &gcpkms.CryptoKeyIAMMemberArgs{
+	kmsAccess, err := gcpkms.NewCryptoKeyIAMMember(ctx, "apiKMSKeyAccess", &gcpkms.CryptoKeyIAMMemberArgs{
 		CryptoKeyId: keyID,
 		Role:        pulumi.String("roles/cloudkms.cryptoKeyEncrypterDecrypter"),
 		Member:      serviceAccountMember(apiSA.Email),
@@ -222,8 +226,18 @@ func (a *API) setIAMPermissions(ctx *pulumi.Context, apiSA *serviceaccount.Accou
 		pulumi.Provider(a.provider),
 	)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	return grantProjectRole(ctx, a.provider, apiSA, "apiVertexAccess", "roles/aiplatform.user")
+	vertexAccess, err := grantProjectRole(ctx, a.provider, apiSA, "apiVertexAccess", "roles/aiplatform.user")
+	if err != nil {
+		return nil, err
+	}
+
+	return []pulumi.Resource{
+		firestoreAccess,
+		secretAccess,
+		kmsAccess,
+		vertexAccess,
+	}, nil
 }

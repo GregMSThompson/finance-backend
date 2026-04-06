@@ -41,12 +41,13 @@ func (w *Worker) Deploy(ctx *pulumi.Context, res ...pulumi.Resource) (*serviceac
 		return nil, err
 	}
 
-	svc, err := w.createService(ctx, img, workerSA)
+	iamResources, err := w.setIAMPermissions(ctx, workerSA)
 	if err != nil {
 		return nil, err
 	}
 
-	if err := w.setIAMPermissions(ctx, workerSA); err != nil {
+	svc, err := w.createService(ctx, img, workerSA, iamResources...)
+	if err != nil {
 		return nil, err
 	}
 
@@ -57,7 +58,7 @@ func (w *Worker) Deploy(ctx *pulumi.Context, res ...pulumi.Resource) (*serviceac
 	return workerSA, exportServiceURL(ctx, "workerServiceURL", svc)
 }
 
-func (w *Worker) createService(ctx *pulumi.Context, img *pulumidocker.Image, workerSA *serviceaccount.Account) (*gcpcloudrun.Service, error) {
+func (w *Worker) createService(ctx *pulumi.Context, img *pulumidocker.Image, workerSA *serviceaccount.Account, res ...pulumi.Resource) (*gcpcloudrun.Service, error) {
 	gcpCfg := config.New(ctx, "gcp")
 	crCfg := config.New(ctx, "cloudrun")
 	appCfg := config.New(ctx, "app")
@@ -155,19 +156,31 @@ func (w *Worker) createService(ctx *pulumi.Context, img *pulumidocker.Image, wor
 		},
 	},
 		pulumi.Provider(w.provider),
+		pulumi.DependsOn(res),
 	)
 }
 
-func (w *Worker) setIAMPermissions(ctx *pulumi.Context, workerSA *serviceaccount.Account) error {
-	if err := grantFirestoreAccess(ctx, w.provider, workerSA, "workerFirestoreAccess"); err != nil {
-		return err
+func (w *Worker) setIAMPermissions(ctx *pulumi.Context, workerSA *serviceaccount.Account) ([]pulumi.Resource, error) {
+	firestoreAccess, err := grantFirestoreAccess(ctx, w.provider, workerSA, "workerFirestoreAccess")
+	if err != nil {
+		return nil, err
 	}
 
-	if err := grantProjectRole(ctx, w.provider, workerSA, "workerSecretManagerAccess", "roles/secretmanager.secretAccessor"); err != nil {
-		return err
+	secretAccess, err := grantProjectRole(ctx, w.provider, workerSA, "workerSecretManagerAccess", "roles/secretmanager.secretAccessor")
+	if err != nil {
+		return nil, err
 	}
 
-	return grantProjectRole(ctx, w.provider, workerSA, "workerFirebaseMessagingAccess", "roles/firebasecloudmessaging.admin")
+	firebaseMessagingAccess, err := grantProjectRole(ctx, w.provider, workerSA, "workerFirebaseMessagingAccess", "roles/firebasecloudmessaging.admin")
+	if err != nil {
+		return nil, err
+	}
+
+	return []pulumi.Resource{
+		firestoreAccess,
+		secretAccess,
+		firebaseMessagingAccess,
+	}, nil
 }
 
 func (w *Worker) setIAMAccessPolicy(ctx *pulumi.Context, svc *gcpcloudrun.Service) error {

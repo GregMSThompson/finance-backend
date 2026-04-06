@@ -29,22 +29,26 @@ func createServiceAccount(ctx *pulumi.Context, prov *gcp.Provider, resourceName,
 	)
 }
 
-func grantFirestoreAccess(ctx *pulumi.Context, prov *gcp.Provider, sa *serviceaccount.Account, resourceName string) error {
+func grantFirestoreAccess(ctx *pulumi.Context, prov *gcp.Provider, sa *serviceaccount.Account, resourceName string) (pulumi.Resource, error) {
 	return grantProjectRole(ctx, prov, sa, resourceName, "roles/datastore.user")
 }
 
-func grantProjectRole(ctx *pulumi.Context, prov *gcp.Provider, sa *serviceaccount.Account, resourceName, role string) error {
+func grantProjectRole(ctx *pulumi.Context, prov *gcp.Provider, sa *serviceaccount.Account, resourceName, role string) (pulumi.Resource, error) {
 	gcpCfg := config.New(ctx, "gcp")
 	projectID := gcpCfg.Require("project")
 
-	_, err := projects.NewIAMMember(ctx, resourceName, &projects.IAMMemberArgs{
+	member, err := projects.NewIAMMember(ctx, resourceName, &projects.IAMMemberArgs{
 		Project: pulumi.String(projectID),
 		Role:    pulumi.String(role),
 		Member:  serviceAccountMember(sa.Email),
 	},
 		pulumi.Provider(prov),
 	)
-	return err
+	if err != nil {
+		return nil, err
+	}
+
+	return member, nil
 }
 
 func serviceAccountMember(email pulumi.StringOutput) pulumi.StringOutput {
