@@ -37,6 +37,14 @@ func (m *cloudTasksMiddleware) CloudTasksAuth(next http.Handler) http.Handler {
 		ctx := r.Context()
 		log := logger.FromContext(ctx)
 
+		// Test key bypass — checked first, only active in dev.
+		if m.TestAPIKeyEnabled && m.AppEnv == "dev" && m.TestAPIKey != "" {
+			if r.Header.Get("X-Test-API-Key") == m.TestAPIKey {
+				next.ServeHTTP(w, r)
+				return
+			}
+		}
+
 		header := r.Header.Get("Authorization")
 		if header == "" {
 			log.Warn("missing authorization header")
@@ -52,12 +60,6 @@ func (m *cloudTasksMiddleware) CloudTasksAuth(next http.Handler) http.Handler {
 		}
 
 		token := parts[1]
-
-		// Test key bypass is only active when explicitly enabled.
-		if m.TestAPIKeyEnabled && m.AppEnv == "dev" && m.TestAPIKey != "" && token == m.TestAPIKey {
-			next.ServeHTTP(w, r)
-			return
-		}
 
 		// Verify the Google OIDC token issued by Cloud Tasks.
 		// The audience must match the worker service URL configured at deployment.
