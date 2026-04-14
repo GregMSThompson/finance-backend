@@ -35,7 +35,7 @@ func (us *userStore) CreateUser(ctx context.Context, user *models.User) error {
 }
 
 func (us *userStore) UpdateUser(ctx context.Context, user *models.User) error {
-	_, err := us.Collection.Doc(user.UID).Set(ctx, user, firestore.MergeAll)
+	_, err := us.Collection.Doc(user.UID).Set(ctx, user)
 	if err != nil {
 		return errs.NewDatabaseError("update", "failed to update user", err)
 	}
