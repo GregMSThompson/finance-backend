@@ -37,11 +37,10 @@ func RunAPI(cfg *config.APIConfig) (*APIBootstrap, error) {
 		return bs, err
 	}
 
-	fbClients, err := initFirebase(applicationCtx, cfg.ProjectID)
+	bs.Firebase, err = initFirebaseAuth(applicationCtx, cfg.ProjectID)
 	if err != nil {
 		return bs, err
 	}
-	bs.Firebase = fbClients.Auth
 
 	bs.KMS, err = newKMSClient(applicationCtx)
 	if err != nil {

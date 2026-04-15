@@ -31,11 +31,10 @@ func RunWorker(cfg *config.WorkerConfig) (*WorkerBootstrap, error) {
 		return bs, err
 	}
 
-	fbClients, err := initFirebase(applicationCtx, cfg.ProjectID)
+	bs.Messaging, err = initFirebaseMessaging(applicationCtx, cfg.ProjectID)
 	if err != nil {
 		return bs, err
 	}
-	bs.Messaging = fbClients.Messaging
 
 	return bs, nil
 }

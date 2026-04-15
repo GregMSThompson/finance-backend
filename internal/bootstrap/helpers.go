@@ -16,11 +16,6 @@ import (
 	"github.com/GregMSThompson/finance-backend/pkg/logger"
 )
 
-type firebaseClients struct {
-	Auth      *auth.Client
-	Messaging *messaging.Client
-}
-
 func newLogger(cfg config.CommonConfig) *slog.Logger {
 	return logger.New(cfg.LogLevel, logger.NewCloudRunHandler)
 }
@@ -29,28 +24,20 @@ func newFirestoreClient(ctx context.Context, cfg config.CommonConfig) (*firestor
 	return firestore.NewClient(ctx, cfg.ProjectID)
 }
 
-func initFirebase(ctx context.Context, projectID string) (*firebaseClients, error) {
-	app, err := firebase.NewApp(ctx, &firebase.Config{
-		ProjectID: projectID,
-	})
+func initFirebaseAuth(ctx context.Context, projectID string) (*auth.Client, error) {
+	app, err := firebase.NewApp(ctx, &firebase.Config{ProjectID: projectID})
 	if err != nil {
 		return nil, err
 	}
+	return app.Auth(ctx)
+}
 
-	authClient, err := app.Auth(ctx)
+func initFirebaseMessaging(ctx context.Context, projectID string) (*messaging.Client, error) {
+	app, err := firebase.NewApp(ctx, &firebase.Config{ProjectID: projectID})
 	if err != nil {
 		return nil, err
 	}
-
-	msgClient, err := app.Messaging(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	return &firebaseClients{
-		Auth:      authClient,
-		Messaging: msgClient,
-	}, nil
+	return app.Messaging(ctx)
 }
 
 func newKMSClient(ctx context.Context) (*kms.KeyManagementClient, error) {
