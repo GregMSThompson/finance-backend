@@ -1,5 +1,5 @@
 config:
-  gcp:project: finance-app-479321
+  gcp:project: finance-app-dev-491520
   gcp:region: us-central1
   cloudrun:minScale: "0"
   cloudrun:maxScale: "1"
