@@ -9,3 +9,7 @@ Requirements:
 3. Keep changes consistent with nearby code unless doing so would violate `STYLE_GUIDE.md`.
 4. Do not introduce new style patterns without updating `STYLE_GUIDE.md`.
 5. Consult the user and get explicit confirmation before making any updates to `STYLE_GUIDE.md`.
+
+## Go Checks
+
+Use `go vet ./...` to verify code correctness. Do not use `go build` — it produces binary artifacts in the working directory.
