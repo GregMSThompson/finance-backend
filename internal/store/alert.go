@@ -52,8 +52,12 @@ func (s *alertStore) Get(ctx context.Context, uid, alertID string) (*models.Aler
 	return &a, nil
 }
 
-func (s *alertStore) List(ctx context.Context, uid string) ([]*models.Alert, error) {
-	docs, err := s.collection(uid).Documents(ctx).GetAll()
+func (s *alertStore) List(ctx context.Context, uid string, activeOnly bool) ([]*models.Alert, error) {
+	q := s.collection(uid).Query
+	if activeOnly {
+		q = q.Where("enabled", "==", true)
+	}
+	docs, err := q.Documents(ctx).GetAll()
 	if err != nil {
 		return nil, errs.NewDatabaseError("read", "failed to list alerts", err)
 	}

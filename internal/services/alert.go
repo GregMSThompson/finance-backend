@@ -14,7 +14,7 @@ import (
 type alertStore interface {
 	Create(ctx context.Context, uid string, a *models.Alert) error
 	Get(ctx context.Context, uid, alertID string) (*models.Alert, error)
-	List(ctx context.Context, uid string) ([]*models.Alert, error)
+	List(ctx context.Context, uid string, activeOnly bool) ([]*models.Alert, error)
 	Update(ctx context.Context, uid string, a *models.Alert) error
 	Delete(ctx context.Context, uid, alertID string) error
 }
@@ -51,7 +51,7 @@ func (s *alertService) CreateAlert(ctx context.Context, uid string, req dto.Crea
 }
 
 func (s *alertService) GetAlerts(ctx context.Context, uid string) ([]*models.Alert, error) {
-	return s.store.List(ctx, uid)
+	return s.store.List(ctx, uid, false)
 }
 
 func (s *alertService) UpdateAlert(ctx context.Context, uid, alertID string, req dto.UpdateAlertRequest) (*models.Alert, error) {

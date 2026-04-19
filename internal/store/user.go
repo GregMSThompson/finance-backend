@@ -42,6 +42,22 @@ func (us *userStore) UpdateUser(ctx context.Context, user *models.User) error {
 	return nil
 }
 
+func (us *userStore) List(ctx context.Context) ([]*models.User, error) {
+	docs, err := us.Collection.Documents(ctx).GetAll()
+	if err != nil {
+		return nil, errs.NewDatabaseError("read", "failed to list users", err)
+	}
+	users := make([]*models.User, 0, len(docs))
+	for _, d := range docs {
+		var u models.User
+		if err := d.DataTo(&u); err != nil {
+			return nil, errs.NewDatabaseError("read", "failed to parse user data", err)
+		}
+		users = append(users, &u)
+	}
+	return users, nil
+}
+
 func (us *userStore) GetUser(ctx context.Context, uid string) (*models.User, error) {
 	var user models.User
 

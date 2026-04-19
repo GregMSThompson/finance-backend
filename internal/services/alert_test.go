@@ -44,7 +44,7 @@ func (f *fakeAlertStore) Get(_ context.Context, _, alertID string) (*models.Aler
 	return a, nil
 }
 
-func (f *fakeAlertStore) List(_ context.Context, _ string) ([]*models.Alert, error) {
+func (f *fakeAlertStore) List(_ context.Context, _ string, _ bool) ([]*models.Alert, error) {
 	if f.listErr != nil {
 		return nil, f.listErr
 	}
