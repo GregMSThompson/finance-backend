@@ -271,9 +271,11 @@ func (s *analyticsService) GetRecurringTransactions(ctx context.Context, uid str
 	}
 
 	type merchantGroup struct {
-		dates    []string
-		amounts  []float64
-		currency string
+		dates      []string
+		amounts    []float64
+		currency   string
+		lastDate   string
+		lastAmount float64
 	}
 
 	pending := false
@@ -294,6 +296,10 @@ func (s *analyticsService) GetRecurringTransactions(ctx context.Context, uid str
 		g.amounts = append(g.amounts, tx.Amount)
 		if g.currency == "" && tx.Currency != "" {
 			g.currency = tx.Currency
+		}
+		if tx.Date >= g.lastDate {
+			g.lastDate = tx.Date
+			g.lastAmount = tx.Amount
 		}
 		return nil
 	}); err != nil {
@@ -332,7 +338,8 @@ func (s *analyticsService) GetRecurringTransactions(ctx context.Context, uid str
 			AmountIsVariable:  variable,
 			Currency:          g.currency,
 			OccurrenceCount:   len(g.dates),
-			LastDate:          g.dates[len(g.dates)-1],
+			LastDate:          g.lastDate,
+			LastAmount:        g.lastAmount,
 			MonthlyEquivalent: monthly,
 		})
 		totalMonthly += monthly

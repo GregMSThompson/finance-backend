@@ -113,6 +113,7 @@ type RecurringItem struct {
 	Currency          string  `json:"currency"`
 	OccurrenceCount   int     `json:"occurrenceCount"`
 	LastDate          string  `json:"lastDate"`
+	LastAmount        float64 `json:"lastAmount"`
 	MonthlyEquivalent float64 `json:"monthlyEquivalent"`
 }
 
