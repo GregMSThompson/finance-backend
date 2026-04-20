@@ -30,4 +30,4 @@ EXPOSE 8080
 
 USER nonroot:nonroot
 
-CMD ["/app/worker"]
+ENTRYPOINT ["/app/worker"]

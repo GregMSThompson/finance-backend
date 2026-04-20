@@ -37,4 +37,4 @@ EXPOSE 8080
 # Run as non-root (Cloud Run best practice)
 USER nonroot:nonroot
 
-CMD ["/app/app"]
+ENTRYPOINT ["/app/app"]
