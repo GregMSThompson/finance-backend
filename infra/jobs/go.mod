@@ -1,8 +1,8 @@
 module finance-jobs
 
-go 1.25.8
+go 1.24.0
 
-require github.com/pulumi/pulumi/sdk/v3 v3.231.0
+require github.com/pulumi/pulumi/sdk/v3 v3.210.0
 
 require (
 	dario.cat/mergo v1.0.0 // indirect
