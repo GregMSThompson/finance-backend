@@ -4,6 +4,7 @@ import (
 	"strconv"
 
 	infraDocker "github.com/GregMSThompson/finance-backend/infra/docker"
+	"github.com/GregMSThompson/finance-backend/infra/iam"
 	"github.com/GregMSThompson/finance-backend/infra/secret"
 	pulumidocker "github.com/pulumi/pulumi-docker/sdk/v4/go/docker"
 	"github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp"
@@ -47,7 +48,7 @@ func (a *API) Deploy(ctx *pulumi.Context, keyID pulumi.StringInput, res ...pulum
 		return nil, err
 	}
 
-	apiSA, err := createServiceAccount(ctx, a.provider, "apiServiceAccount", "api-service", "API Service Account")
+	apiSA, err := iam.CreateServiceAccount(ctx, a.provider, "apiServiceAccount", "api-service", "API Service Account")
 	if err != nil {
 		return nil, err
 	}
@@ -208,12 +209,12 @@ func (a *API) setIAMAccessPolicy(ctx *pulumi.Context, svc *gcpcloudrun.Service) 
 }
 
 func (a *API) setIAMPermissions(ctx *pulumi.Context, apiSA *serviceaccount.Account, keyID pulumi.StringInput) ([]pulumi.Resource, error) {
-	firestoreAccess, err := grantFirestoreAccess(ctx, a.provider, apiSA, "apiFirestoreAccess")
+	firestoreAccess, err := iam.GrantFirestoreAccess(ctx, a.provider, apiSA, "apiFirestoreAccess")
 	if err != nil {
 		return nil, err
 	}
 
-	secretAccess, err := grantProjectRole(ctx, a.provider, apiSA, "apiSecretManagerAccess", "roles/secretmanager.secretAccessor")
+	secretAccess, err := iam.GrantProjectRole(ctx, a.provider, apiSA, "apiSecretManagerAccess", "roles/secretmanager.secretAccessor")
 	if err != nil {
 		return nil, err
 	}
@@ -221,7 +222,7 @@ func (a *API) setIAMPermissions(ctx *pulumi.Context, apiSA *serviceaccount.Accou
 	kmsAccess, err := gcpkms.NewCryptoKeyIAMMember(ctx, "apiKMSKeyAccess", &gcpkms.CryptoKeyIAMMemberArgs{
 		CryptoKeyId: keyID,
 		Role:        pulumi.String("roles/cloudkms.cryptoKeyEncrypterDecrypter"),
-		Member:      serviceAccountMember(apiSA.Email),
+		Member:      iam.ServiceAccountMember(apiSA.Email),
 	},
 		pulumi.Provider(a.provider),
 	)
@@ -229,7 +230,7 @@ func (a *API) setIAMPermissions(ctx *pulumi.Context, apiSA *serviceaccount.Accou
 		return nil, err
 	}
 
-	vertexAccess, err := grantProjectRole(ctx, a.provider, apiSA, "apiVertexAccess", "roles/aiplatform.user")
+	vertexAccess, err := iam.GrantProjectRole(ctx, a.provider, apiSA, "apiVertexAccess", "roles/aiplatform.user")
 	if err != nil {
 		return nil, err
 	}

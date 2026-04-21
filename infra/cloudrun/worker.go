@@ -4,6 +4,7 @@ import (
 	"strconv"
 
 	infraDocker "github.com/GregMSThompson/finance-backend/infra/docker"
+	"github.com/GregMSThompson/finance-backend/infra/iam"
 	"github.com/GregMSThompson/finance-backend/infra/secret"
 	pulumidocker "github.com/pulumi/pulumi-docker/sdk/v4/go/docker"
 	"github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp"
@@ -36,7 +37,7 @@ func (w *Worker) Deploy(ctx *pulumi.Context, res ...pulumi.Resource) (*serviceac
 		return nil, err
 	}
 
-	workerSA, err := createServiceAccount(ctx, w.provider, "workerServiceAccount", "worker-service", "Worker Service Account")
+	workerSA, err := iam.CreateServiceAccount(ctx, w.provider, "workerServiceAccount", "worker-service", "Worker Service Account")
 	if err != nil {
 		return nil, err
 	}
@@ -161,17 +162,17 @@ func (w *Worker) createService(ctx *pulumi.Context, img *pulumidocker.Image, wor
 }
 
 func (w *Worker) setIAMPermissions(ctx *pulumi.Context, workerSA *serviceaccount.Account) ([]pulumi.Resource, error) {
-	firestoreAccess, err := grantFirestoreAccess(ctx, w.provider, workerSA, "workerFirestoreAccess")
+	firestoreAccess, err := iam.GrantFirestoreAccess(ctx, w.provider, workerSA, "workerFirestoreAccess")
 	if err != nil {
 		return nil, err
 	}
 
-	secretAccess, err := grantProjectRole(ctx, w.provider, workerSA, "workerSecretManagerAccess", "roles/secretmanager.secretAccessor")
+	secretAccess, err := iam.GrantProjectRole(ctx, w.provider, workerSA, "workerSecretManagerAccess", "roles/secretmanager.secretAccessor")
 	if err != nil {
 		return nil, err
 	}
 
-	firebaseMessagingAccess, err := grantProjectRole(ctx, w.provider, workerSA, "workerFirebaseMessagingAccess", "roles/firebasecloudmessaging.admin")
+	firebaseMessagingAccess, err := iam.GrantProjectRole(ctx, w.provider, workerSA, "workerFirebaseMessagingAccess", "roles/firebasecloudmessaging.admin")
 	if err != nil {
 		return nil, err
 	}
