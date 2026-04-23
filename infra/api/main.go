@@ -28,7 +28,7 @@ func main() {
 			return err
 		}
 
-		keyID := sharedRef.GetOutput(pulumi.String("kmsKeyId")).ApplyT(func(v interface{}) string {
+		keyID := sharedRef.GetOutput(pulumi.String("kmsKeyId")).ApplyT(func(v any) string {
 			if v == nil {
 				return ""
 			}
