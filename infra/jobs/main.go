@@ -33,12 +33,24 @@ func main() {
 			}
 			return v.(string)
 		}).(pulumi.StringOutput)
+		workerAudience := workerRef.GetOutput(pulumi.String("workerAudience")).ApplyT(func(v any) string {
+			if v == nil {
+				return ""
+			}
+			return v.(string)
+		}).(pulumi.StringOutput)
+		workerServiceName := workerRef.GetOutput(pulumi.String("workerServiceName")).ApplyT(func(v any) string {
+			if v == nil {
+				return ""
+			}
+			return v.(string)
+		}).(pulumi.StringOutput)
 
 		repo, err := dockerManager.CreateAlertEvaluatorRepo(ctx)
 		if err != nil {
 			return err
 		}
 
-		return alertEvaluator.Deploy(ctx, workerURL, repo)
+		return alertEvaluator.Deploy(ctx, workerURL, workerAudience, workerServiceName, repo)
 	})
 }

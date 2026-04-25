@@ -36,6 +36,7 @@ func RunAlertEvaluator(cfg *config.AlertEvaluatorConfig) (*AlertEvaluatorBootstr
 		cfg.ProjectID,
 		cfg.Region,
 		cfg.CloudTasksQueue,
+		cfg.WorkerAudience,
 		cfg.WorkerURL,
 		cfg.WorkerServiceAcct,
 	)

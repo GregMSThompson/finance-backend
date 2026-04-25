@@ -1,6 +1,7 @@
 package cloudrun
 
 import (
+	"fmt"
 	"strconv"
 
 	infraDocker "github.com/GregMSThompson/finance-backend/infra/docker"
@@ -21,6 +22,13 @@ type Worker struct {
 	secretManager *secret.Manager
 }
 
+// WorkerDeployment contains the deployed worker service resources needed by other stacks.
+type WorkerDeployment struct {
+	Service        *gcpcloudrun.Service
+	ServiceAccount *serviceaccount.Account
+	Audience       string
+}
+
 // NewWorker creates a worker Cloud Run deployer bound to a provider.
 func NewWorker(prov *gcp.Provider, dockerManager *infraDocker.Manager, secretManager *secret.Manager) *Worker {
 	return &Worker{
@@ -31,7 +39,7 @@ func NewWorker(prov *gcp.Provider, dockerManager *infraDocker.Manager, secretMan
 }
 
 // Deploy builds and deploys the worker Cloud Run service and its required IAM.
-func (w *Worker) Deploy(ctx *pulumi.Context, res ...pulumi.Resource) (*serviceaccount.Account, error) {
+func (w *Worker) Deploy(ctx *pulumi.Context, res ...pulumi.Resource) (*WorkerDeployment, error) {
 	img, err := w.dockerManager.BuildImage(ctx, "worker", res...)
 	if err != nil {
 		return nil, err
@@ -56,7 +64,14 @@ func (w *Worker) Deploy(ctx *pulumi.Context, res ...pulumi.Resource) (*serviceac
 		return nil, err
 	}
 
-	return workerSA, exportServiceURL(ctx, "workerServiceURL", svc)
+	appCfg := config.New(ctx, "app")
+	workerAudience := appCfg.Require("workerAudience")
+
+	return &WorkerDeployment{
+		Service:        svc,
+		ServiceAccount: workerSA,
+		Audience:       workerAudience,
+	}, exportServiceURL(ctx, "workerServiceURL", svc)
 }
 
 func (w *Worker) createService(ctx *pulumi.Context, img *pulumidocker.Image, workerSA *serviceaccount.Account, res ...pulumi.Resource) (*gcpcloudrun.Service, error) {
@@ -128,6 +143,11 @@ func (w *Worker) createService(ctx *pulumi.Context, img *pulumidocker.Image, wor
 
 	return gcpcloudrun.NewService(ctx, "workerService", &gcpcloudrun.ServiceArgs{
 		Location: pulumi.String(region),
+		Metadata: &gcpcloudrun.ServiceMetadataArgs{
+			Annotations: pulumi.StringMap{
+				"run.googleapis.com/custom-audiences": pulumi.String(fmt.Sprintf("[\"%s\"]", workerAudience)),
+			},
+		},
 		Template: &gcpcloudrun.ServiceTemplateArgs{
 			Metadata: &gcpcloudrun.ServiceTemplateMetadataArgs{
 				Annotations: pulumi.StringMap{

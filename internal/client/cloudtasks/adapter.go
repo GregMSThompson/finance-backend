@@ -16,6 +16,7 @@ const alertDeliverPath = "/tasks/alert-deliver"
 // Adapter enqueues tasks on a Cloud Tasks queue targeting the worker service.
 type Adapter struct {
 	client          *cloudtasks.Client
+	audience        string
 	queuePath       string
 	workerURL       string
 	serviceAccEmail string
@@ -23,7 +24,7 @@ type Adapter struct {
 
 // NewAdapter creates a Cloud Tasks adapter.
 // serviceAccEmail is used for OIDC authentication on the enqueued HTTP tasks.
-func NewAdapter(ctx context.Context, projectID, region, queueName, workerURL, serviceAccEmail string) (*Adapter, error) {
+func NewAdapter(ctx context.Context, projectID, region, queueName, audience, workerURL, serviceAccEmail string) (*Adapter, error) {
 	client, err := cloudtasks.NewClient(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("create cloud tasks client: %w", err)
@@ -33,6 +34,7 @@ func NewAdapter(ctx context.Context, projectID, region, queueName, workerURL, se
 
 	return &Adapter{
 		client:          client,
+		audience:        audience,
 		queuePath:       queuePath,
 		workerURL:       workerURL,
 		serviceAccEmail: serviceAccEmail,
@@ -61,7 +63,7 @@ func (a *Adapter) EnqueueAlertDelivery(ctx context.Context, req dto.DeliverAlert
 				AuthorizationHeader: &cloudtaskspb.HttpRequest_OidcToken{
 					OidcToken: &cloudtaskspb.OidcToken{
 						ServiceAccountEmail: a.serviceAccEmail,
-						Audience:            a.workerURL,
+						Audience:            a.audience,
 					},
 				},
 			},

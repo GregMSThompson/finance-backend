@@ -25,12 +25,14 @@ func main() {
 			return err
 		}
 
-		workerSA, err := worker.Deploy(ctx, repo)
+		deployment, err := worker.Deploy(ctx, repo)
 		if err != nil {
 			return err
 		}
 
-		ctx.Export("workerServiceAccountEmail", workerSA.Email)
+		ctx.Export("workerAudience", pulumi.String(deployment.Audience))
+		ctx.Export("workerServiceAccountEmail", deployment.ServiceAccount.Email)
+		ctx.Export("workerServiceName", deployment.Service.Name)
 
 		return nil
 	})
