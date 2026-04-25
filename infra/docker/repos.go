@@ -38,6 +38,13 @@ func (m *Manager) CreateWorkerRepo(ctx *pulumi.Context, res ...pulumi.Resource) 
 	return m.createRepo(ctx, "workerRepository", "worker", "Docker repository for worker images", res...)
 }
 
+func (m *Manager) CreateAlertEvaluatorRepo(ctx *pulumi.Context, res ...pulumi.Resource) (*artifactregistry.Repository, error) {
+	return m.createRepo(ctx, "alertEvaluatorRepository", "alert-evaluator", "Docker repository for alert evaluator images", res...)
+}
+
+// BuildImage builds a Docker image for a binary under cmd/.
+// cmdName may be a simple name ("api", "worker") or a subpath ("jobs/alert-evaluator").
+// The image name and Pulumi resource name are derived from the last path segment.
 func (m *Manager) BuildImage(ctx *pulumi.Context, cmdName string, res ...pulumi.Resource) (*pulumidocker.Image, error) {
 	gcpCfg := config.New(ctx, "gcp")
 	projectID := gcpCfg.Require("project")
@@ -45,6 +52,7 @@ func (m *Manager) BuildImage(ctx *pulumi.Context, cmdName string, res ...pulumi.
 
 	cmdPath := path.Join("../../cmd", cmdName)
 	dockerfilePath := path.Join(cmdPath, "Dockerfile")
+	baseName := path.Base(cmdName)
 
 	internalHash, err := common.GenerateHash("../../internal")
 	if err != nil {
@@ -60,13 +68,13 @@ func (m *Manager) BuildImage(ctx *pulumi.Context, cmdName string, res ...pulumi.
 	}
 	hash := common.AppendHash(internalHash, pkgHash, cmdHash)
 
-	return pulumidocker.NewImage(ctx, "image"+common.CapitalizeFirst(cmdName), &pulumidocker.ImageArgs{
+	return pulumidocker.NewImage(ctx, "image"+common.CapitalizeFirst(baseName), &pulumidocker.ImageArgs{
 		Build: pulumidocker.DockerBuildArgs{
 			Platform:   pulumi.String("linux/amd64"),
 			Context:    pulumi.String("../.."),
 			Dockerfile: pulumi.String(dockerfilePath),
 		},
-		ImageName: pulumi.String(fmt.Sprintf("%s-docker.pkg.dev/%s/%s/finannce-%s:%s", region, projectID, cmdName, cmdName, hash)),
+		ImageName: pulumi.String(fmt.Sprintf("%s-docker.pkg.dev/%s/%s/finannce-%s:%s", region, projectID, baseName, baseName, hash)),
 	},
 		pulumi.DependsOn(res),
 	)

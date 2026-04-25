@@ -1,0 +1,8 @@
+config:
+  gcp:project: finance-app-dev-491520
+  gcp:region: us-central1
+  worker:stack: gregmsthompson/finance-worker/dev
+  job:logLevel: debug
+  job:cloudTasksQueue: alert-delivery
+  job:alertEvaluatorSchedule: "0 9 * * *"
+  job:alertEvaluatorTimeZone: America/New_York
