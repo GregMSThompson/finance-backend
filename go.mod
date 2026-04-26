@@ -7,6 +7,7 @@ require (
 	cloud.google.com/go/firestore v1.21.0
 	firebase.google.com/go/v4 v4.18.0
 	github.com/go-chi/chi/v5 v5.2.3
+	gopkg.in/yaml.v3 v3.0.1
 )
 
 require cloud.google.com/go/aiplatform v1.120.0 // indirect
