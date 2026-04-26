@@ -1,7 +1,7 @@
 # -------------------------------
 # 1) BUILD STAGE (Go compiler)
 # -------------------------------
-FROM mirror.gcr.io/golang:1.24.0 AS builder
+FROM mirror.gcr.io/golang:1.25.0 AS builder
 
 # Set working directory
 WORKDIR /app
