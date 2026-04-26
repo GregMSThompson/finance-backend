@@ -4,6 +4,7 @@ import (
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 
 	"github.com/GregMSThompson/finance-backend/infra/cloudrun"
+	"github.com/GregMSThompson/finance-backend/infra/cloudscheduler"
 	"github.com/GregMSThompson/finance-backend/infra/cloudtasks"
 	"github.com/GregMSThompson/finance-backend/infra/compute"
 	"github.com/GregMSThompson/finance-backend/infra/docker"
@@ -50,6 +51,10 @@ func main() {
 		}
 
 		if _, err := cloudtasks.SetupCloudTasks(ctx, prov); err != nil {
+			return err
+		}
+
+		if _, err := cloudscheduler.SetupCloudScheduler(ctx, prov); err != nil {
 			return err
 		}
 
