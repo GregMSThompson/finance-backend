@@ -86,6 +86,7 @@ func (a *AlertEvaluator) createJob(ctx *pulumi.Context, img *pulumidocker.Image,
 	workerQueue := jobCfg.Require("cloudTasksQueue")
 
 	return cloudrunv2.NewJob(ctx, "alertEvaluatorJob", &cloudrunv2.JobArgs{
+		Name:     pulumi.String("alert-evaluator"),
 		Location: pulumi.String(region),
 		Template: &cloudrunv2.JobTemplateArgs{
 			Template: &cloudrunv2.JobTemplateTemplateArgs{
