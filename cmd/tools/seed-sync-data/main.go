@@ -12,7 +12,10 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"regexp"
+	"strconv"
 	"strings"
+	"time"
 
 	"cloud.google.com/go/firestore"
 	"gopkg.in/yaml.v3"
@@ -20,6 +23,10 @@ import (
 	"github.com/GregMSThompson/finance-backend/internal/models"
 	"github.com/GregMSThompson/finance-backend/internal/store"
 )
+
+const fixtureDateLayout = "2006-01-02"
+
+var nowDatePattern = regexp.MustCompile(`^\{now(?:\s*-\s*(\d+))?\}$`)
 
 type fixture struct {
 	UserID       string               `yaml:"userId"`
@@ -136,6 +143,9 @@ func parseFixture(data []byte) (*fixture, error) {
 	if err := yaml.Unmarshal(data, &fx); err != nil {
 		return nil, err
 	}
+	if err := resolveFixtureDates(&fx, time.Now()); err != nil {
+		return nil, err
+	}
 	if err := validateFixture(&fx); err != nil {
 		return nil, err
 	}
@@ -184,6 +194,47 @@ func validateFixture(fx *fixture) error {
 	}
 
 	return nil
+}
+
+func resolveFixtureDates(fx *fixture, now time.Time) error {
+	for i := range fx.Transactions {
+		date, err := resolveFixtureDate(fx.Transactions[i].Date, now)
+		if err != nil {
+			return fmt.Errorf("transactions[%d].date: %w", i, err)
+		}
+		fx.Transactions[i].Date = date
+
+		authorizedDate, err := resolveFixtureDate(fx.Transactions[i].AuthorizedDate, now)
+		if err != nil {
+			return fmt.Errorf("transactions[%d].authorizedDate: %w", i, err)
+		}
+		fx.Transactions[i].AuthorizedDate = authorizedDate
+	}
+
+	return nil
+}
+
+func resolveFixtureDate(value string, now time.Time) (string, error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return "", nil
+	}
+
+	matches := nowDatePattern.FindStringSubmatch(value)
+	if len(matches) == 0 {
+		return value, nil
+	}
+
+	daysAgo := 0
+	if matches[1] != "" {
+		parsed, err := strconv.Atoi(matches[1])
+		if err != nil {
+			return "", fmt.Errorf("invalid now offset %q", matches[1])
+		}
+		daysAgo = parsed
+	}
+
+	return now.AddDate(0, 0, -daysAgo).Format(fixtureDateLayout), nil
 }
 
 func defaultBankStatus(status string) string {
