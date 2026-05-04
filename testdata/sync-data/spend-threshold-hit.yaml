@@ -1,0 +1,50 @@
+userId: RG6i8qN5kJMAXqBDvPrKru2lPpv1
+
+bank:
+  bankId: bank_test_spend_threshold
+  institution: Chase
+  status: active
+
+cursor:
+  bankId: bank_test_spend_threshold
+  cursor: cursor_test_spend_threshold
+
+transactions:
+  - transactionId: tx_spend_threshold_001
+    bankId: bank_test_spend_threshold
+    amount: 74.25
+    currency: USD
+    date: "{now}"
+    name: Trader Joe's
+    pending: false
+    categories:
+      - Shops
+      - Groceries
+    pfcPrimary: GROCERIES
+    pfcDetailed: GROCERIES_SUPERMARKET
+
+  - transactionId: tx_spend_threshold_002
+    bankId: bank_test_spend_threshold
+    amount: 58.10
+    currency: USD
+    date: "{now - 1}"
+    name: Whole Foods
+    pending: false
+    categories:
+      - Shops
+      - Groceries
+    pfcPrimary: GROCERIES
+    pfcDetailed: GROCERIES_SUPERMARKET
+
+  - transactionId: tx_spend_threshold_003
+    bankId: bank_test_spend_threshold
+    amount: 16.40
+    currency: USD
+    date: "{now}"
+    name: Coffee Shop
+    pending: false
+    categories:
+      - Food and Drink
+      - Coffee Shop
+    pfcPrimary: FOOD_AND_DRINK
+    pfcDetailed: FOOD_AND_DRINK_COFFEE
