@@ -2,13 +2,18 @@
 
 SHELL = /bin/bash
 
-PROJECT ?=
+PROJECT ?= finance-app-dev-491520
+data ?=
 
 api:
 	GOWORK=off GOOS=darwin GOARCH=arm64 go build -o ../../../../bin/financial-service ./cmd/api
 
 worker:
 	GOWORK=off GOOS=darwin GOARCH=arm64 go build -o ../../../../bin/financial-worker ./cmd/worker
+
+syncdata:
+	@if [ -z "$(data)" ]; then echo "data is required. Usage: make syncdata data=<fixture-name>"; exit 1; fi
+	GOWORK=off go run ./cmd/tools/seed-sync-data --project="$(PROJECT)" --file="testdata/sync-data/$(data).yaml"
 
 seed-alert-event:
 	GOWORK=off GOOS=darwin GOARCH=arm64 go build -o ../../../../bin/seed-alert-event ./cmd/tools/seed-alert-event
