@@ -9,7 +9,7 @@ config:
   cloudrun:logLevel: debug
   cloudrun:timeout: "60"
   app:workerAudience: finance-worker-dev
-  app:workerAllowPublicInvoker: "true"
-  app:workerTestApiKeyEnabled: "true"
+  app:workerAllowPublicInvoker: "false"
+  app:workerTestApiKeyEnabled: "false"
   app:workerTestApiKey:
     secure: AAABACMUlNQ8PVf0IFM5VRE06TG0yKYWBIJdzwJlpnZttvL5EZ7ufX5CLuzl4Rs5dbweWA0VB5tnxFXle8rVuxZoqZA=
