@@ -1,0 +1,76 @@
+userId: RG6i8qN5kJMAXqBDvPrKru2lPpv1
+
+bank:
+  bankId: bank_test_subscription_increase
+  institution: Chase
+  status: active
+
+cursor:
+  bankId: bank_test_subscription_increase
+  cursor: cursor_test_subscription_increase
+
+transactions:
+  - transactionId: tx_subscription_increase_001
+    bankId: bank_test_subscription_increase
+    amount: 9.99
+    currency: USD
+    date: "{now - 90}"
+    name: Netflix
+    pending: false
+    categories:
+      - Entertainment
+      - TV and Movies
+    pfcPrimary: ENTERTAINMENT
+    pfcDetailed: ENTERTAINMENT_STREAMING
+
+  - transactionId: tx_subscription_increase_002
+    bankId: bank_test_subscription_increase
+    amount: 9.99
+    currency: USD
+    date: "{now - 60}"
+    name: Netflix
+    pending: false
+    categories:
+      - Entertainment
+      - TV and Movies
+    pfcPrimary: ENTERTAINMENT
+    pfcDetailed: ENTERTAINMENT_STREAMING
+
+  - transactionId: tx_subscription_increase_003
+    bankId: bank_test_subscription_increase
+    amount: 9.99
+    currency: USD
+    date: "{now - 30}"
+    name: Netflix
+    pending: false
+    categories:
+      - Entertainment
+      - TV and Movies
+    pfcPrimary: ENTERTAINMENT
+    pfcDetailed: ENTERTAINMENT_STREAMING
+
+  - transactionId: tx_subscription_increase_004
+    bankId: bank_test_subscription_increase
+    amount: 12.99
+    currency: USD
+    date: "{now - 1}"
+    name: Netflix
+    pending: false
+    categories:
+      - Entertainment
+      - TV and Movies
+    pfcPrimary: ENTERTAINMENT
+    pfcDetailed: ENTERTAINMENT_STREAMING
+
+  - transactionId: tx_subscription_increase_005
+    bankId: bank_test_subscription_increase
+    amount: 24.50
+    currency: USD
+    date: "{now}"
+    name: Grocery Store
+    pending: false
+    categories:
+      - Shops
+      - Groceries
+    pfcPrimary: GROCERIES
+    pfcDetailed: GROCERIES_SUPERMARKET

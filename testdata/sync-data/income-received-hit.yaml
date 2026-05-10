@@ -1,0 +1,37 @@
+userId: RG6i8qN5kJMAXqBDvPrKru2lPpv1
+
+bank:
+  bankId: bank_test_income_received
+  institution: Chase
+  status: active
+
+cursor:
+  bankId: bank_test_income_received
+  cursor: cursor_test_income_received
+
+transactions:
+  - transactionId: tx_income_received_001
+    bankId: bank_test_income_received
+    amount: 2450.00
+    currency: USD
+    date: "{now}"
+    name: Payroll Deposit
+    pending: false
+    categories:
+      - Income
+      - Payroll
+    pfcPrimary: INCOME
+    pfcDetailed: INCOME_WAGES
+
+  - transactionId: tx_income_received_002
+    bankId: bank_test_income_received
+    amount: 58.20
+    currency: USD
+    date: "{now - 1}"
+    name: Grocery Store
+    pending: false
+    categories:
+      - Shops
+      - Groceries
+    pfcPrimary: GROCERIES
+    pfcDetailed: GROCERIES_SUPERMARKET

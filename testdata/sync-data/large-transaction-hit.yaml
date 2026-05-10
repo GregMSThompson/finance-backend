@@ -1,0 +1,50 @@
+userId: RG6i8qN5kJMAXqBDvPrKru2lPpv1
+
+bank:
+  bankId: bank_test_large_transaction
+  institution: Chase
+  status: active
+
+cursor:
+  bankId: bank_test_large_transaction
+  cursor: cursor_test_large_transaction
+
+transactions:
+  - transactionId: tx_large_transaction_001
+    bankId: bank_test_large_transaction
+    amount: 850.00
+    currency: USD
+    date: "{now}"
+    name: Apple Store
+    pending: false
+    categories:
+      - Shops
+      - Electronics
+    pfcPrimary: SHOPPING
+    pfcDetailed: SHOPPING_ELECTRONICS
+
+  - transactionId: tx_large_transaction_002
+    bankId: bank_test_large_transaction
+    amount: 42.75
+    currency: USD
+    date: "{now - 1}"
+    name: Lunch
+    pending: false
+    categories:
+      - Food and Drink
+      - Restaurants
+    pfcPrimary: FOOD_AND_DRINK
+    pfcDetailed: FOOD_AND_DRINK_RESTAURANT
+
+  - transactionId: tx_large_transaction_003
+    bankId: bank_test_large_transaction
+    amount: 1200.00
+    currency: USD
+    date: "{now}"
+    name: Pending Laptop Order
+    pending: true
+    categories:
+      - Shops
+      - Electronics
+    pfcPrimary: SHOPPING
+    pfcDetailed: SHOPPING_ELECTRONICS
