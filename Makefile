@@ -11,9 +11,12 @@ api:
 worker:
 	GOWORK=off GOOS=darwin GOARCH=arm64 go build -o ../../../../bin/financial-worker ./cmd/worker
 
-syncdata:
+sync-data:
 	@if [ -z "$(data)" ]; then echo "data is required. Usage: make syncdata data=<fixture-name>"; exit 1; fi
 	GOWORK=off go run ./cmd/tools/seed-sync-data --project="$(PROJECT)" --file="testdata/sync-data/$(data).yaml"
+
+run-alert-evaluator:
+	gcloud run jobs execute alert-evaluator --region=us-central1 --project="$(PROJECT)"
 
 seed-alert-event:
 	GOWORK=off GOOS=darwin GOARCH=arm64 go build -o ../../../../bin/seed-alert-event ./cmd/tools/seed-alert-event
