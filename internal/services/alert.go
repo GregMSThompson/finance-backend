@@ -19,12 +19,25 @@ type alertStore interface {
 	Delete(ctx context.Context, uid, alertID string) error
 }
 
-type alertService struct {
-	store alertStore
+type alertEventStore interface {
+	ListRecent(ctx context.Context, uid string, limit int) ([]*models.AlertEvent, error)
 }
 
-func NewAlertService(store alertStore) *alertService {
-	return &alertService{store: store}
+type alertService struct {
+	store       alertStore
+	alertEvents alertEventStore
+}
+
+const (
+	defaultAlertHistoryLimit = 20
+	maxAlertHistoryLimit     = 100
+)
+
+func NewAlertService(store alertStore, alertEvents alertEventStore) *alertService {
+	return &alertService{
+		store:       store,
+		alertEvents: alertEvents,
+	}
 }
 
 func (s *alertService) CreateAlert(ctx context.Context, uid string, req dto.CreateAlertRequest) (*models.Alert, error) {
@@ -52,6 +65,11 @@ func (s *alertService) CreateAlert(ctx context.Context, uid string, req dto.Crea
 
 func (s *alertService) GetAlerts(ctx context.Context, uid string) ([]*models.Alert, error) {
 	return s.store.List(ctx, uid, false)
+}
+
+func (s *alertService) GetAlertHistory(ctx context.Context, uid string, limit int) ([]*models.AlertEvent, error) {
+	limit = normalizeAlertHistoryLimit(limit)
+	return s.alertEvents.ListRecent(ctx, uid, limit)
 }
 
 func (s *alertService) UpdateAlert(ctx context.Context, uid, alertID string, req dto.UpdateAlertRequest) (*models.Alert, error) {
@@ -141,4 +159,14 @@ func validateAlertConfig(t models.AlertType, cfg models.AlertConfig) error {
 		// amountMinor is optional — no required fields
 	}
 	return nil
+}
+
+func normalizeAlertHistoryLimit(limit int) int {
+	if limit <= 0 {
+		return defaultAlertHistoryLimit
+	}
+	if limit > maxAlertHistoryLimit {
+		return maxAlertHistoryLimit
+	}
+	return limit
 }

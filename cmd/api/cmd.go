@@ -31,6 +31,7 @@ func main() {
 	astore := store.NewAIStore(bs.Firestore)
 	dstore := store.NewDashboardStore(bs.Firestore)
 	alstore := store.NewAlertStore(bs.Firestore)
+	aestore := store.NewAlertEventStore(bs.Firestore)
 
 	// services
 	userv := services.NewUserService(ustore)
@@ -39,7 +40,7 @@ func main() {
 	anserv := services.NewAnalyticsService(tstore)
 	aiserv := services.NewAIService(bs.VertexAdapter, anserv, astore, cfg.AITTL)
 	dashsvc := services.NewDashboardService(dstore, anserv)
-	alertsvc := services.NewAlertService(alstore)
+	alertsvc := services.NewAlertService(alstore, aestore)
 
 	// response handler
 	rh := response.New(bs.Log)

@@ -54,6 +54,25 @@ func (s *alertEventStore) Get(ctx context.Context, uid, eventID string) (*models
 	return &e, nil
 }
 
+// ListRecent retrieves the most recent alert events for a user ordered by triggeredAt desc.
+func (s *alertEventStore) ListRecent(ctx context.Context, uid string, limit int) ([]*models.AlertEvent, error) {
+	docs, err := s.collection(uid).OrderBy("triggeredAt", firestore.Desc).Limit(limit).Documents(ctx).GetAll()
+	if err != nil {
+		return nil, errs.NewDatabaseError("read", "failed to list alert events", err)
+	}
+
+	events := make([]*models.AlertEvent, 0, len(docs))
+	for _, doc := range docs {
+		var e models.AlertEvent
+		if err := doc.DataTo(&e); err != nil {
+			return nil, errs.NewDatabaseError("read", "failed to parse alert event data", err)
+		}
+		events = append(events, &e)
+	}
+
+	return events, nil
+}
+
 // MarkDelivered sets DeliveredAt to the current time.
 func (s *alertEventStore) MarkDelivered(ctx context.Context, uid, eventID string) error {
 	now := time.Now()

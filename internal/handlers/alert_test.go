@@ -16,21 +16,29 @@ import (
 // --- Stub service ---
 
 type stubAlertService struct {
-	getAlertsResp []*models.Alert
-	getAlertsErr  error
-	createResp    *models.Alert
-	createErr     error
-	updateResp    *models.Alert
-	updateErr     error
-	deleteErr     error
-	lastCreateReq dto.CreateAlertRequest
-	lastUpdateID  string
-	lastUpdateReq dto.UpdateAlertRequest
-	lastDeleteID  string
+	getAlertsResp    []*models.Alert
+	getAlertsErr     error
+	historyResp      []*models.AlertEvent
+	historyErr       error
+	createResp       *models.Alert
+	createErr        error
+	updateResp       *models.Alert
+	updateErr        error
+	deleteErr        error
+	lastCreateReq    dto.CreateAlertRequest
+	lastHistoryLimit int
+	lastUpdateID     string
+	lastUpdateReq    dto.UpdateAlertRequest
+	lastDeleteID     string
 }
 
 func (s *stubAlertService) GetAlerts(_ context.Context, _ string) ([]*models.Alert, error) {
 	return s.getAlertsResp, s.getAlertsErr
+}
+
+func (s *stubAlertService) GetAlertHistory(_ context.Context, _ string, limit int) ([]*models.AlertEvent, error) {
+	s.lastHistoryLimit = limit
+	return s.historyResp, s.historyErr
 }
 
 func (s *stubAlertService) CreateAlert(_ context.Context, _ string, req dto.CreateAlertRequest) (*models.Alert, error) {
@@ -79,6 +87,58 @@ func TestGetAlerts_ServiceError(t *testing.T) {
 	req = withUID(req, "uid1")
 	rr := httptest.NewRecorder()
 	h.GetAlerts(rr, req)
+
+	if !resp.handleErrorCalled {
+		t.Fatal("expected HandleError to be called")
+	}
+}
+
+func TestGetAlertHistory_OK(t *testing.T) {
+	svc := &stubAlertService{
+		historyResp: []*models.AlertEvent{
+			{EventID: "e1", AlertID: "a1", Type: models.AlertTypeSpendThreshold},
+		},
+	}
+	resp := &stubResponseHandler{}
+	h := NewAlertHandlers(&Deps{ResponseHandler: resp, AlertSvc: svc})
+
+	req := httptest.NewRequest(http.MethodGet, "/alerts/history?limit=10", nil)
+	req = withUID(req, "uid1")
+	rr := httptest.NewRecorder()
+	h.GetAlertHistory(rr, req)
+
+	if !resp.writeSuccessCalled || resp.writeSuccessStatus != http.StatusOK {
+		t.Fatalf("expected WriteSuccess 200, got called=%v status=%d", resp.writeSuccessCalled, resp.writeSuccessStatus)
+	}
+	if svc.lastHistoryLimit != 10 {
+		t.Fatalf("expected limit=10, got %d", svc.lastHistoryLimit)
+	}
+}
+
+func TestGetAlertHistory_InvalidLimit(t *testing.T) {
+	svc := &stubAlertService{}
+	resp := &stubResponseHandler{}
+	h := NewAlertHandlers(&Deps{ResponseHandler: resp, AlertSvc: svc})
+
+	req := httptest.NewRequest(http.MethodGet, "/alerts/history?limit=bad", nil)
+	req = withUID(req, "uid1")
+	rr := httptest.NewRecorder()
+	h.GetAlertHistory(rr, req)
+
+	if !resp.handleErrorCalled {
+		t.Fatal("expected HandleError on invalid limit")
+	}
+}
+
+func TestGetAlertHistory_ServiceError(t *testing.T) {
+	svc := &stubAlertService{historyErr: errors.New("db failure")}
+	resp := &stubResponseHandler{}
+	h := NewAlertHandlers(&Deps{ResponseHandler: resp, AlertSvc: svc})
+
+	req := httptest.NewRequest(http.MethodGet, "/alerts/history", nil)
+	req = withUID(req, "uid1")
+	rr := httptest.NewRecorder()
+	h.GetAlertHistory(rr, req)
 
 	if !resp.handleErrorCalled {
 		t.Fatal("expected HandleError to be called")

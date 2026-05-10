@@ -21,6 +21,12 @@ type fakeAlertStore struct {
 	deleteErr error
 }
 
+type fakeAlertEventStore struct {
+	events        []*models.AlertEvent
+	listRecentErr error
+	lastLimit     int
+}
+
 func newFakeAlertStore() *fakeAlertStore {
 	return &fakeAlertStore{alerts: make(map[string]*models.Alert)}
 }
@@ -71,10 +77,22 @@ func (f *fakeAlertStore) Delete(_ context.Context, _, alertID string) error {
 	return nil
 }
 
+func (f *fakeAlertEventStore) ListRecent(_ context.Context, _ string, limit int) ([]*models.AlertEvent, error) {
+	f.lastLimit = limit
+	if f.listRecentErr != nil {
+		return nil, f.listRecentErr
+	}
+	return f.events, nil
+}
+
 // --- Helpers ---
 
 func newAlertSvc(store alertStore) *alertService {
-	return NewAlertService(store)
+	return NewAlertService(store, &fakeAlertEventStore{})
+}
+
+func newAlertSvcWithEventStore(store alertStore, events alertEventStore) *alertService {
+	return NewAlertService(store, events)
 }
 
 func validSpendThresholdReq() dto.CreateAlertRequest {
@@ -261,6 +279,47 @@ func TestCreateAlert_IncomeReceived_Valid(t *testing.T) {
 	_, err := svc.CreateAlert(context.Background(), "uid1", req)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestGetAlertHistory_DefaultLimit(t *testing.T) {
+	store := &fakeAlertEventStore{
+		events: []*models.AlertEvent{{EventID: "e1"}},
+	}
+	svc := newAlertSvcWithEventStore(newFakeAlertStore(), store)
+
+	events, err := svc.GetAlertHistory(context.Background(), "uid1", 0)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(events) != 1 {
+		t.Fatalf("expected 1 event, got %d", len(events))
+	}
+	if store.lastLimit != defaultAlertHistoryLimit {
+		t.Fatalf("expected default limit %d, got %d", defaultAlertHistoryLimit, store.lastLimit)
+	}
+}
+
+func TestGetAlertHistory_MaxLimit(t *testing.T) {
+	store := &fakeAlertEventStore{}
+	svc := newAlertSvcWithEventStore(newFakeAlertStore(), store)
+
+	_, err := svc.GetAlertHistory(context.Background(), "uid1", maxAlertHistoryLimit+50)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if store.lastLimit != maxAlertHistoryLimit {
+		t.Fatalf("expected max limit %d, got %d", maxAlertHistoryLimit, store.lastLimit)
+	}
+}
+
+func TestGetAlertHistory_StoreError(t *testing.T) {
+	store := &fakeAlertEventStore{listRecentErr: errors.New("db failure")}
+	svc := newAlertSvcWithEventStore(newFakeAlertStore(), store)
+
+	_, err := svc.GetAlertHistory(context.Background(), "uid1", 10)
+	if err == nil {
+		t.Fatal("expected error")
 	}
 }
 
