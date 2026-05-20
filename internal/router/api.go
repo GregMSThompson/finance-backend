@@ -24,12 +24,14 @@ func NewAPIRouter(deps *handlers.Deps) chi.Router {
 	// handlers
 	ush := handlers.NewUserHandlers(deps)
 	ph := handlers.NewPlaidHandlers(deps)
+	bh := handlers.NewBankHandlers(deps)
 	aih := handlers.NewAIHandlers(deps)
 	dsh := handlers.NewDashboardHandlers(deps)
 	alh := handlers.NewAlertHandlers(deps)
 
 	r.Mount("/users", ush.UserRoutes())
-	r.Mount("/", ph.PlaidRoutes())
+	r.Mount("/plaid", ph.PlaidRoutes())
+	r.Mount("/banks", bh.BankRoutes())
 	r.Mount("/ai", aih.AIRoutes())
 	r.Mount("/dashboard", dsh.DashboardRoutes())
 	r.Mount("/alerts", alh.AlertRoutes())
