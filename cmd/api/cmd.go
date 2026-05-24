@@ -32,11 +32,13 @@ func main() {
 	dstore := store.NewDashboardStore(bs.Firestore)
 	alstore := store.NewAlertStore(bs.Firestore)
 	aestore := store.NewAlertEventStore(bs.Firestore)
+	jstore := store.NewJobStore(bs.Firestore)
 
 	// services
 	userv := services.NewUserService(ustore)
 	bserv := services.NewBankService(bstore, tstore)
-	plserv := services.NewPlaidService(bs.PlaidAdapter, bstore, tstore)
+	jobsvc := services.NewJobService(jstore, bs.CloudTasks)
+	plserv := services.NewPlaidService(bs.PlaidAdapter, bstore, tstore, jobsvc)
 	anserv := services.NewAnalyticsService(tstore)
 	aiserv := services.NewAIService(bs.VertexAdapter, anserv, astore, cfg.AITTL)
 	dashsvc := services.NewDashboardService(dstore, anserv)
@@ -56,6 +58,7 @@ func main() {
 	deps.AISvc = aiserv
 	deps.DashboardSvc = dashsvc
 	deps.AlertSvc = alertsvc
+	deps.JobSvc = jobsvc
 
 	// router
 	r := router.NewAPIRouter(deps)

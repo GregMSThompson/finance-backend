@@ -18,4 +18,5 @@ type Deps struct {
 	AISvc           aiService
 	DashboardSvc    dashboardService
 	AlertSvc        alertService
+	JobSvc          jobService
 }

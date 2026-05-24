@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"testing"
 	"time"
@@ -64,12 +65,12 @@ func (f *fakeBankStore) List(ctx context.Context, uid string) ([]*models.Bank, e
 }
 
 type fakeTxStore struct {
-	cursor     string
-	upserted   [][]models.Transaction
-	setCursor  string
-	getErr     error
-	upsertErr  error
-	setCurErr  error
+	cursor    string
+	upserted  [][]models.Transaction
+	setCursor string
+	getErr    error
+	upsertErr error
+	setCurErr error
 }
 
 func (f *fakeTxStore) UpsertBatch(ctx context.Context, uid string, txs []models.Transaction) error {
@@ -90,14 +91,30 @@ func (f *fakeTxStore) SetCursor(ctx context.Context, uid, bankID, cursor string)
 	return nil
 }
 
+type fakeJobs struct {
+	jobID  string
+	err    error
+	gotUID string
+	gotTyp models.JobType
+	gotRaw json.RawMessage
+}
+
+func (f *fakeJobs) Submit(ctx context.Context, uid string, jobType models.JobType, params json.RawMessage) (string, error) {
+	f.gotUID = uid
+	f.gotTyp = jobType
+	f.gotRaw = params
+	return f.jobID, f.err
+}
+
 // --- tests ---
 
 func TestExchangePublicTokenStoresBank(t *testing.T) {
 	pl := &fakePlaid{itemID: "item-1", accessToken: "at-123"}
 	banks := &fakeBankStore{}
 	txs := &fakeTxStore{}
+	jobs := &fakeJobs{}
 
-	svc := NewPlaidService(pl, banks, txs)
+	svc := NewPlaidService(pl, banks, txs, jobs)
 
 	ctx := helpers.TestCtx()
 	_, err := svc.ExchangePublicToken(ctx, "uid-1", dto.LinkBankRequest{PublicToken: "public-xyz", InstitutionName: "Chase"})
@@ -116,7 +133,35 @@ func TestExchangePublicTokenStoresBank(t *testing.T) {
 	}
 }
 
-func TestSyncTransactionsUsesCursorAndSetsNewCursor(t *testing.T) {
+func TestSyncTransactionsSubmitsJob(t *testing.T) {
+	pl := &fakePlaid{}
+	banks := &fakeBankStore{}
+	txs := &fakeTxStore{}
+	jobs := &fakeJobs{jobID: "job-xyz"}
+
+	svc := NewPlaidService(pl, banks, txs, jobs)
+	ctx := helpers.TestCtx()
+	bankID := "item-1"
+	got, err := svc.SyncTransactions(ctx, "uid-1", dto.SyncTransactionsRequest{BankID: &bankID})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got != "job-xyz" {
+		t.Fatalf("expected jobID 'job-xyz', got %q", got)
+	}
+	if jobs.gotUID != "uid-1" || jobs.gotTyp != models.JobTypePlaidSync {
+		t.Fatalf("submit called with unexpected args: uid=%q type=%q", jobs.gotUID, jobs.gotTyp)
+	}
+	var params dto.PlaidSyncParams
+	if err := json.Unmarshal(jobs.gotRaw, &params); err != nil {
+		t.Fatalf("params not valid json: %v", err)
+	}
+	if params.BankID == nil || *params.BankID != "item-1" {
+		t.Fatalf("expected params.BankID=item-1, got %+v", params.BankID)
+	}
+}
+
+func TestRunSyncUsesCursorAndSetsNewCursor(t *testing.T) {
 	pl := &fakePlaid{
 		syncPages: []dto.PlaidSyncPage{
 			{Transactions: []models.Transaction{{TransactionID: "t1"}}, Cursor: "c1", HasMore: true},
@@ -126,12 +171,12 @@ func TestSyncTransactionsUsesCursorAndSetsNewCursor(t *testing.T) {
 	banks := &fakeBankStore{list: []*models.Bank{{BankID: "item-1", PlaidPublicToken: "at-123"}}}
 	txs := &fakeTxStore{cursor: "prev-cursor"}
 
-	svc := NewPlaidService(pl, banks, txs)
+	svc := NewPlaidService(pl, banks, txs, &fakeJobs{})
 	now := time.Unix(1000, 0)
 	svc.clockNow = func() time.Time { return now }
 
 	ctx := helpers.TestCtx()
-	res, err := svc.SyncTransactions(ctx, "uid-1", dto.SyncTransactionsRequest{})
+	res, err := svc.RunSync(ctx, "uid-1", dto.PlaidSyncParams{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -147,14 +192,14 @@ func TestSyncTransactionsUsesCursorAndSetsNewCursor(t *testing.T) {
 	}
 }
 
-func TestSyncTransactionsPropagatesErrors(t *testing.T) {
+func TestRunSyncPropagatesErrors(t *testing.T) {
 	pl := &fakePlaid{}
 	banks := &fakeBankStore{err: errors.New("boom")}
 	txs := &fakeTxStore{}
 
-	svc := NewPlaidService(pl, banks, txs)
+	svc := NewPlaidService(pl, banks, txs, &fakeJobs{})
 	ctx := helpers.TestCtx()
-	_, err := svc.SyncTransactions(ctx, "uid-1", dto.SyncTransactionsRequest{})
+	_, err := svc.RunSync(ctx, "uid-1", dto.PlaidSyncParams{})
 	if err == nil {
 		t.Fatalf("expected error, got nil")
 	}
@@ -165,7 +210,7 @@ func TestExchangePublicTokenPropagatesExchangeError(t *testing.T) {
 	banks := &fakeBankStore{}
 	txs := &fakeTxStore{}
 
-	svc := NewPlaidService(pl, banks, txs)
+	svc := NewPlaidService(pl, banks, txs, &fakeJobs{})
 	ctx := helpers.TestCtx()
 	_, err := svc.ExchangePublicToken(ctx, "uid-1", dto.LinkBankRequest{PublicToken: "public-xyz", InstitutionName: "Chase"})
 	if err == nil {
@@ -181,7 +226,7 @@ func TestExchangePublicTokenPropagatesCreateError(t *testing.T) {
 	banks := &fakeBankStore{err: errors.New("create failed")}
 	txs := &fakeTxStore{}
 
-	svc := NewPlaidService(pl, banks, txs)
+	svc := NewPlaidService(pl, banks, txs, &fakeJobs{})
 	ctx := helpers.TestCtx()
 	_, err := svc.ExchangePublicToken(ctx, "uid-1", dto.LinkBankRequest{PublicToken: "public-xyz", InstitutionName: "Chase"})
 	if err == nil {
@@ -189,46 +234,46 @@ func TestExchangePublicTokenPropagatesCreateError(t *testing.T) {
 	}
 }
 
-func TestSyncTransactionsMissingAccessToken(t *testing.T) {
+func TestRunSyncMissingAccessToken(t *testing.T) {
 	pl := &fakePlaid{}
 	banks := &fakeBankStore{list: []*models.Bank{{BankID: "item-1", PlaidPublicToken: ""}}}
 	txs := &fakeTxStore{}
 
-	svc := NewPlaidService(pl, banks, txs)
+	svc := NewPlaidService(pl, banks, txs, &fakeJobs{})
 	ctx := helpers.TestCtx()
-	_, err := svc.SyncTransactions(ctx, "uid-1", dto.SyncTransactionsRequest{})
+	_, err := svc.RunSync(ctx, "uid-1", dto.PlaidSyncParams{})
 	if err == nil {
 		t.Fatalf("expected error")
 	}
 }
 
-func TestSyncTransactionsGetCursorError(t *testing.T) {
+func TestRunSyncGetCursorError(t *testing.T) {
 	pl := &fakePlaid{}
 	banks := &fakeBankStore{list: []*models.Bank{{BankID: "item-1", PlaidPublicToken: "at-123"}}}
 	txs := &fakeTxStore{getErr: errors.New("get cursor failed")}
 
-	svc := NewPlaidService(pl, banks, txs)
+	svc := NewPlaidService(pl, banks, txs, &fakeJobs{})
 	ctx := helpers.TestCtx()
-	_, err := svc.SyncTransactions(ctx, "uid-1", dto.SyncTransactionsRequest{})
+	_, err := svc.RunSync(ctx, "uid-1", dto.PlaidSyncParams{})
 	if err == nil {
 		t.Fatalf("expected error")
 	}
 }
 
-func TestSyncTransactionsPlaidError(t *testing.T) {
+func TestRunSyncPlaidError(t *testing.T) {
 	pl := &fakePlaid{syncErr: errors.New("plaid sync failed")}
 	banks := &fakeBankStore{list: []*models.Bank{{BankID: "item-1", PlaidPublicToken: "at-123"}}}
 	txs := &fakeTxStore{}
 
-	svc := NewPlaidService(pl, banks, txs)
+	svc := NewPlaidService(pl, banks, txs, &fakeJobs{})
 	ctx := helpers.TestCtx()
-	_, err := svc.SyncTransactions(ctx, "uid-1", dto.SyncTransactionsRequest{})
+	_, err := svc.RunSync(ctx, "uid-1", dto.PlaidSyncParams{})
 	if err == nil {
 		t.Fatalf("expected error")
 	}
 }
 
-func TestSyncTransactionsUpsertError(t *testing.T) {
+func TestRunSyncUpsertError(t *testing.T) {
 	pl := &fakePlaid{
 		syncPages: []dto.PlaidSyncPage{
 			{Transactions: []models.Transaction{{TransactionID: "t1"}}, Cursor: "c1", HasMore: false},
@@ -237,15 +282,15 @@ func TestSyncTransactionsUpsertError(t *testing.T) {
 	banks := &fakeBankStore{list: []*models.Bank{{BankID: "item-1", PlaidPublicToken: "at-123"}}}
 	txs := &fakeTxStore{upsertErr: errors.New("upsert failed")}
 
-	svc := NewPlaidService(pl, banks, txs)
+	svc := NewPlaidService(pl, banks, txs, &fakeJobs{})
 	ctx := helpers.TestCtx()
-	_, err := svc.SyncTransactions(ctx, "uid-1", dto.SyncTransactionsRequest{})
+	_, err := svc.RunSync(ctx, "uid-1", dto.PlaidSyncParams{})
 	if err == nil {
 		t.Fatalf("expected error")
 	}
 }
 
-func TestSyncTransactionsSetCursorError(t *testing.T) {
+func TestRunSyncSetCursorError(t *testing.T) {
 	pl := &fakePlaid{
 		syncPages: []dto.PlaidSyncPage{
 			{Transactions: []models.Transaction{{TransactionID: "t1"}}, Cursor: "c1", HasMore: false},
@@ -254,9 +299,9 @@ func TestSyncTransactionsSetCursorError(t *testing.T) {
 	banks := &fakeBankStore{list: []*models.Bank{{BankID: "item-1", PlaidPublicToken: "at-123"}}}
 	txs := &fakeTxStore{setCurErr: errors.New("set cursor failed")}
 
-	svc := NewPlaidService(pl, banks, txs)
+	svc := NewPlaidService(pl, banks, txs, &fakeJobs{})
 	ctx := helpers.TestCtx()
-	_, err := svc.SyncTransactions(ctx, "uid-1", dto.SyncTransactionsRequest{})
+	_, err := svc.RunSync(ctx, "uid-1", dto.PlaidSyncParams{})
 	if err == nil {
 		t.Fatalf("expected error")
 	}

@@ -13,6 +13,12 @@ type SyncTransactionsRequest struct {
 	BankID *string `json:"bankId,omitempty"`
 }
 
+// PlaidSyncParams is the params payload for a JobTypePlaidSync job.
+// Stored as the Job.Params JSON blob.
+type PlaidSyncParams struct {
+	BankID *string `json:"bankId,omitempty"`
+}
+
 // Metadata from the transaction sync process
 type PlaidServiceSyncResult struct {
 	BanksSynced          int

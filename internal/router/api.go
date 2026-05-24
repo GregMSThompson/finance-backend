@@ -28,6 +28,7 @@ func NewAPIRouter(deps *handlers.Deps) chi.Router {
 	aih := handlers.NewAIHandlers(deps)
 	dsh := handlers.NewDashboardHandlers(deps)
 	alh := handlers.NewAlertHandlers(deps)
+	jh := handlers.NewJobHandlers(deps)
 
 	r.Mount("/users", ush.UserRoutes())
 	r.Mount("/plaid", ph.PlaidRoutes())
@@ -35,5 +36,6 @@ func NewAPIRouter(deps *handlers.Deps) chi.Router {
 	r.Mount("/ai", aih.AIRoutes())
 	r.Mount("/dashboard", dsh.DashboardRoutes())
 	r.Mount("/alerts", alh.AlertRoutes())
+	r.Mount("/jobs", jh.JobRoutes())
 	return r
 }

@@ -8,6 +8,7 @@ import (
 	kms "cloud.google.com/go/kms/apiv1"
 	"firebase.google.com/go/v4/auth"
 
+	cloudtasksclient "github.com/GregMSThompson/finance-backend/internal/client/cloudtasks"
 	plaidclient "github.com/GregMSThompson/finance-backend/internal/client/plaid"
 	vertexclient "github.com/GregMSThompson/finance-backend/internal/client/vertex"
 	"github.com/GregMSThompson/finance-backend/internal/config"
@@ -21,6 +22,7 @@ type APIBootstrap struct {
 	KMS           *kms.KeyManagementClient
 	PlaidAdapter  *plaidclient.Adapter
 	VertexAdapter *vertexclient.Adapter
+	CloudTasks    *cloudtasksclient.Adapter
 }
 
 // RunAPI initializes the runtime dependencies required by the API binary.
@@ -53,6 +55,19 @@ func RunAPI(cfg *config.APIConfig) (*APIBootstrap, error) {
 		return bs, err
 	}
 
+	bs.CloudTasks, err = cloudtasksclient.NewAdapter(
+		applicationCtx,
+		cfg.ProjectID,
+		cfg.Region,
+		cfg.CloudTasksJobQueue,
+		cfg.WorkerAudience,
+		cfg.WorkerURL,
+		cfg.WorkerServiceAcct,
+	)
+	if err != nil {
+		return bs, err
+	}
+
 	return bs, nil
 }
 
@@ -65,4 +80,7 @@ func (bs *APIBootstrap) Close() {
 	closeVertex(bs.Log, bs.VertexAdapter)
 	closeFirestore(bs.Log, bs.Firestore)
 	closeKMS(bs.Log, bs.KMS)
+	if bs.CloudTasks != nil {
+		bs.CloudTasks.Close()
+	}
 }

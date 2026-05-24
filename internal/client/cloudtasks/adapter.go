@@ -4,11 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	cloudtasks "cloud.google.com/go/cloudtasks/apiv2"
 	"cloud.google.com/go/cloudtasks/apiv2/cloudtaskspb"
 
 	"github.com/GregMSThompson/finance-backend/internal/dto"
+	"github.com/GregMSThompson/finance-backend/internal/models"
 )
 
 const alertDeliverPath = "/tasks/alert-deliver"
@@ -52,12 +54,30 @@ func (a *Adapter) EnqueueAlertDelivery(ctx context.Context, req dto.DeliverAlert
 	if err != nil {
 		return fmt.Errorf("marshal alert delivery request: %w", err)
 	}
+	return a.createTask(ctx, alertDeliverPath, body)
+}
 
+// EnqueueJob creates an HTTP task targeting the worker route for the given job type.
+// The route is derived from the job type by replacing "." with "/" and prefixing "/tasks/".
+// e.g. JobType "plaid.sync" → POST /tasks/plaid/sync
+func (a *Adapter) EnqueueJob(ctx context.Context, jobType models.JobType, uid, jobID string) error {
+	if !jobType.IsValid() {
+		return fmt.Errorf("unknown job type %q", jobType)
+	}
+	body, err := json.Marshal(dto.JobTaskRequest{UID: uid, JobID: jobID})
+	if err != nil {
+		return fmt.Errorf("marshal job task request: %w", err)
+	}
+	path := "/tasks/" + strings.ReplaceAll(string(jobType), ".", "/")
+	return a.createTask(ctx, path, body)
+}
+
+func (a *Adapter) createTask(ctx context.Context, path string, body []byte) error {
 	task := &cloudtaskspb.Task{
 		MessageType: &cloudtaskspb.Task_HttpRequest{
 			HttpRequest: &cloudtaskspb.HttpRequest{
 				HttpMethod: cloudtaskspb.HttpMethod_POST,
-				Url:        a.workerURL + alertDeliverPath,
+				Url:        a.workerURL + path,
 				Headers:    map[string]string{"Content-Type": "application/json"},
 				Body:       body,
 				AuthorizationHeader: &cloudtaskspb.HttpRequest_OidcToken{

@@ -11,6 +11,7 @@ import (
 func NewWorkerRouter(deps *taskhandlers.Deps) chi.Router {
 	r := chi.NewRouter()
 
+	// middleware
 	loggerMw := middleware.NewLoggerMiddleware(deps.Log)
 	ctMw := middleware.NewCloudTasksMiddleware(deps.Audience, deps.AppEnv, deps.TestAPIKey, deps.TestAPIKeyEnabled, deps.ResponseHandler)
 
@@ -20,8 +21,12 @@ func NewWorkerRouter(deps *taskhandlers.Deps) chi.Router {
 	r.Use(chimiddleware.Logger)
 	r.Use(chimiddleware.Recoverer)
 
+	// handlers
 	alh := taskhandlers.NewAlertTaskHandlers(deps)
+	pth := taskhandlers.NewPlaidTaskHandlers(deps)
+
 	r.Post("/tasks/alert-deliver", alh.DeliverAlert)
+	r.Post("/tasks/plaid/sync", pth.Sync)
 
 	return r
 }

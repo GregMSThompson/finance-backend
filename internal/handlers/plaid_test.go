@@ -21,7 +21,7 @@ import (
 type fakePlaidSvc struct {
 	linkToken string
 	bankID    string
-	syncRes   dto.PlaidServiceSyncResult
+	jobID     string
 	err       error
 
 	gotExchange struct {
@@ -44,10 +44,10 @@ func (f *fakePlaidSvc) ExchangePublicToken(ctx context.Context, uid string, req 
 	f.gotExchange.inst = req.InstitutionName
 	return f.bankID, f.err
 }
-func (f *fakePlaidSvc) SyncTransactions(ctx context.Context, uid string, req dto.SyncTransactionsRequest) (dto.PlaidServiceSyncResult, error) {
+func (f *fakePlaidSvc) SyncTransactions(ctx context.Context, uid string, req dto.SyncTransactionsRequest) (string, error) {
 	f.gotSync.uid = uid
 	f.gotSync.bankID = req.BankID
-	return f.syncRes, f.err
+	return f.jobID, f.err
 }
 
 type plaidStubResponseHandler struct {
@@ -123,7 +123,7 @@ func TestCreateLinkTokenHandler(t *testing.T) {
 }
 
 func TestSyncTransactionsHandler(t *testing.T) {
-	p := &fakePlaidSvc{syncRes: dto.PlaidServiceSyncResult{BanksSynced: 1}}
+	p := &fakePlaidSvc{jobID: "job-abc"}
 	h := newTestPlaidHandler(p)
 
 	body := `{"bankId":"item-1"}`
@@ -132,11 +132,19 @@ func TestSyncTransactionsHandler(t *testing.T) {
 
 	h.SyncTransactions(rr, req)
 
-	if rr.Code != http.StatusOK {
+	if rr.Code != http.StatusAccepted {
 		t.Fatalf("status = %d, body=%s", rr.Code, rr.Body.String())
 	}
 	if p.gotSync.uid != "uid-123" || p.gotSync.bankID == nil || *p.gotSync.bankID != "item-1" {
 		t.Fatalf("sync called with %+v", p.gotSync)
+	}
+	var resp struct {
+		Success bool
+		Data    map[string]string
+	}
+	_ = json.Unmarshal(rr.Body.Bytes(), &resp)
+	if resp.Data["jobId"] != "job-abc" {
+		t.Fatalf("unexpected response: %+v", resp)
 	}
 }
 

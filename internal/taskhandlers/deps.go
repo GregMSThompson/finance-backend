@@ -15,4 +15,6 @@ type Deps struct {
 	TestAPIKeyEnabled bool
 	TestAPIKey        string // non-empty enables test key bypass for local development
 	NotificationSvc   notificationService
+	JobSvc            jobRunner
+	PlaidSvc          plaidRunner
 }

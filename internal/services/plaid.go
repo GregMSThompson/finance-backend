@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -33,18 +34,25 @@ type plaidClient interface {
 	SyncTransactions(ctx context.Context, bankID string, accessToken string, cursor *string) (dto.PlaidSyncPage, error)
 }
 
+// jobSubmitter enqueues async work via the job service.
+type jobSubmitter interface {
+	Submit(ctx context.Context, uid string, jobType models.JobType, params json.RawMessage) (string, error)
+}
+
 type plaidService struct {
 	plaid    plaidClient
 	banks    bankPSStore
 	txs      transactionPSStore
+	jobs     jobSubmitter
 	clockNow func() time.Time
 }
 
-func NewPlaidService(plaid plaidClient, banks bankPSStore, txs transactionPSStore) *plaidService {
+func NewPlaidService(plaid plaidClient, banks bankPSStore, txs transactionPSStore, jobs jobSubmitter) *plaidService {
 	return &plaidService{
 		plaid:    plaid,
 		banks:    banks,
 		txs:      txs,
+		jobs:     jobs,
 		clockNow: time.Now,
 	}
 }
@@ -80,7 +88,19 @@ func (s *plaidService) ExchangePublicToken(ctx context.Context, uid string, req 
 	return itemID, nil
 }
 
-func (s *plaidService) SyncTransactions(ctx context.Context, uid string, req dto.SyncTransactionsRequest) (dto.PlaidServiceSyncResult, error) {
+// SyncTransactions submits a sync job and returns its ID. The actual sync runs
+// asynchronously on the worker via RunSync.
+func (s *plaidService) SyncTransactions(ctx context.Context, uid string, req dto.SyncTransactionsRequest) (string, error) {
+	params, err := json.Marshal(dto.PlaidSyncParams{BankID: req.BankID})
+	if err != nil {
+		return "", err
+	}
+	return s.jobs.Submit(ctx, uid, models.JobTypePlaidSync, params)
+}
+
+// RunSync performs the transaction sync. Called from the worker task handler.
+// If params.BankID is set, only that bank is synced; otherwise all banks for the user.
+func (s *plaidService) RunSync(ctx context.Context, uid string, params dto.PlaidSyncParams) (dto.PlaidServiceSyncResult, error) {
 	result := dto.PlaidServiceSyncResult{}
 	log := logger.FromContext(ctx)
 
@@ -90,13 +110,13 @@ func (s *plaidService) SyncTransactions(ctx context.Context, uid string, req dto
 	}
 
 	banksToSync := len(banks)
-	if req.BankID != nil {
+	if params.BankID != nil {
 		banksToSync = 1
 	}
 	log.Info("transaction sync started", "bank_count", banksToSync)
 
 	for _, b := range banks {
-		if req.BankID != nil && *req.BankID != b.BankID {
+		if params.BankID != nil && *params.BankID != b.BankID {
 			continue
 		}
 
@@ -143,7 +163,7 @@ func (s *plaidService) SyncTransactions(ctx context.Context, uid string, req dto
 		}
 
 		result.BanksSynced++
-		if req.BankID != nil {
+		if params.BankID != nil {
 			result.Cursor = helpers.Value(cursor)
 			break
 		}

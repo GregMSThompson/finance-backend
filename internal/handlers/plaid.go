@@ -17,7 +17,7 @@ import (
 type plaidService interface {
 	CreateLinkToken(ctx context.Context, uid string) (string, error)
 	ExchangePublicToken(ctx context.Context, uid string, req dto.LinkBankRequest) (string, error)
-	SyncTransactions(ctx context.Context, uid string, req dto.SyncTransactionsRequest) (dto.PlaidServiceSyncResult, error)
+	SyncTransactions(ctx context.Context, uid string, req dto.SyncTransactionsRequest) (string, error)
 }
 
 type plaidHandlers struct {
@@ -59,11 +59,11 @@ func (h *plaidHandlers) SyncTransactions(w http.ResponseWriter, r *http.Request)
 	}
 
 	uid := middleware.UID(r.Context())
-	result, err := h.PlaidSvc.SyncTransactions(r.Context(), uid, req)
+	jobID, err := h.PlaidSvc.SyncTransactions(r.Context(), uid, req)
 	if err != nil {
 		h.ResponseHandler.HandleError(w, r, err)
 		return
 	}
 
-	h.ResponseHandler.WriteSuccess(w, r, http.StatusOK, result)
+	h.ResponseHandler.WriteSuccess(w, r, http.StatusAccepted, dto.SubmitJobResponse{JobID: jobID})
 }

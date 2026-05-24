@@ -5,16 +5,20 @@ import (
 	"log/slog"
 
 	"cloud.google.com/go/firestore"
+	kms "cloud.google.com/go/kms/apiv1"
 	"firebase.google.com/go/v4/messaging"
 
+	plaidclient "github.com/GregMSThompson/finance-backend/internal/client/plaid"
 	"github.com/GregMSThompson/finance-backend/internal/config"
 )
 
 // WorkerBootstrap contains the runtime dependencies required by the worker binary.
 type WorkerBootstrap struct {
-	Log       *slog.Logger
-	Firestore *firestore.Client
-	Messaging *messaging.Client
+	Log          *slog.Logger
+	Firestore    *firestore.Client
+	Messaging    *messaging.Client
+	KMS          *kms.KeyManagementClient
+	PlaidAdapter *plaidclient.Adapter
 }
 
 // RunWorker initializes the runtime dependencies required by the worker binary.
@@ -36,6 +40,13 @@ func RunWorker(cfg *config.WorkerConfig) (*WorkerBootstrap, error) {
 		return bs, err
 	}
 
+	bs.KMS, err = newKMSClient(applicationCtx)
+	if err != nil {
+		return bs, err
+	}
+
+	bs.PlaidAdapter = plaidclient.NewAdapter(cfg.PlaidClientID, cfg.PlaidSecret, cfg.PlaidEnvironment)
+
 	return bs, nil
 }
 
@@ -46,4 +57,5 @@ func (bs *WorkerBootstrap) Close() {
 	}
 
 	closeFirestore(bs.Log, bs.Firestore)
+	closeKMS(bs.Log, bs.KMS)
 }

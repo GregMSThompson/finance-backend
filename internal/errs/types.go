@@ -1,5 +1,17 @@
 package errs
 
+import "errors"
+
+// IsTransient reports whether err wraps an ExternalServiceError flagged as transient.
+// Used by task handlers to decide whether to ack (permanent) or 5xx (retryable).
+func IsTransient(err error) bool {
+	var ext *ExternalServiceError
+	if errors.As(err, &ext) {
+		return ext.Transient
+	}
+	return false
+}
+
 type ErrorMessage struct {
 	Message string
 	Cause   error // wrapped original error
