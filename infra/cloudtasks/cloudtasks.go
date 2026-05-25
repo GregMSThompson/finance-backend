@@ -2,8 +2,10 @@ package cloudtasks
 
 import (
 	"github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp"
+	"github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/cloudtasks"
 	"github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/projects"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
+	"github.com/pulumi/pulumi/sdk/v3/go/pulumi/config"
 )
 
 // SetupCloudTasks enables the Cloud Tasks API for the current project.
@@ -12,5 +14,19 @@ func SetupCloudTasks(ctx *pulumi.Context, prov *gcp.Provider) (*projects.Service
 		Service: pulumi.String("cloudtasks.googleapis.com"),
 	},
 		pulumi.Provider(prov),
+	)
+}
+
+// CreateQueue provisions a Cloud Tasks queue in the configured GCP region.
+func CreateQueue(ctx *pulumi.Context, prov *gcp.Provider, resourceName, queueName string, res ...pulumi.Resource) (*cloudtasks.Queue, error) {
+	gcpCfg := config.New(ctx, "gcp")
+	region := gcpCfg.Require("region")
+
+	return cloudtasks.NewQueue(ctx, resourceName, &cloudtasks.QueueArgs{
+		Name:     pulumi.String(queueName),
+		Location: pulumi.String(region),
+	},
+		pulumi.Provider(prov),
+		pulumi.DependsOn(res),
 	)
 }

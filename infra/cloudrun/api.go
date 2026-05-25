@@ -9,11 +9,19 @@ import (
 	pulumidocker "github.com/pulumi/pulumi-docker/sdk/v4/go/docker"
 	"github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp"
 	gcpcloudrun "github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/cloudrun"
+	"github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/cloudtasks"
 	gcpkms "github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/kms"
 	"github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/serviceaccount"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi/config"
 )
+
+// WorkerRefs bundles outputs read from the worker stack so the API can target it.
+type WorkerRefs struct {
+	ServiceURL  pulumi.StringInput
+	Audience    pulumi.StringInput
+	ServiceName pulumi.StringInput
+}
 
 // secretRefs contains the Secret Manager references injected into the API service.
 type secretRefs struct {
@@ -37,7 +45,8 @@ func NewAPI(prov *gcp.Provider, dockerManager *infraDocker.Manager, secretManage
 }
 
 // Deploy builds and deploys the API Cloud Run service and its required IAM.
-func (a *API) Deploy(ctx *pulumi.Context, keyID pulumi.StringInput, res ...pulumi.Resource) (*serviceaccount.Account, error) {
+// jobsQueue and worker are wired in so the API can enqueue jobs on the worker.
+func (a *API) Deploy(ctx *pulumi.Context, keyID pulumi.StringInput, jobsQueue *cloudtasks.Queue, worker WorkerRefs, res ...pulumi.Resource) (*serviceaccount.Account, error) {
 	img, err := a.dockerManager.BuildImage(ctx, "api", res...)
 	if err != nil {
 		return nil, err
@@ -53,12 +62,12 @@ func (a *API) Deploy(ctx *pulumi.Context, keyID pulumi.StringInput, res ...pulum
 		return nil, err
 	}
 
-	iamResources, err := a.setIAMPermissions(ctx, apiSA, keyID)
+	iamResources, err := a.setIAMPermissions(ctx, apiSA, keyID, worker.ServiceName)
 	if err != nil {
 		return nil, err
 	}
 
-	svc, err := a.createService(ctx, img, apiSA, sr, keyID, iamResources...)
+	svc, err := a.createService(ctx, img, apiSA, sr, keyID, jobsQueue, worker, iamResources...)
 	if err != nil {
 		return nil, err
 	}
@@ -89,7 +98,7 @@ func (a *API) createSecrets(ctx *pulumi.Context) (secretRefs, error) {
 	}, nil
 }
 
-func (a *API) createService(ctx *pulumi.Context, img *pulumidocker.Image, apiSA *serviceaccount.Account, sr secretRefs, keyID pulumi.StringInput, res ...pulumi.Resource) (*gcpcloudrun.Service, error) {
+func (a *API) createService(ctx *pulumi.Context, img *pulumidocker.Image, apiSA *serviceaccount.Account, sr secretRefs, keyID pulumi.StringInput, jobsQueue *cloudtasks.Queue, worker WorkerRefs, res ...pulumi.Resource) (*gcpcloudrun.Service, error) {
 	gcpCfg := config.New(ctx, "gcp")
 	crCfg := config.New(ctx, "cloudrun")
 	plaidCfg := config.New(ctx, "plaid")
@@ -156,6 +165,22 @@ func (a *API) createService(ctx *pulumi.Context, img *pulumidocker.Image, apiSA 
 				},
 			},
 		},
+		&gcpcloudrun.ServiceTemplateSpecContainerEnvArgs{
+			Name:  pulumi.String("CLOUDTASKSJOBQUEUE"),
+			Value: jobsQueue.Name,
+		},
+		&gcpcloudrun.ServiceTemplateSpecContainerEnvArgs{
+			Name:  pulumi.String("WORKERURL"),
+			Value: worker.ServiceURL,
+		},
+		&gcpcloudrun.ServiceTemplateSpecContainerEnvArgs{
+			Name:  pulumi.String("WORKERAUDIENCE"),
+			Value: worker.Audience,
+		},
+		&gcpcloudrun.ServiceTemplateSpecContainerEnvArgs{
+			Name:  pulumi.String("WORKERSERVICEACCT"),
+			Value: apiSA.Email,
+		},
 	}
 
 	return gcpcloudrun.NewService(ctx, "apiService", &gcpcloudrun.ServiceArgs{
@@ -208,7 +233,10 @@ func (a *API) setIAMAccessPolicy(ctx *pulumi.Context, svc *gcpcloudrun.Service) 
 	return err
 }
 
-func (a *API) setIAMPermissions(ctx *pulumi.Context, apiSA *serviceaccount.Account, keyID pulumi.StringInput) ([]pulumi.Resource, error) {
+func (a *API) setIAMPermissions(ctx *pulumi.Context, apiSA *serviceaccount.Account, keyID pulumi.StringInput, workerServiceName pulumi.StringInput) ([]pulumi.Resource, error) {
+	gcpCfg := config.New(ctx, "gcp")
+	region := gcpCfg.Require("region")
+
 	firestoreAccess, err := iam.GrantFirestoreAccess(ctx, a.provider, apiSA, "apiFirestoreAccess")
 	if err != nil {
 		return nil, err
@@ -235,10 +263,42 @@ func (a *API) setIAMPermissions(ctx *pulumi.Context, apiSA *serviceaccount.Accou
 		return nil, err
 	}
 
+	tasksEnqueuer, err := iam.GrantProjectRole(ctx, a.provider, apiSA, "apiCloudTasksAccess", "roles/cloudtasks.enqueuer")
+	if err != nil {
+		return nil, err
+	}
+
+	// Allows the API SA to mint OIDC tokens as itself for outbound Cloud Tasks calls.
+	oidcActAs, err := serviceaccount.NewIAMMember(ctx, "apiCloudTasksOidcActAs", &serviceaccount.IAMMemberArgs{
+		ServiceAccountId: apiSA.Name,
+		Role:             pulumi.String("roles/iam.serviceAccountUser"),
+		Member:           iam.ServiceAccountMember(apiSA.Email),
+	},
+		pulumi.Provider(a.provider),
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	workerInvoker, err := gcpcloudrun.NewIamMember(ctx, "apiWorkerInvoker", &gcpcloudrun.IamMemberArgs{
+		Service:  workerServiceName,
+		Location: pulumi.String(region),
+		Role:     pulumi.String("roles/run.invoker"),
+		Member:   iam.ServiceAccountMember(apiSA.Email),
+	},
+		pulumi.Provider(a.provider),
+	)
+	if err != nil {
+		return nil, err
+	}
+
 	return []pulumi.Resource{
 		firestoreAccess,
 		secretAccess,
 		kmsAccess,
 		vertexAccess,
+		tasksEnqueuer,
+		oidcActAs,
+		workerInvoker,
 	}, nil
 }

@@ -1,6 +1,7 @@
 package job
 
 import (
+	"github.com/GregMSThompson/finance-backend/infra/cloudtasks"
 	infraDocker "github.com/GregMSThompson/finance-backend/infra/docker"
 	"github.com/GregMSThompson/finance-backend/infra/iam"
 	pulumidocker "github.com/pulumi/pulumi-docker/sdk/v4/go/docker"
@@ -40,7 +41,7 @@ func (a *AlertEvaluator) Deploy(ctx *pulumi.Context, workerServiceURL, workerAud
 		return err
 	}
 
-	queue, err := createCloudTasksQueue(ctx, a.provider, "alertDeliveryQueue", "alert-delivery")
+	queue, err := cloudtasks.CreateQueue(ctx, a.provider, "alertDeliveryQueue", "alert-delivery")
 	if err != nil {
 		return err
 	}
