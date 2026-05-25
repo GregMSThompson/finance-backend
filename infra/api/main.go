@@ -8,7 +8,6 @@ import (
 	"github.com/GregMSThompson/finance-backend/infra/cloudtasks"
 	"github.com/GregMSThompson/finance-backend/infra/docker"
 	"github.com/GregMSThompson/finance-backend/infra/provider"
-	"github.com/GregMSThompson/finance-backend/infra/secret"
 )
 
 func main() {
@@ -18,8 +17,7 @@ func main() {
 			return err
 		}
 		dockerManager := docker.New(prov)
-		secretManager := secret.New(prov)
-		api := cloudrun.NewAPI(prov, dockerManager, secretManager)
+		api := cloudrun.NewAPI(prov, dockerManager)
 
 		sharedCfg := config.New(ctx, "shared")
 		sharedRef, err := pulumi.NewStackReference(ctx, "shared", &pulumi.StackReferenceArgs{
@@ -35,6 +33,21 @@ func main() {
 			}
 			return v.(string)
 		}).(pulumi.StringOutput)
+
+		secrets := cloudrun.SecretRefs{
+			PlaidClientIDName: sharedRef.GetOutput(pulumi.String("plaidClientIdSecretName")).ApplyT(func(v any) string {
+				if v == nil {
+					return ""
+				}
+				return v.(string)
+			}).(pulumi.StringOutput),
+			PlaidSecretName: sharedRef.GetOutput(pulumi.String("plaidSecretSecretName")).ApplyT(func(v any) string {
+				if v == nil {
+					return ""
+				}
+				return v.(string)
+			}).(pulumi.StringOutput),
+		}
 
 		workerCfg := config.New(ctx, "worker")
 		workerRef, err := pulumi.NewStackReference(ctx, "worker", &pulumi.StackReferenceArgs{
@@ -75,7 +88,7 @@ func main() {
 			return err
 		}
 
-		apiSA, err := api.Deploy(ctx, keyID, jobsQueue, worker, repo)
+		apiSA, err := api.Deploy(ctx, keyID, jobsQueue, worker, secrets, repo)
 		if err != nil {
 			return err
 		}

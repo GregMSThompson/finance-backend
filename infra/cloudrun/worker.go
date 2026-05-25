@@ -10,6 +10,7 @@ import (
 	pulumidocker "github.com/pulumi/pulumi-docker/sdk/v4/go/docker"
 	"github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp"
 	gcpcloudrun "github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/cloudrun"
+	gcpkms "github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/kms"
 	"github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/serviceaccount"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi/config"
@@ -39,7 +40,9 @@ func NewWorker(prov *gcp.Provider, dockerManager *infraDocker.Manager, secretMan
 }
 
 // Deploy builds and deploys the worker Cloud Run service and its required IAM.
-func (w *Worker) Deploy(ctx *pulumi.Context, res ...pulumi.Resource) (*WorkerDeployment, error) {
+// keyID and sr are read from the shared stack so the worker can decrypt KMS-wrapped
+// access tokens and read Plaid credentials from Secret Manager.
+func (w *Worker) Deploy(ctx *pulumi.Context, keyID pulumi.StringInput, sr SecretRefs, res ...pulumi.Resource) (*WorkerDeployment, error) {
 	img, err := w.dockerManager.BuildImage(ctx, "worker", res...)
 	if err != nil {
 		return nil, err
@@ -50,12 +53,12 @@ func (w *Worker) Deploy(ctx *pulumi.Context, res ...pulumi.Resource) (*WorkerDep
 		return nil, err
 	}
 
-	iamResources, err := w.setIAMPermissions(ctx, workerSA)
+	iamResources, err := w.setIAMPermissions(ctx, workerSA, keyID)
 	if err != nil {
 		return nil, err
 	}
 
-	svc, err := w.createService(ctx, img, workerSA, iamResources...)
+	svc, err := w.createService(ctx, img, workerSA, keyID, sr, iamResources...)
 	if err != nil {
 		return nil, err
 	}
@@ -74,10 +77,11 @@ func (w *Worker) Deploy(ctx *pulumi.Context, res ...pulumi.Resource) (*WorkerDep
 	}, exportServiceURL(ctx, "workerServiceURL", svc)
 }
 
-func (w *Worker) createService(ctx *pulumi.Context, img *pulumidocker.Image, workerSA *serviceaccount.Account, res ...pulumi.Resource) (*gcpcloudrun.Service, error) {
+func (w *Worker) createService(ctx *pulumi.Context, img *pulumidocker.Image, workerSA *serviceaccount.Account, keyID pulumi.StringInput, sr SecretRefs, res ...pulumi.Resource) (*gcpcloudrun.Service, error) {
 	gcpCfg := config.New(ctx, "gcp")
 	crCfg := config.New(ctx, "cloudrun")
 	appCfg := config.New(ctx, "app")
+	plaidCfg := config.New(ctx, "plaid")
 
 	projectID := gcpCfg.Require("project")
 	region := gcpCfg.Require("region")
@@ -91,6 +95,7 @@ func (w *Worker) createService(ctx *pulumi.Context, img *pulumidocker.Image, wor
 	appEnv := ctx.Stack()
 	workerAudience := appCfg.Require("workerAudience")
 	workerTestAPIKeyEnabled := appCfg.GetBool("workerTestApiKeyEnabled")
+	plaidEnv := plaidCfg.Require("environment")
 
 	envs := gcpcloudrun.ServiceTemplateSpecContainerEnvArray{
 		&gcpcloudrun.ServiceTemplateSpecContainerEnvArgs{
@@ -116,6 +121,32 @@ func (w *Worker) createService(ctx *pulumi.Context, img *pulumidocker.Image, wor
 		&gcpcloudrun.ServiceTemplateSpecContainerEnvArgs{
 			Name:  pulumi.String("WORKERTESTAPIKEYENABLED"),
 			Value: pulumi.String(strconv.FormatBool(workerTestAPIKeyEnabled)),
+		},
+		&gcpcloudrun.ServiceTemplateSpecContainerEnvArgs{
+			Name:  pulumi.String("KMSKEYNAME"),
+			Value: keyID,
+		},
+		&gcpcloudrun.ServiceTemplateSpecContainerEnvArgs{
+			Name:  pulumi.String("PLAIDENVIRONMENT"),
+			Value: pulumi.String(plaidEnv),
+		},
+		&gcpcloudrun.ServiceTemplateSpecContainerEnvArgs{
+			Name: pulumi.String("PLAIDCLIENTID"),
+			ValueFrom: &gcpcloudrun.ServiceTemplateSpecContainerEnvValueFromArgs{
+				SecretKeyRef: &gcpcloudrun.ServiceTemplateSpecContainerEnvValueFromSecretKeyRefArgs{
+					Name: sr.PlaidClientIDName,
+					Key:  pulumi.String("latest"),
+				},
+			},
+		},
+		&gcpcloudrun.ServiceTemplateSpecContainerEnvArgs{
+			Name: pulumi.String("PLAIDSECRET"),
+			ValueFrom: &gcpcloudrun.ServiceTemplateSpecContainerEnvValueFromArgs{
+				SecretKeyRef: &gcpcloudrun.ServiceTemplateSpecContainerEnvValueFromSecretKeyRefArgs{
+					Name: sr.PlaidSecretName,
+					Key:  pulumi.String("latest"),
+				},
+			},
 		},
 	}
 
@@ -181,7 +212,7 @@ func (w *Worker) createService(ctx *pulumi.Context, img *pulumidocker.Image, wor
 	)
 }
 
-func (w *Worker) setIAMPermissions(ctx *pulumi.Context, workerSA *serviceaccount.Account) ([]pulumi.Resource, error) {
+func (w *Worker) setIAMPermissions(ctx *pulumi.Context, workerSA *serviceaccount.Account, keyID pulumi.StringInput) ([]pulumi.Resource, error) {
 	firestoreAccess, err := iam.GrantFirestoreAccess(ctx, w.provider, workerSA, "workerFirestoreAccess")
 	if err != nil {
 		return nil, err
@@ -197,10 +228,22 @@ func (w *Worker) setIAMPermissions(ctx *pulumi.Context, workerSA *serviceaccount
 		return nil, err
 	}
 
+	kmsAccess, err := gcpkms.NewCryptoKeyIAMMember(ctx, "workerKMSKeyAccess", &gcpkms.CryptoKeyIAMMemberArgs{
+		CryptoKeyId: keyID,
+		Role:        pulumi.String("roles/cloudkms.cryptoKeyEncrypterDecrypter"),
+		Member:      iam.ServiceAccountMember(workerSA.Email),
+	},
+		pulumi.Provider(w.provider),
+	)
+	if err != nil {
+		return nil, err
+	}
+
 	return []pulumi.Resource{
 		firestoreAccess,
 		secretAccess,
 		firebaseMessagingAccess,
+		kmsAccess,
 	}, nil
 }
 

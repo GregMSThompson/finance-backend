@@ -2,6 +2,7 @@ package main
 
 import (
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
+	"github.com/pulumi/pulumi/sdk/v3/go/pulumi/config"
 
 	"github.com/GregMSThompson/finance-backend/infra/cloudrun"
 	"github.com/GregMSThompson/finance-backend/infra/cloudscheduler"
@@ -30,7 +31,31 @@ func main() {
 			return err
 		}
 
-		if _, err := secret.SetupSecretManager(ctx, prov); err != nil {
+		secretService, err := secret.SetupSecretManager(ctx, prov)
+		if err != nil {
+			return err
+		}
+		secretManager := secret.New(prov)
+
+		plaidCfg := config.New(ctx, "plaid")
+		plaidClientIDName, err := secretManager.CreateSecret(
+			ctx,
+			"plaidClientIdSecret",
+			"plaidClientId",
+			plaidCfg.RequireSecret("clientId"),
+			secretService,
+		)
+		if err != nil {
+			return err
+		}
+		plaidSecretName, err := secretManager.CreateSecret(
+			ctx,
+			"plaidSecretSecret",
+			"plaidSecret",
+			plaidCfg.RequireSecret("secret"),
+			secretService,
+		)
+		if err != nil {
 			return err
 		}
 
@@ -78,6 +103,8 @@ func main() {
 
 		ctx.Export("identityPlatformName", ident.Name)
 		ctx.Export("kmsKeyId", keyID)
+		ctx.Export("plaidClientIdSecretName", plaidClientIDName)
+		ctx.Export("plaidSecretSecretName", plaidSecretName)
 
 		return nil
 	})

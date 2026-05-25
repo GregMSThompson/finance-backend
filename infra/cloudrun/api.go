@@ -5,7 +5,6 @@ import (
 
 	infraDocker "github.com/GregMSThompson/finance-backend/infra/docker"
 	"github.com/GregMSThompson/finance-backend/infra/iam"
-	"github.com/GregMSThompson/finance-backend/infra/secret"
 	pulumidocker "github.com/pulumi/pulumi-docker/sdk/v4/go/docker"
 	"github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp"
 	gcpcloudrun "github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/cloudrun"
@@ -23,8 +22,8 @@ type WorkerRefs struct {
 	ServiceName pulumi.StringInput
 }
 
-// secretRefs contains the Secret Manager references injected into the API service.
-type secretRefs struct {
+// SecretRefs contains the Secret Manager references injected into the API service.
+type SecretRefs struct {
 	PlaidClientIDName pulumi.StringInput
 	PlaidSecretName   pulumi.StringInput
 }
@@ -32,27 +31,21 @@ type secretRefs struct {
 type API struct {
 	provider      *gcp.Provider
 	dockerManager *infraDocker.Manager
-	secretManager *secret.Manager
 }
 
 // NewAPI creates an API Cloud Run deployer bound to a provider.
-func NewAPI(prov *gcp.Provider, dockerManager *infraDocker.Manager, secretManager *secret.Manager) *API {
+func NewAPI(prov *gcp.Provider, dockerManager *infraDocker.Manager) *API {
 	return &API{
 		provider:      prov,
 		dockerManager: dockerManager,
-		secretManager: secretManager,
 	}
 }
 
 // Deploy builds and deploys the API Cloud Run service and its required IAM.
-// jobsQueue and worker are wired in so the API can enqueue jobs on the worker.
-func (a *API) Deploy(ctx *pulumi.Context, keyID pulumi.StringInput, jobsQueue *cloudtasks.Queue, worker WorkerRefs, res ...pulumi.Resource) (*serviceaccount.Account, error) {
+// jobsQueue, worker, and secrets are wired in so the API can enqueue jobs on the
+// worker and read Plaid credentials from secrets owned by the shared stack.
+func (a *API) Deploy(ctx *pulumi.Context, keyID pulumi.StringInput, jobsQueue *cloudtasks.Queue, worker WorkerRefs, sr SecretRefs, res ...pulumi.Resource) (*serviceaccount.Account, error) {
 	img, err := a.dockerManager.BuildImage(ctx, "api", res...)
-	if err != nil {
-		return nil, err
-	}
-
-	sr, err := a.createSecrets(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -79,26 +72,7 @@ func (a *API) Deploy(ctx *pulumi.Context, keyID pulumi.StringInput, jobsQueue *c
 	return apiSA, nil
 }
 
-func (a *API) createSecrets(ctx *pulumi.Context) (secretRefs, error) {
-	plaidCfg := config.New(ctx, "plaid")
-
-	plaidClientID, err := a.secretManager.CreateSecret(ctx, "plaidClientIdSecret", "plaidClientId", plaidCfg.RequireSecret("clientId"))
-	if err != nil {
-		return secretRefs{}, err
-	}
-
-	plaidSecret, err := a.secretManager.CreateSecret(ctx, "plaidSecretSecret", "plaidSecret", plaidCfg.RequireSecret("secret"))
-	if err != nil {
-		return secretRefs{}, err
-	}
-
-	return secretRefs{
-		PlaidClientIDName: plaidClientID,
-		PlaidSecretName:   plaidSecret,
-	}, nil
-}
-
-func (a *API) createService(ctx *pulumi.Context, img *pulumidocker.Image, apiSA *serviceaccount.Account, sr secretRefs, keyID pulumi.StringInput, jobsQueue *cloudtasks.Queue, worker WorkerRefs, res ...pulumi.Resource) (*gcpcloudrun.Service, error) {
+func (a *API) createService(ctx *pulumi.Context, img *pulumidocker.Image, apiSA *serviceaccount.Account, sr SecretRefs, keyID pulumi.StringInput, jobsQueue *cloudtasks.Queue, worker WorkerRefs, res ...pulumi.Resource) (*gcpcloudrun.Service, error) {
 	gcpCfg := config.New(ctx, "gcp")
 	crCfg := config.New(ctx, "cloudrun")
 	plaidCfg := config.New(ctx, "plaid")
