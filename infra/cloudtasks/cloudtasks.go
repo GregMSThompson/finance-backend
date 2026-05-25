@@ -8,6 +8,13 @@ import (
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi/config"
 )
 
+const (
+	// JobsQueueName is the Cloud Tasks queue used by the API to dispatch worker jobs.
+	JobsQueueName = "jobs"
+	// AlertDeliveryQueueName is the Cloud Tasks queue used by the alert evaluator to dispatch deliveries.
+	AlertDeliveryQueueName = "alert-delivery"
+)
+
 // SetupCloudTasks enables the Cloud Tasks API for the current project.
 func SetupCloudTasks(ctx *pulumi.Context, prov *gcp.Provider) (*projects.Service, error) {
 	return projects.NewService(ctx, "cloudTasksService", &projects.ServiceArgs{

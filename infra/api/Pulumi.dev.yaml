@@ -2,6 +2,7 @@ config:
   gcp:project: finance-app-dev-491520
   gcp:region: us-central1
   shared:stack: gregmsthompson/finance-shared/dev
+  worker:stack: gregmsthompson/finance-worker/dev
   cloudrun:minScale: "0"
   cloudrun:maxScale: "1"
   cloudrun:cpu: "1"
@@ -9,10 +10,6 @@ config:
   cloudrun:concurrency: "80"
   cloudrun:logLevel: debug
   cloudrun:timeout: "60"
-  plaid:secret:
-    secure: AAABAPmHTUTvDpDkzZqoYbXiZvS9WJG73h+Rzh9Up18XY/mFLvatglVvNyltpgTOF3FhQ0AnUuJ21K0SRkg=
-  plaid:clientId:
-    secure: AAABACiUixuf/Fw7Svw1+H8dGWqIZHiP6bPpoMFWb7WcrXe+LQP3hbSNgPQCFrnvTHbYfMF1KCg=
   plaid:environment: sandbox
   vertex:model: gemini-2.5-flash-lite
   app:aiTtl: 168h

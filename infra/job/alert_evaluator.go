@@ -1,7 +1,7 @@
 package job
 
 import (
-	"github.com/GregMSThompson/finance-backend/infra/cloudtasks"
+	infracloudtasks "github.com/GregMSThompson/finance-backend/infra/cloudtasks"
 	infraDocker "github.com/GregMSThompson/finance-backend/infra/docker"
 	"github.com/GregMSThompson/finance-backend/infra/iam"
 	pulumidocker "github.com/pulumi/pulumi-docker/sdk/v4/go/docker"
@@ -9,6 +9,7 @@ import (
 	gcpcloudrun "github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/cloudrun"
 	"github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/cloudrunv2"
 	"github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/cloudscheduler"
+	gcpcloudtasks "github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/cloudtasks"
 	"github.com/pulumi/pulumi-gcp/sdk/v9/go/gcp/serviceaccount"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi/config"
@@ -41,7 +42,7 @@ func (a *AlertEvaluator) Deploy(ctx *pulumi.Context, workerServiceURL, workerAud
 		return err
 	}
 
-	queue, err := cloudtasks.CreateQueue(ctx, a.provider, "alertDeliveryQueue", "alert-delivery")
+	queue, err := infracloudtasks.CreateQueue(ctx, a.provider, "alertDeliveryQueue", infracloudtasks.AlertDeliveryQueueName)
 	if err != nil {
 		return err
 	}
@@ -77,14 +78,13 @@ func (a *AlertEvaluator) Deploy(ctx *pulumi.Context, workerServiceURL, workerAud
 	return nil
 }
 
-func (a *AlertEvaluator) createJob(ctx *pulumi.Context, img *pulumidocker.Image, evaluatorSA *serviceaccount.Account, workerServiceURL, workerAudience pulumi.StringOutput, res ...pulumi.Resource) (*cloudrunv2.Job, error) {
+func (a *AlertEvaluator) createJob(ctx *pulumi.Context, img *pulumidocker.Image, evaluatorSA *serviceaccount.Account, workerServiceURL, workerAudience pulumi.StringOutput, queue *gcpcloudtasks.Queue) (*cloudrunv2.Job, error) {
 	gcpCfg := config.New(ctx, "gcp")
 	jobCfg := config.New(ctx, "job")
 
 	projectID := gcpCfg.Require("project")
 	region := gcpCfg.Require("region")
 	logLevel := jobCfg.Require("logLevel")
-	workerQueue := jobCfg.Require("cloudTasksQueue")
 
 	return cloudrunv2.NewJob(ctx, "alertEvaluatorJob", &cloudrunv2.JobArgs{
 		Name:     pulumi.String("alert-evaluator"),
@@ -110,7 +110,7 @@ func (a *AlertEvaluator) createJob(ctx *pulumi.Context, img *pulumidocker.Image,
 							},
 							&cloudrunv2.JobTemplateTemplateContainerEnvArgs{
 								Name:  pulumi.String("CLOUDTASKSQUEUE"),
-								Value: pulumi.String(workerQueue),
+								Value: queue.Name,
 							},
 							&cloudrunv2.JobTemplateTemplateContainerEnvArgs{
 								Name:  pulumi.String("WORKERURL"),
@@ -131,7 +131,7 @@ func (a *AlertEvaluator) createJob(ctx *pulumi.Context, img *pulumidocker.Image,
 		},
 	},
 		pulumi.Provider(a.provider),
-		pulumi.DependsOn(res),
+		pulumi.DependsOn([]pulumi.Resource{queue}),
 	)
 }
 

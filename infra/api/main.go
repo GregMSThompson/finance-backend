@@ -58,7 +58,7 @@ func main() {
 		}
 
 		worker := cloudrun.WorkerRefs{
-			ServiceURL:  workerRef.GetOutput(pulumi.String("workerServiceURL")).ApplyT(func(v any) string {
+			ServiceURL: workerRef.GetOutput(pulumi.String("workerServiceURL")).ApplyT(func(v any) string {
 				if v == nil {
 					return ""
 				}
@@ -78,7 +78,7 @@ func main() {
 			}).(pulumi.StringOutput),
 		}
 
-		jobsQueue, err := cloudtasks.CreateQueue(ctx, prov, "jobsQueue", "jobs")
+		jobsQueue, err := cloudtasks.CreateQueue(ctx, prov, "jobsQueue", cloudtasks.JobsQueueName)
 		if err != nil {
 			return err
 		}
