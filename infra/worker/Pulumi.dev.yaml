@@ -1,6 +1,7 @@
 config:
   gcp:project: finance-app-dev-491520
   gcp:region: us-central1
+  shared:stack: gregmsthompson/finance-shared/dev
   cloudrun:minScale: "0"
   cloudrun:maxScale: "1"
   cloudrun:cpu: "1"
@@ -13,3 +14,4 @@ config:
   app:workerTestApiKeyEnabled: "false"
   app:workerTestApiKey:
     secure: AAABACMUlNQ8PVf0IFM5VRE06TG0yKYWBIJdzwJlpnZttvL5EZ7ufX5CLuzl4Rs5dbweWA0VB5tnxFXle8rVuxZoqZA=
+  plaid:environment: sandbox

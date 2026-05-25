@@ -1,3 +1,7 @@
 config:
   gcp:project: finance-app-dev-491520
   gcp:region: us-central1
+  plaid:clientId:
+    secure: AAABACTqKYrhcYSH/MtoaON0IULPrgz9nbskvuFbmy+Qt0jdOyJScxceio+k5rZoM4w3k6/E4Gc=
+  plaid:secret:
+    secure: AAABAJ4QFf05ZO0K854ECnzjvdWR94isFryRPgKCRVc5duMHuSPn8ntVTs+9HLNpyOoi2+21GEAq0orF7lo=
