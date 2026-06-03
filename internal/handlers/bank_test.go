@@ -3,6 +3,7 @@ package handlers
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -17,13 +18,16 @@ import (
 
 type fakeBankSvc struct {
 	banks []*models.Bank
+	jobID string
 	err   error
 }
 
 func (f *fakeBankSvc) ListBanks(ctx context.Context, uid string) ([]*models.Bank, error) {
 	return f.banks, f.err
 }
-func (f *fakeBankSvc) DeleteBank(ctx context.Context, uid, bankID string) error { return f.err }
+func (f *fakeBankSvc) DeleteBank(ctx context.Context, uid, bankID string) (string, error) {
+	return f.jobID, f.err
+}
 
 func newTestBankHandler(p *fakePlaidSvc, b *fakeBankSvc) *bankHandlers {
 	log := slog.New(logger.NewTestHandler(slog.LevelInfo))
@@ -93,6 +97,29 @@ func TestListBanksHandlerServiceError(t *testing.T) {
 
 	if !resp.handleErrorCalled {
 		t.Fatalf("expected HandleError to be called")
+	}
+}
+
+func TestDeleteBankHandler(t *testing.T) {
+	p := &fakePlaidSvc{}
+	b := &fakeBankSvc{jobID: "job-del"}
+	h := newTestBankHandler(p, b)
+
+	req := httptest.NewRequest(http.MethodDelete, "/banks/b1", nil).WithContext(ctxWithUID(context.Background()))
+	rr := httptest.NewRecorder()
+
+	h.DeleteBank(rr, req)
+
+	if rr.Code != http.StatusAccepted {
+		t.Fatalf("status = %d, body=%s", rr.Code, rr.Body.String())
+	}
+	var resp struct {
+		Success bool
+		Data    map[string]string
+	}
+	_ = json.Unmarshal(rr.Body.Bytes(), &resp)
+	if resp.Data["jobId"] != "job-del" {
+		t.Fatalf("unexpected response: %+v", resp)
 	}
 }
 

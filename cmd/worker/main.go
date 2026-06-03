@@ -34,6 +34,7 @@ func main() {
 	// Worker only consumes jobs; pass nil enqueuer since Submit is not called here.
 	jobSvc := services.NewJobService(jobStore, nil)
 	plaidSvc := services.NewPlaidService(bs.PlaidAdapter, bankStore, transactionStore, jobSvc)
+	bankSvc := services.NewBankService(bankStore, transactionStore, jobSvc)
 
 	deps := &taskhandlers.Deps{
 		Log:               bs.Log,
@@ -45,6 +46,7 @@ func main() {
 		NotificationSvc:   notificationSvc,
 		JobSvc:            jobSvc,
 		PlaidSvc:          plaidSvc,
+		BankSvc:           bankSvc,
 	}
 
 	r := router.NewWorkerRouter(deps)

@@ -11,12 +11,13 @@ import (
 type JobType string
 
 const (
-	JobTypePlaidSync JobType = "plaid.sync"
+	JobTypePlaidSync  JobType = "plaid.sync"
+	JobTypeBankDelete JobType = "bank.delete"
 )
 
 func (t JobType) IsValid() bool {
 	switch t {
-	case JobTypePlaidSync:
+	case JobTypePlaidSync, JobTypeBankDelete:
 		return true
 	}
 	return false

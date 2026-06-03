@@ -2,7 +2,9 @@ package services
 
 import (
 	"context"
+	"encoding/json"
 
+	"github.com/GregMSThompson/finance-backend/internal/dto"
 	"github.com/GregMSThompson/finance-backend/internal/models"
 	"github.com/GregMSThompson/finance-backend/pkg/logger"
 )
@@ -18,14 +20,16 @@ type transactionBSStore interface {
 }
 
 type bankService struct {
-	banks   bankBSStore
-	txs     transactionBSStore
+	banks bankBSStore
+	txs   transactionBSStore
+	jobs  jobSubmitter
 }
 
-func NewBankService(banks bankBSStore, txs transactionBSStore) *bankService {
+func NewBankService(banks bankBSStore, txs transactionBSStore, jobs jobSubmitter) *bankService {
 	return &bankService{
-		banks:   banks,
-		txs:     txs,
+		banks: banks,
+		txs:   txs,
+		jobs:  jobs,
 	}
 }
 
@@ -33,19 +37,31 @@ func (s *bankService) ListBanks(ctx context.Context, uid string) ([]*models.Bank
 	return s.banks.List(ctx, uid)
 }
 
-func (s *bankService) DeleteBank(ctx context.Context, uid, bankID string) error {
-	// TODO: Make deletions retryable or async; partial cleanup is possible mid-flight.
-	if err := s.txs.DeleteByBank(ctx, uid, bankID); err != nil {
-		return err
+// DeleteBank submits a bank-delete job and returns its ID. The actual deletion
+// runs asynchronously on the worker via RunDelete.
+func (s *bankService) DeleteBank(ctx context.Context, uid, bankID string) (string, error) {
+	params, err := json.Marshal(dto.BankDeleteParams{BankID: bankID})
+	if err != nil {
+		return "", err
 	}
-	if err := s.txs.DeleteCursor(ctx, uid, bankID); err != nil {
-		return err
+	return s.jobs.Submit(ctx, uid, models.JobTypeBankDelete, params)
+}
+
+// RunDelete cascades the bank deletion: transactions, cursor, then the bank doc.
+// Each step is idempotent so retries (driven by Cloud Tasks on transient failure)
+// pick up where the previous attempt left off.
+func (s *bankService) RunDelete(ctx context.Context, uid string, params dto.BankDeleteParams) (dto.BankDeleteResult, error) {
+	if err := s.txs.DeleteByBank(ctx, uid, params.BankID); err != nil {
+		return dto.BankDeleteResult{}, err
 	}
-	if err := s.banks.Delete(ctx, uid, bankID); err != nil {
-		return err
+	if err := s.txs.DeleteCursor(ctx, uid, params.BankID); err != nil {
+		return dto.BankDeleteResult{}, err
+	}
+	if err := s.banks.Delete(ctx, uid, params.BankID); err != nil {
+		return dto.BankDeleteResult{}, err
 	}
 
 	log := logger.FromContext(ctx)
-	log.Info("bank deleted", "bank_id", bankID)
-	return nil
+	log.Info("bank deleted", "bank_id", params.BankID)
+	return dto.BankDeleteResult{BankID: params.BankID}, nil
 }

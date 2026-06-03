@@ -15,7 +15,7 @@ import (
 
 type bankService interface {
 	ListBanks(ctx context.Context, uid string) ([]*models.Bank, error)
-	DeleteBank(ctx context.Context, uid, bankID string) error
+	DeleteBank(ctx context.Context, uid, bankID string) (string, error)
 }
 
 type bankHandlers struct {
@@ -73,10 +73,11 @@ func (h *bankHandlers) DeleteBank(w http.ResponseWriter, r *http.Request) {
 	uid := middleware.UID(r.Context())
 	bankID := chi.URLParam(r, "bankId")
 
-	if err := h.BankSvc.DeleteBank(r.Context(), uid, bankID); err != nil {
+	jobID, err := h.BankSvc.DeleteBank(r.Context(), uid, bankID)
+	if err != nil {
 		h.ResponseHandler.HandleError(w, r, err)
 		return
 	}
 
-	h.ResponseHandler.WriteSuccess(w, r, http.StatusOK, nil)
+	h.ResponseHandler.WriteSuccess(w, r, http.StatusAccepted, dto.SubmitJobResponse{JobID: jobID})
 }

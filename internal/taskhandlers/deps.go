@@ -17,4 +17,5 @@ type Deps struct {
 	NotificationSvc   notificationService
 	JobSvc            jobRunner
 	PlaidSvc          plaidRunner
+	BankSvc           bankRunner
 }

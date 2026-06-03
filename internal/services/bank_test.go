@@ -2,14 +2,14 @@ package services
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
-	"log/slog"
 	"reflect"
 	"testing"
 
+	"github.com/GregMSThompson/finance-backend/internal/dto"
 	"github.com/GregMSThompson/finance-backend/internal/models"
 	"github.com/GregMSThompson/finance-backend/pkg/helpers"
-	"github.com/GregMSThompson/finance-backend/pkg/logger"
 )
 
 type bankFakeBankStore struct {
@@ -49,7 +49,7 @@ func (f *bankFakeTxStore) DeleteCursor(ctx context.Context, uid, bankID string) 
 
 func TestBankServiceListBanks(t *testing.T) {
 	expected := []*models.Bank{{BankID: "b1"}, {BankID: "b2"}}
-	svc := NewBankService(&bankFakeBankStore{list: expected}, &bankFakeTxStore{})
+	svc := NewBankService(&bankFakeBankStore{list: expected}, &bankFakeTxStore{}, &fakeJobs{})
 
 	ctx := helpers.TestCtx()
 	got, err := svc.ListBanks(ctx, "uid-1")
@@ -61,14 +61,38 @@ func TestBankServiceListBanks(t *testing.T) {
 	}
 }
 
-func TestBankServiceDeleteBankSuccess(t *testing.T) {
-	banks := &bankFakeBankStore{}
-	txs := &bankFakeTxStore{}
-	svc := NewBankService(banks, txs)
+func TestBankServiceDeleteBankSubmitsJob(t *testing.T) {
+	jobs := &fakeJobs{jobID: "job-del"}
+	svc := NewBankService(&bankFakeBankStore{}, &bankFakeTxStore{}, jobs)
 
 	ctx := helpers.TestCtx()
-	if err := svc.DeleteBank(ctx, "uid-1", "bank-1"); err != nil {
+	got, err := svc.DeleteBank(ctx, "uid-1", "bank-1")
+	if err != nil {
 		t.Fatalf("DeleteBank returned error: %v", err)
+	}
+	if got != "job-del" {
+		t.Fatalf("DeleteBank returned %q, want %q", got, "job-del")
+	}
+	if jobs.gotUID != "uid-1" || jobs.gotTyp != models.JobTypeBankDelete {
+		t.Fatalf("submit called with uid=%q type=%q", jobs.gotUID, jobs.gotTyp)
+	}
+	var params dto.BankDeleteParams
+	if err := json.Unmarshal(jobs.gotRaw, &params); err != nil {
+		t.Fatalf("params not valid json: %v", err)
+	}
+	if params.BankID != "bank-1" {
+		t.Fatalf("expected params.BankID=bank-1, got %q", params.BankID)
+	}
+}
+
+func TestBankServiceRunDeleteSuccess(t *testing.T) {
+	banks := &bankFakeBankStore{}
+	txs := &bankFakeTxStore{}
+	svc := NewBankService(banks, txs, &fakeJobs{})
+
+	ctx := helpers.TestCtx()
+	if _, err := svc.RunDelete(ctx, "uid-1", dto.BankDeleteParams{BankID: "bank-1"}); err != nil {
+		t.Fatalf("RunDelete returned error: %v", err)
 	}
 	if len(txs.calls) != 2 {
 		t.Fatalf("expected 2 tx calls, got %d", len(txs.calls))
@@ -81,15 +105,15 @@ func TestBankServiceDeleteBankSuccess(t *testing.T) {
 	}
 }
 
-func TestBankServiceDeleteBankStopsOnDeleteByBankError(t *testing.T) {
+func TestBankServiceRunDeleteStopsOnDeleteByBankError(t *testing.T) {
 	expectedErr := errors.New("delete txs failed")
 	banks := &bankFakeBankStore{}
 	txs := &bankFakeTxStore{deleteByBankErr: expectedErr}
-	svc := NewBankService(banks, txs)
+	svc := NewBankService(banks, txs, &fakeJobs{})
 
 	ctx := helpers.TestCtx()
-	if err := svc.DeleteBank(ctx, "uid-1", "bank-1"); err != expectedErr {
-		t.Fatalf("DeleteBank error = %v, want %v", err, expectedErr)
+	if _, err := svc.RunDelete(ctx, "uid-1", dto.BankDeleteParams{BankID: "bank-1"}); err != expectedErr {
+		t.Fatalf("RunDelete error = %v, want %v", err, expectedErr)
 	}
 	if len(txs.calls) != 1 || txs.calls[0] != "txs:uid-1:bank-1" {
 		t.Fatalf("unexpected tx calls: %#v", txs.calls)
@@ -99,15 +123,15 @@ func TestBankServiceDeleteBankStopsOnDeleteByBankError(t *testing.T) {
 	}
 }
 
-func TestBankServiceDeleteBankStopsOnDeleteCursorError(t *testing.T) {
+func TestBankServiceRunDeleteStopsOnDeleteCursorError(t *testing.T) {
 	expectedErr := errors.New("delete cursor failed")
 	banks := &bankFakeBankStore{}
 	txs := &bankFakeTxStore{deleteCursorErr: expectedErr}
-	svc := NewBankService(banks, txs)
+	svc := NewBankService(banks, txs, &fakeJobs{})
 
 	ctx := helpers.TestCtx()
-	if err := svc.DeleteBank(ctx, "uid-1", "bank-1"); err != expectedErr {
-		t.Fatalf("DeleteBank error = %v, want %v", err, expectedErr)
+	if _, err := svc.RunDelete(ctx, "uid-1", dto.BankDeleteParams{BankID: "bank-1"}); err != expectedErr {
+		t.Fatalf("RunDelete error = %v, want %v", err, expectedErr)
 	}
 	if len(txs.calls) != 2 {
 		t.Fatalf("expected 2 tx calls, got %d", len(txs.calls))
@@ -118,8 +142,4 @@ func TestBankServiceDeleteBankStopsOnDeleteCursorError(t *testing.T) {
 	if len(banks.deleted) != 0 {
 		t.Fatalf("expected no bank delete calls, got %#v", banks.deleted)
 	}
-}
-
-func testLogger() *slog.Logger {
-	return slog.New(logger.NewTestHandler(slog.LevelInfo))
 }

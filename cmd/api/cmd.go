@@ -36,8 +36,8 @@ func main() {
 
 	// services
 	userv := services.NewUserService(ustore)
-	bserv := services.NewBankService(bstore, tstore)
 	jobsvc := services.NewJobService(jstore, bs.CloudTasks)
+	bserv := services.NewBankService(bstore, tstore, jobsvc)
 	plserv := services.NewPlaidService(bs.PlaidAdapter, bstore, tstore, jobsvc)
 	anserv := services.NewAnalyticsService(tstore)
 	aiserv := services.NewAIService(bs.VertexAdapter, anserv, astore, cfg.AITTL)
