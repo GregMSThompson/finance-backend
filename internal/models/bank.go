@@ -9,6 +9,7 @@ type Bank struct {
 	Institution      string    `firestore:"institution" json:"institution"`
 	Status           string    `firestore:"status" json:"status"` // e.g. "active", "inactive"
 	PlaidPublicToken string    `firestore:"plaidPublicToken" json:"-"`
+	NeedsReauth      bool      `firestore:"needsReauth,omitempty" json:"needsReauth,omitempty"`
 	CreatedAt        time.Time `firestore:"createdAt" json:"createdAt"`
 	UpdatedAt        time.Time `firestore:"updatedAt" json:"updatedAt"`
 }
