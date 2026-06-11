@@ -43,6 +43,36 @@ func (a *Adapter) CreateLinkToken(ctx context.Context, uid string) (string, erro
 	return resp.GetLinkToken(), nil
 }
 
+// PlaidWebhookKey is a minimal projection of the JWK Plaid returns from
+// WebhookVerificationKeyGet, just enough to build an ECDSA P-256 public key.
+type PlaidWebhookKey struct {
+	Kid string
+	Alg string
+	Kty string
+	Crv string
+	X   string
+	Y   string
+}
+
+// WebhookVerificationKeyGet fetches the Plaid-hosted public key for the given
+// kid. Used by the Verifier to validate inbound webhook signatures.
+func (a *Adapter) WebhookVerificationKeyGet(ctx context.Context, kid string) (PlaidWebhookKey, error) {
+	req := plaid.NewWebhookVerificationKeyGetRequest(kid)
+	resp, _, err := a.client.PlaidApi.WebhookVerificationKeyGet(ctx).WebhookVerificationKeyGetRequest(*req).Execute()
+	if err != nil {
+		return PlaidWebhookKey{}, errs.NewExternalServiceError("plaid", "failed to fetch webhook verification key", IsTransientError(err), err)
+	}
+	key := resp.GetKey()
+	return PlaidWebhookKey{
+		Kid: key.GetKid(),
+		Alg: key.GetAlg(),
+		Kty: key.GetKty(),
+		Crv: key.GetCrv(),
+		X:   key.GetX(),
+		Y:   key.GetY(),
+	}, nil
+}
+
 func (a *Adapter) ExchangePublicToken(ctx context.Context, publicToken string) (itemID, accessToken string, err error) {
 	req := plaid.NewItemPublicTokenExchangeRequest(publicToken)
 	resp, _, err := a.client.PlaidApi.ItemPublicTokenExchange(ctx).ItemPublicTokenExchangeRequest(*req).Execute()
