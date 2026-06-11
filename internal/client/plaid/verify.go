@@ -26,18 +26,26 @@ type keyFetcher interface {
 	WebhookVerificationKeyGet(ctx context.Context, kid string) (PlaidWebhookKey, error)
 }
 
+// cachedKey holds a parsed public key alongside Plaid's expired_at timestamp
+// so the cache can self-invalidate when a key reaches its retirement time.
+type cachedKey struct {
+	key       *ecdsa.PublicKey
+	expiredAt *int64 // unix seconds; nil means the key was active at fetch time
+}
+
 // Verifier validates the Plaid-Verification JWS attached to every webhook.
-// It caches public keys per-kid since Plaid rotates them rarely.
+// It caches public keys per-kid since Plaid rotates them rarely; expired keys
+// are evicted and refetched on next access.
 type Verifier struct {
 	fetcher keyFetcher
-	keys    map[string]*ecdsa.PublicKey
+	keys    map[string]cachedKey
 	mu      sync.RWMutex
 }
 
 func NewVerifier(fetcher keyFetcher) *Verifier {
 	return &Verifier{
 		fetcher: fetcher,
-		keys:    make(map[string]*ecdsa.PublicKey),
+		keys:    make(map[string]cachedKey),
 	}
 }
 
@@ -89,27 +97,35 @@ func (v *Verifier) Verify(ctx context.Context, verificationHeader string, body [
 	return nil
 }
 
-// getKey returns the cached *ecdsa.PublicKey for kid, fetching and caching it
-// on miss. Keys are stable for long periods so we don't bother with TTL eviction.
+// getKey returns the cached *ecdsa.PublicKey for kid, fetching and caching on
+// miss. Cached entries whose expired_at has passed are evicted and refetched
+// so we always end up using whatever Plaid currently serves for that kid.
 func (v *Verifier) getKey(ctx context.Context, kid string) (*ecdsa.PublicKey, error) {
+	now := time.Now().Unix()
+
 	v.mu.RLock()
-	key, ok := v.keys[kid]
+	cached, ok := v.keys[kid]
 	v.mu.RUnlock()
 	if ok {
-		return key, nil
+		if cached.expiredAt == nil || *cached.expiredAt > now {
+			return cached.key, nil
+		}
+		v.mu.Lock()
+		delete(v.keys, kid)
+		v.mu.Unlock()
 	}
 
 	jwk, err := v.fetcher.WebhookVerificationKeyGet(ctx, kid)
 	if err != nil {
 		return nil, err
 	}
-	key, err = buildPublicKey(jwk)
+	key, err := buildPublicKey(jwk)
 	if err != nil {
 		return nil, err
 	}
 
 	v.mu.Lock()
-	v.keys[kid] = key
+	v.keys[kid] = cachedKey{key: key, expiredAt: jwk.ExpiredAt}
 	v.mu.Unlock()
 	return key, nil
 }

@@ -44,14 +44,16 @@ func (a *Adapter) CreateLinkToken(ctx context.Context, uid string) (string, erro
 }
 
 // PlaidWebhookKey is a minimal projection of the JWK Plaid returns from
-// WebhookVerificationKeyGet, just enough to build an ECDSA P-256 public key.
+// WebhookVerificationKeyGet, just enough to build an ECDSA P-256 public key
+// and reason about expiration. ExpiredAt is a Unix timestamp; nil means active.
 type PlaidWebhookKey struct {
-	Kid string
-	Alg string
-	Kty string
-	Crv string
-	X   string
-	Y   string
+	Kid       string
+	Alg       string
+	Kty       string
+	Crv       string
+	X         string
+	Y         string
+	ExpiredAt *int64
 }
 
 // WebhookVerificationKeyGet fetches the Plaid-hosted public key for the given
@@ -63,14 +65,19 @@ func (a *Adapter) WebhookVerificationKeyGet(ctx context.Context, kid string) (Pl
 		return PlaidWebhookKey{}, errs.NewExternalServiceError("plaid", "failed to fetch webhook verification key", IsTransientError(err), err)
 	}
 	key := resp.GetKey()
-	return PlaidWebhookKey{
+	out := PlaidWebhookKey{
 		Kid: key.GetKid(),
 		Alg: key.GetAlg(),
 		Kty: key.GetKty(),
 		Crv: key.GetCrv(),
 		X:   key.GetX(),
 		Y:   key.GetY(),
-	}, nil
+	}
+	if exp, ok := key.GetExpiredAtOk(); ok && exp != nil {
+		v := int64(*exp)
+		out.ExpiredAt = &v
+	}
+	return out, nil
 }
 
 func (a *Adapter) ExchangePublicToken(ctx context.Context, publicToken string) (itemID, accessToken string, err error) {
