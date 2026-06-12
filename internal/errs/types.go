@@ -12,6 +12,12 @@ func IsTransient(err error) bool {
 	return false
 }
 
+// IsNotFound reports whether err is (or wraps) a NotFoundError.
+func IsNotFound(err error) bool {
+	var nf *NotFoundError
+	return errors.As(err, &nf)
+}
+
 type ErrorMessage struct {
 	Message string
 	Cause   error // wrapped original error

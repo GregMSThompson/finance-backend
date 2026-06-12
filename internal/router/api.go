@@ -11,31 +11,43 @@ import (
 func NewAPIRouter(deps *handlers.Deps) chi.Router {
 	r := chi.NewRouter()
 
-	// middleware
+	// global middleware (applied to every route)
 	loggerMw := middleware.NewLoggerMiddleware(deps.Log)
 	authMw := middleware.NewAuthMiddleware(deps.Firebase, deps.ResponseHandler)
+	plaidWebhookMw := middleware.NewPlaidWebhookMiddleware(deps.PlaidVerifier, deps.ResponseHandler)
 
-	r.Use(chimiddleware.RequestID)   // 1. Generate request_id
-	r.Use(loggerMw.LoggerMiddleware) // 2. Add logger with request context
-	r.Use(authMw.FirebaseAuth)       // 3. Add user context to logger
-	r.Use(chimiddleware.Logger)      // 4. Chi's HTTP logging
-	r.Use(chimiddleware.Recoverer)   // 5. Panic recovery
+	r.Use(chimiddleware.RequestID)
+	r.Use(loggerMw.LoggerMiddleware)
+	r.Use(chimiddleware.Logger)
+	r.Use(chimiddleware.Recoverer)
 
 	// handlers
 	ush := handlers.NewUserHandlers(deps)
 	ph := handlers.NewPlaidHandlers(deps)
+	pwh := handlers.NewPlaidWebhookHandlers(deps)
 	bh := handlers.NewBankHandlers(deps)
 	aih := handlers.NewAIHandlers(deps)
 	dsh := handlers.NewDashboardHandlers(deps)
 	alh := handlers.NewAlertHandlers(deps)
 	jh := handlers.NewJobHandlers(deps)
 
-	r.Mount("/users", ush.UserRoutes())
-	r.Mount("/plaid", ph.PlaidRoutes())
-	r.Mount("/banks", bh.BankRoutes())
-	r.Mount("/ai", aih.AIRoutes())
-	r.Mount("/dashboard", dsh.DashboardRoutes())
-	r.Mount("/alerts", alh.AlertRoutes())
-	r.Mount("/jobs", jh.JobRoutes())
+	// public group — authenticated by Plaid's JWS, not Firebase
+	r.Group(func(r chi.Router) {
+		r.Use(plaidWebhookMw.VerifySignature)
+		r.Mount("/plaid/webhook", pwh.WebhookRoutes())
+	})
+
+	// authenticated group — everything user-facing
+	r.Group(func(r chi.Router) {
+		r.Use(authMw.FirebaseAuth)
+		r.Mount("/users", ush.UserRoutes())
+		r.Mount("/plaid", ph.PlaidRoutes())
+		r.Mount("/banks", bh.BankRoutes())
+		r.Mount("/ai", aih.AIRoutes())
+		r.Mount("/dashboard", dsh.DashboardRoutes())
+		r.Mount("/alerts", alh.AlertRoutes())
+		r.Mount("/jobs", jh.JobRoutes())
+	})
+
 	return r
 }

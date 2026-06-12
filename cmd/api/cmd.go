@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	"github.com/GregMSThompson/finance-backend/internal/bootstrap"
+	plaidclient "github.com/GregMSThompson/finance-backend/internal/client/plaid"
 	"github.com/GregMSThompson/finance-backend/internal/config"
 	"github.com/GregMSThompson/finance-backend/internal/crypto"
 	"github.com/GregMSThompson/finance-backend/internal/handlers"
@@ -38,7 +39,7 @@ func main() {
 	userv := services.NewUserService(ustore)
 	jobsvc := services.NewJobService(jstore, bs.CloudTasks)
 	bserv := services.NewBankService(bstore, tstore, jobsvc)
-	plserv := services.NewPlaidService(bs.PlaidAdapter, bstore, tstore, jobsvc)
+	plserv := services.NewPlaidService(bs.PlaidAdapter, bstore, tstore, jobsvc, bserv)
 	anserv := services.NewAnalyticsService(tstore)
 	aiserv := services.NewAIService(bs.VertexAdapter, anserv, astore, cfg.AITTL)
 	dashsvc := services.NewDashboardService(dstore, anserv)
@@ -47,14 +48,19 @@ func main() {
 	// response handler
 	rh := response.New(bs.Log)
 
+	// plaid webhook verifier — caches JWS public keys per kid
+	plaidVerifier := plaidclient.NewVerifier(bs.PlaidAdapter)
+
 	// dependancies
 	deps := new(handlers.Deps)
 	deps.Log = bs.Log
 	deps.ResponseHandler = rh
 	deps.Firebase = bs.Firebase
+	deps.PlaidVerifier = plaidVerifier
 	deps.UserSvc = userv
 	deps.BankSvc = bserv
 	deps.PlaidSvc = plserv
+	deps.PlaidWebhookSvc = plserv
 	deps.AISvc = aiserv
 	deps.DashboardSvc = dashsvc
 	deps.AlertSvc = alertsvc

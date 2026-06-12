@@ -19,6 +19,23 @@ type PlaidSyncParams struct {
 	BankID *string `json:"bankId,omitempty"`
 }
 
+// PlaidWebhook is the inbound payload Plaid POSTs to /plaid/webhook.
+// Only the fields the service branches on are decoded; everything else is dropped.
+type PlaidWebhook struct {
+	WebhookType string             `json:"webhook_type"`
+	WebhookCode string             `json:"webhook_code"`
+	ItemID      string             `json:"item_id"`
+	Environment string             `json:"environment,omitempty"`
+	Error       *PlaidWebhookError `json:"error,omitempty"`
+}
+
+// PlaidWebhookError is the nested error block on ITEM:ERROR webhooks.
+type PlaidWebhookError struct {
+	ErrorCode    string `json:"error_code"`
+	ErrorMessage string `json:"error_message,omitempty"`
+	ErrorType    string `json:"error_type,omitempty"`
+}
+
 // Metadata from the transaction sync process
 type PlaidServiceSyncResult struct {
 	BanksSynced          int

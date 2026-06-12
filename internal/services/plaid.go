@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/GregMSThompson/finance-backend/internal/dto"
+	"github.com/GregMSThompson/finance-backend/internal/errs"
 	"github.com/GregMSThompson/finance-backend/internal/models"
 	"github.com/GregMSThompson/finance-backend/pkg/helpers"
 	"github.com/GregMSThompson/finance-backend/pkg/logger"
@@ -18,6 +19,14 @@ import (
 type bankPSStore interface {
 	Create(ctx context.Context, uid string, bank *models.Bank) error
 	List(ctx context.Context, uid string) ([]*models.Bank, error)
+	FindItemByBankId(ctx context.Context, bankID string) (string, error)
+	SetNeedsReauth(ctx context.Context, uid, bankID string, needs bool) error
+}
+
+// bankDeleter is the bank service surface used by the webhook handler when
+// Plaid signals USER_PERMISSION_REVOKED. The actual deletion runs as a job.
+type bankDeleter interface {
+	DeleteBank(ctx context.Context, uid, bankID string) (string, error)
 }
 
 // transactionPSStore is the minimal surface required for sync operations.
@@ -44,15 +53,17 @@ type plaidService struct {
 	banks    bankPSStore
 	txs      transactionPSStore
 	jobs     jobSubmitter
+	bankSvc  bankDeleter
 	clockNow func() time.Time
 }
 
-func NewPlaidService(plaid plaidClient, banks bankPSStore, txs transactionPSStore, jobs jobSubmitter) *plaidService {
+func NewPlaidService(plaid plaidClient, banks bankPSStore, txs transactionPSStore, jobs jobSubmitter, bankSvc bankDeleter) *plaidService {
 	return &plaidService{
 		plaid:    plaid,
 		banks:    banks,
 		txs:      txs,
 		jobs:     jobs,
+		bankSvc:  bankSvc,
 		clockNow: time.Now,
 	}
 }
@@ -86,6 +97,52 @@ func (s *plaidService) ExchangePublicToken(ctx context.Context, uid string, req 
 	log := logger.FromContext(ctx)
 	log.Info("bank linked", "bank_id", itemID, "institution", req.InstitutionName)
 	return itemID, nil
+}
+
+// HandleWebhook is called by the webhook handler after signature verification.
+// It resolves the item to its owning uid and dispatches based on the webhook code.
+// Most branches end up submitting a job or updating bank state; the handler
+// always returns 200 to Plaid unless this method returns an error.
+func (s *plaidService) HandleWebhook(ctx context.Context, p dto.PlaidWebhook) error {
+	log := logger.FromContext(ctx)
+
+	uid, err := s.banks.FindItemByBankId(ctx, p.ItemID)
+	if err != nil {
+		if errs.IsNotFound(err) {
+			// Plaid sometimes delivers events for items we've already removed locally.
+			// Ack and move on so Plaid stops retrying.
+			log.Warn("webhook for unknown item", "item_id", p.ItemID)
+			return nil
+		}
+		return err
+	}
+
+	switch fmt.Sprintf("%s:%s", p.WebhookType, p.WebhookCode) {
+	case "TRANSACTIONS:SYNC_UPDATES_AVAILABLE":
+		bankID := p.ItemID
+		_, err := s.SyncTransactions(ctx, uid, dto.SyncTransactionsRequest{BankID: &bankID})
+		return err
+
+	case "ITEM:ERROR":
+		if p.Error != nil && p.Error.ErrorCode == "ITEM_LOGIN_REQUIRED" {
+			return s.banks.SetNeedsReauth(ctx, uid, p.ItemID, true)
+		}
+		return nil
+
+	case "ITEM:PENDING_EXPIRATION", "ITEM:PENDING_DISCONNECT":
+		return s.banks.SetNeedsReauth(ctx, uid, p.ItemID, true)
+
+	case "ITEM:LOGIN_REPAIRED":
+		return s.banks.SetNeedsReauth(ctx, uid, p.ItemID, false)
+
+	case "ITEM:USER_PERMISSION_REVOKED":
+		_, err := s.bankSvc.DeleteBank(ctx, uid, p.ItemID)
+		return err
+
+	default:
+		log.Info("unhandled plaid webhook", "type", p.WebhookType, "code", p.WebhookCode)
+		return nil
+	}
 }
 
 // SyncTransactions submits a sync job and returns its ID. The actual sync runs

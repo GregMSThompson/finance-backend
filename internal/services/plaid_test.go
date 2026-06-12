@@ -48,9 +48,16 @@ func (f *fakePlaid) SyncTransactions(ctx context.Context, bankID string, accessT
 }
 
 type fakeBankStore struct {
-	created []*models.Bank
-	list    []*models.Bank
-	err     error
+	created     []*models.Bank
+	list        []*models.Bank
+	err         error
+	findUID     string
+	findErr     error
+	reauthCalls []struct {
+		uid    string
+		bankID string
+		needs  bool
+	}
 }
 
 func (f *fakeBankStore) Create(ctx context.Context, uid string, bank *models.Bank) error {
@@ -62,6 +69,30 @@ func (f *fakeBankStore) Create(ctx context.Context, uid string, bank *models.Ban
 }
 func (f *fakeBankStore) List(ctx context.Context, uid string) ([]*models.Bank, error) {
 	return f.list, f.err
+}
+func (f *fakeBankStore) FindItemByBankId(ctx context.Context, bankID string) (string, error) {
+	return f.findUID, f.findErr
+}
+func (f *fakeBankStore) SetNeedsReauth(ctx context.Context, uid, bankID string, needs bool) error {
+	f.reauthCalls = append(f.reauthCalls, struct {
+		uid    string
+		bankID string
+		needs  bool
+	}{uid, bankID, needs})
+	return nil
+}
+
+type fakeBankSvc struct {
+	jobID    string
+	err      error
+	gotUID   string
+	gotBank  string
+}
+
+func (f *fakeBankSvc) DeleteBank(ctx context.Context, uid, bankID string) (string, error) {
+	f.gotUID = uid
+	f.gotBank = bankID
+	return f.jobID, f.err
 }
 
 type fakeTxStore struct {
@@ -114,7 +145,7 @@ func TestExchangePublicTokenStoresBank(t *testing.T) {
 	txs := &fakeTxStore{}
 	jobs := &fakeJobs{}
 
-	svc := NewPlaidService(pl, banks, txs, jobs)
+	svc := NewPlaidService(pl, banks, txs, jobs, &fakeBankSvc{})
 
 	ctx := helpers.TestCtx()
 	_, err := svc.ExchangePublicToken(ctx, "uid-1", dto.LinkBankRequest{PublicToken: "public-xyz", InstitutionName: "Chase"})
@@ -139,7 +170,7 @@ func TestSyncTransactionsSubmitsJob(t *testing.T) {
 	txs := &fakeTxStore{}
 	jobs := &fakeJobs{jobID: "job-xyz"}
 
-	svc := NewPlaidService(pl, banks, txs, jobs)
+	svc := NewPlaidService(pl, banks, txs, jobs, &fakeBankSvc{})
 	ctx := helpers.TestCtx()
 	bankID := "item-1"
 	got, err := svc.SyncTransactions(ctx, "uid-1", dto.SyncTransactionsRequest{BankID: &bankID})
@@ -171,7 +202,7 @@ func TestRunSyncUsesCursorAndSetsNewCursor(t *testing.T) {
 	banks := &fakeBankStore{list: []*models.Bank{{BankID: "item-1", PlaidPublicToken: "at-123"}}}
 	txs := &fakeTxStore{cursor: "prev-cursor"}
 
-	svc := NewPlaidService(pl, banks, txs, &fakeJobs{})
+	svc := NewPlaidService(pl, banks, txs, &fakeJobs{}, &fakeBankSvc{})
 	now := time.Unix(1000, 0)
 	svc.clockNow = func() time.Time { return now }
 
@@ -197,7 +228,7 @@ func TestRunSyncPropagatesErrors(t *testing.T) {
 	banks := &fakeBankStore{err: errors.New("boom")}
 	txs := &fakeTxStore{}
 
-	svc := NewPlaidService(pl, banks, txs, &fakeJobs{})
+	svc := NewPlaidService(pl, banks, txs, &fakeJobs{}, &fakeBankSvc{})
 	ctx := helpers.TestCtx()
 	_, err := svc.RunSync(ctx, "uid-1", dto.PlaidSyncParams{})
 	if err == nil {
@@ -210,7 +241,7 @@ func TestExchangePublicTokenPropagatesExchangeError(t *testing.T) {
 	banks := &fakeBankStore{}
 	txs := &fakeTxStore{}
 
-	svc := NewPlaidService(pl, banks, txs, &fakeJobs{})
+	svc := NewPlaidService(pl, banks, txs, &fakeJobs{}, &fakeBankSvc{})
 	ctx := helpers.TestCtx()
 	_, err := svc.ExchangePublicToken(ctx, "uid-1", dto.LinkBankRequest{PublicToken: "public-xyz", InstitutionName: "Chase"})
 	if err == nil {
@@ -226,7 +257,7 @@ func TestExchangePublicTokenPropagatesCreateError(t *testing.T) {
 	banks := &fakeBankStore{err: errors.New("create failed")}
 	txs := &fakeTxStore{}
 
-	svc := NewPlaidService(pl, banks, txs, &fakeJobs{})
+	svc := NewPlaidService(pl, banks, txs, &fakeJobs{}, &fakeBankSvc{})
 	ctx := helpers.TestCtx()
 	_, err := svc.ExchangePublicToken(ctx, "uid-1", dto.LinkBankRequest{PublicToken: "public-xyz", InstitutionName: "Chase"})
 	if err == nil {
@@ -239,7 +270,7 @@ func TestRunSyncMissingAccessToken(t *testing.T) {
 	banks := &fakeBankStore{list: []*models.Bank{{BankID: "item-1", PlaidPublicToken: ""}}}
 	txs := &fakeTxStore{}
 
-	svc := NewPlaidService(pl, banks, txs, &fakeJobs{})
+	svc := NewPlaidService(pl, banks, txs, &fakeJobs{}, &fakeBankSvc{})
 	ctx := helpers.TestCtx()
 	_, err := svc.RunSync(ctx, "uid-1", dto.PlaidSyncParams{})
 	if err == nil {
@@ -252,7 +283,7 @@ func TestRunSyncGetCursorError(t *testing.T) {
 	banks := &fakeBankStore{list: []*models.Bank{{BankID: "item-1", PlaidPublicToken: "at-123"}}}
 	txs := &fakeTxStore{getErr: errors.New("get cursor failed")}
 
-	svc := NewPlaidService(pl, banks, txs, &fakeJobs{})
+	svc := NewPlaidService(pl, banks, txs, &fakeJobs{}, &fakeBankSvc{})
 	ctx := helpers.TestCtx()
 	_, err := svc.RunSync(ctx, "uid-1", dto.PlaidSyncParams{})
 	if err == nil {
@@ -265,7 +296,7 @@ func TestRunSyncPlaidError(t *testing.T) {
 	banks := &fakeBankStore{list: []*models.Bank{{BankID: "item-1", PlaidPublicToken: "at-123"}}}
 	txs := &fakeTxStore{}
 
-	svc := NewPlaidService(pl, banks, txs, &fakeJobs{})
+	svc := NewPlaidService(pl, banks, txs, &fakeJobs{}, &fakeBankSvc{})
 	ctx := helpers.TestCtx()
 	_, err := svc.RunSync(ctx, "uid-1", dto.PlaidSyncParams{})
 	if err == nil {
@@ -282,7 +313,7 @@ func TestRunSyncUpsertError(t *testing.T) {
 	banks := &fakeBankStore{list: []*models.Bank{{BankID: "item-1", PlaidPublicToken: "at-123"}}}
 	txs := &fakeTxStore{upsertErr: errors.New("upsert failed")}
 
-	svc := NewPlaidService(pl, banks, txs, &fakeJobs{})
+	svc := NewPlaidService(pl, banks, txs, &fakeJobs{}, &fakeBankSvc{})
 	ctx := helpers.TestCtx()
 	_, err := svc.RunSync(ctx, "uid-1", dto.PlaidSyncParams{})
 	if err == nil {
@@ -299,7 +330,7 @@ func TestRunSyncSetCursorError(t *testing.T) {
 	banks := &fakeBankStore{list: []*models.Bank{{BankID: "item-1", PlaidPublicToken: "at-123"}}}
 	txs := &fakeTxStore{setCurErr: errors.New("set cursor failed")}
 
-	svc := NewPlaidService(pl, banks, txs, &fakeJobs{})
+	svc := NewPlaidService(pl, banks, txs, &fakeJobs{}, &fakeBankSvc{})
 	ctx := helpers.TestCtx()
 	_, err := svc.RunSync(ctx, "uid-1", dto.PlaidSyncParams{})
 	if err == nil {
