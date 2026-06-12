@@ -116,10 +116,10 @@ func (s *bankStore) Delete(ctx context.Context, uid, bankID string) error {
 	return nil
 }
 
-// FindItemByBankId returns the owning uid for a bank/item by its bankID
+// FindUserIDByBankID returns the owning uid for a bank/item by its bankID
 // (which is the same value as Plaid's item_id). Used by the webhook handler
 // to route inbound events to the right user.
-func (s *bankStore) FindItemByBankId(ctx context.Context, bankID string) (string, error) {
+func (s *bankStore) FindUserIDByBankID(ctx context.Context, bankID string) (string, error) {
 	doc, err := s.itemIndex().Doc(bankID).Get(ctx)
 	if err != nil {
 		if status.Code(err) == codes.NotFound {

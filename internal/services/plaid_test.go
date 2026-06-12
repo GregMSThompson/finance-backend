@@ -70,7 +70,7 @@ func (f *fakeBankStore) Create(ctx context.Context, uid string, bank *models.Ban
 func (f *fakeBankStore) List(ctx context.Context, uid string) ([]*models.Bank, error) {
 	return f.list, f.err
 }
-func (f *fakeBankStore) FindItemByBankId(ctx context.Context, bankID string) (string, error) {
+func (f *fakeBankStore) FindUserIDByBankID(ctx context.Context, bankID string) (string, error) {
 	return f.findUID, f.findErr
 }
 func (f *fakeBankStore) SetNeedsReauth(ctx context.Context, uid, bankID string, needs bool) error {
@@ -83,10 +83,10 @@ func (f *fakeBankStore) SetNeedsReauth(ctx context.Context, uid, bankID string, 
 }
 
 type fakeBankSvc struct {
-	jobID    string
-	err      error
-	gotUID   string
-	gotBank  string
+	jobID   string
+	err     error
+	gotUID  string
+	gotBank string
 }
 
 func (f *fakeBankSvc) DeleteBank(ctx context.Context, uid, bankID string) (string, error) {

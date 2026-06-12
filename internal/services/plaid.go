@@ -19,7 +19,7 @@ import (
 type bankPSStore interface {
 	Create(ctx context.Context, uid string, bank *models.Bank) error
 	List(ctx context.Context, uid string) ([]*models.Bank, error)
-	FindItemByBankId(ctx context.Context, bankID string) (string, error)
+	FindUserIDByBankID(ctx context.Context, bankID string) (string, error)
 	SetNeedsReauth(ctx context.Context, uid, bankID string, needs bool) error
 }
 
@@ -106,7 +106,7 @@ func (s *plaidService) ExchangePublicToken(ctx context.Context, uid string, req 
 func (s *plaidService) HandleWebhook(ctx context.Context, p dto.PlaidWebhook) error {
 	log := logger.FromContext(ctx)
 
-	uid, err := s.banks.FindItemByBankId(ctx, p.ItemID)
+	uid, err := s.banks.FindUserIDByBankID(ctx, p.ItemID)
 	if err != nil {
 		if errs.IsNotFound(err) {
 			// Plaid sometimes delivers events for items we've already removed locally.
