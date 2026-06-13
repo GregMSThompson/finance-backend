@@ -89,6 +89,7 @@ func (a *API) createService(ctx *pulumi.Context, img *pulumidocker.Image, apiSA 
 	logLevel := crCfg.Require("logLevel")
 	timeout, _ := strconv.Atoi(crCfg.Require("timeout"))
 	plaidEnv := plaidCfg.Require("environment")
+	plaidWebhookURL := plaidCfg.Get("webhookUrl") // optional: set after first deploy
 	vertexModel := vertexCfg.Require("model")
 	aiTTL := appCfg.Require("aiTtl")
 
@@ -112,6 +113,10 @@ func (a *API) createService(ctx *pulumi.Context, img *pulumidocker.Image, apiSA 
 		&gcpcloudrun.ServiceTemplateSpecContainerEnvArgs{
 			Name:  pulumi.String("PLAIDENVIRONMENT"),
 			Value: pulumi.String(plaidEnv),
+		},
+		&gcpcloudrun.ServiceTemplateSpecContainerEnvArgs{
+			Name:  pulumi.String("PLAIDWEBHOOKURL"),
+			Value: pulumi.String(plaidWebhookURL),
 		},
 		&gcpcloudrun.ServiceTemplateSpecContainerEnvArgs{
 			Name:  pulumi.String("VERTEXMODEL"),

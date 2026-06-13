@@ -45,7 +45,8 @@ func RunWorker(cfg *config.WorkerConfig) (*WorkerBootstrap, error) {
 		return bs, err
 	}
 
-	bs.PlaidAdapter = plaidclient.NewAdapter(cfg.PlaidClientID, cfg.PlaidSecret, cfg.PlaidEnvironment)
+	// Worker doesn't call CreateLinkToken, so no webhook URL is needed.
+	bs.PlaidAdapter = plaidclient.NewAdapter(cfg.PlaidClientID, cfg.PlaidSecret, cfg.PlaidEnvironment, "")
 
 	return bs, nil
 }

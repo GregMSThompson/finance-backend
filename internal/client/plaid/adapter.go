@@ -13,17 +13,22 @@ import (
 )
 
 type Adapter struct {
-	client *plaid.APIClient
+	client     *plaid.APIClient
+	webhookURL string
 }
 
-func NewAdapter(clientID, secret string, env dto.PlaidEnvironment) *Adapter {
+// NewAdapter builds a Plaid SDK wrapper. webhookURL is stamped onto every
+// LinkTokenCreate call so new Items are registered to send events back to us.
+// Pass empty string for binaries that don't create link tokens (e.g. the worker).
+func NewAdapter(clientID, secret string, env dto.PlaidEnvironment, webhookURL string) *Adapter {
 	cfg := plaid.NewConfiguration()
 	cfg.AddDefaultHeader("PLAID-CLIENT-ID", clientID)
 	cfg.AddDefaultHeader("PLAID-SECRET", secret)
 	cfg.UseEnvironment(toPlaidEnv(env))
 
 	return &Adapter{
-		client: plaid.NewAPIClient(cfg),
+		client:     plaid.NewAPIClient(cfg),
+		webhookURL: webhookURL,
 	}
 }
 
@@ -35,6 +40,9 @@ func (a *Adapter) CreateLinkToken(ctx context.Context, uid string) (string, erro
 		plaid.LinkTokenCreateRequestUser{ClientUserId: uid},
 	)
 	req.SetProducts([]plaid.Products{plaid.PRODUCTS_TRANSACTIONS})
+	if a.webhookURL != "" {
+		req.SetWebhook(a.webhookURL)
+	}
 
 	resp, _, err := a.client.PlaidApi.LinkTokenCreate(ctx).LinkTokenCreateRequest(*req).Execute()
 	if err != nil {
