@@ -20,6 +20,7 @@ type APIConfig struct {
 	WorkerURL          string
 	WorkerServiceAcct  string
 	PlaidWebhookURL    string
+	AppleAppID         string
 }
 
 func NewAPI() *APIConfig {
@@ -36,6 +37,7 @@ func NewAPI() *APIConfig {
 		WorkerURL:          os.Getenv("WORKERURL"),
 		WorkerServiceAcct:  os.Getenv("WORKERSERVICEACCT"),
 		PlaidWebhookURL:    os.Getenv("PLAIDWEBHOOKURL"),
+		AppleAppID:         os.Getenv("APPLEAPPID"),
 	}
 }
 

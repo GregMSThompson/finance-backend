@@ -90,6 +90,7 @@ func (a *API) createService(ctx *pulumi.Context, img *pulumidocker.Image, apiSA 
 	timeout, _ := strconv.Atoi(crCfg.Require("timeout"))
 	plaidEnv := plaidCfg.Require("environment")
 	plaidWebhookURL := plaidCfg.Get("webhookUrl") // optional: set after first deploy
+	appleAppID := plaidCfg.Get("appleAppId")      // optional: TEAMID.bundleid for Plaid OAuth universal link
 	vertexModel := vertexCfg.Require("model")
 	aiTTL := appCfg.Require("aiTtl")
 
@@ -117,6 +118,10 @@ func (a *API) createService(ctx *pulumi.Context, img *pulumidocker.Image, apiSA 
 		&gcpcloudrun.ServiceTemplateSpecContainerEnvArgs{
 			Name:  pulumi.String("PLAIDWEBHOOKURL"),
 			Value: pulumi.String(plaidWebhookURL),
+		},
+		&gcpcloudrun.ServiceTemplateSpecContainerEnvArgs{
+			Name:  pulumi.String("APPLEAPPID"),
+			Value: pulumi.String(appleAppID),
 		},
 		&gcpcloudrun.ServiceTemplateSpecContainerEnvArgs{
 			Name:  pulumi.String("VERTEXMODEL"),

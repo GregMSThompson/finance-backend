@@ -14,6 +14,7 @@ type Deps struct {
 	ResponseHandler response.ResponseHandler
 	Firebase        *auth.Client
 	PlaidVerifier   *plaidclient.Verifier
+	AppleAppID      string
 	UserSvc         userService
 	PlaidSvc        plaidService
 	PlaidWebhookSvc plaidWebhookService

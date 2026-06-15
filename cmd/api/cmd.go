@@ -57,6 +57,7 @@ func main() {
 	deps.ResponseHandler = rh
 	deps.Firebase = bs.Firebase
 	deps.PlaidVerifier = plaidVerifier
+	deps.AppleAppID = cfg.AppleAppID
 	deps.UserSvc = userv
 	deps.BankSvc = bserv
 	deps.PlaidSvc = plserv

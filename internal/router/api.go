@@ -30,8 +30,12 @@ func NewAPIRouter(deps *handlers.Deps) chi.Router {
 	dsh := handlers.NewDashboardHandlers(deps)
 	alh := handlers.NewAlertHandlers(deps)
 	jh := handlers.NewJobHandlers(deps)
+	wkh := handlers.NewWellKnownHandlers(deps)
 
-	// public group — authenticated by Plaid's JWS, not Firebase
+	// AASA: fetched anonymously by Apple, no auth middleware
+	r.Mount("/.well-known", wkh.Routes())
+
+	// Plaid webhook: public, but signature-protected
 	r.Group(func(r chi.Router) {
 		r.Use(plaidWebhookMw.VerifySignature)
 		r.Mount("/plaid/webhook", pwh.WebhookRoutes())
