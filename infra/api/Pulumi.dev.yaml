@@ -13,5 +13,5 @@ config:
   plaid:environment: sandbox
   vertex:model: gemini-2.5-flash-lite
   app:aiTtl: 168h
-  plaid:webhookUrl: https://apiservice-48f351a-281388559735.us-central1.run.app/plaid/webhook
+  app:apiUrl: https://apiservice-48f351a-281388559735.us-central1.run.app
   plaid:appleAppId: 45W33LPJ2T.com.gregmsthompson.financeapp

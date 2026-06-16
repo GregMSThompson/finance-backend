@@ -45,7 +45,7 @@ func newKMSClient(ctx context.Context) (*kms.KeyManagementClient, error) {
 }
 
 func newPlaidAdapter(cfg *config.APIConfig) *plaidclient.Adapter {
-	return plaidclient.NewAdapter(cfg.PlaidClientID, cfg.PlaidSecret, cfg.PlaidEnvironment, cfg.PlaidWebhookURL)
+	return plaidclient.NewAdapter(cfg.PlaidClientID, cfg.PlaidSecret, cfg.PlaidEnvironment, cfg.PlaidWebhookURL, cfg.PlaidOAuthRedirectURL)
 }
 
 func newVertexAdapter(ctx context.Context, cfg *config.APIConfig, log *slog.Logger) (*vertexclient.Adapter, error) {
