@@ -81,31 +81,6 @@ func (s *analyticsService) GetSpendBreakdown(ctx context.Context, uid string, ar
 	return result, nil
 }
 
-func (s *analyticsService) GetTransactions(ctx context.Context, uid string, args dto.AnalyticsTransactionsArgs) (dto.AnalyticsTransactionsResult, error) {
-	result := dto.AnalyticsTransactionsResult{}
-
-	var txs []models.Transaction
-	if err := s.txs.Query(ctx, uid, dto.TransactionQuery{
-		Pending:    args.Pending,
-		PFCPrimary: args.PFCPrimary,
-		BankID:     args.BankID,
-		Merchant:   args.Merchant,
-		DateFrom:   args.DateFrom,
-		DateTo:     args.DateTo,
-		OrderBy:    args.OrderBy,
-		Desc:       args.Desc,
-		Limit:      args.Limit,
-	}, func(tx *models.Transaction) error {
-		txs = append(txs, *tx)
-		return nil
-	}); err != nil {
-		return result, err
-	}
-
-	result.Transactions = txs
-	return result, nil
-}
-
 func (s *analyticsService) GetPeriodComparison(ctx context.Context, uid string, args dto.AnalyticsPeriodComparisonArgs) (dto.AnalyticsPeriodComparisonResult, error) {
 	result := dto.AnalyticsPeriodComparisonResult{
 		GroupBy: args.GroupBy,

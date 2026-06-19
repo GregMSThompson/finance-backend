@@ -22,12 +22,15 @@ type vertexClient interface {
 type analyticsClient interface {
 	GetSpendTotal(ctx context.Context, uid string, args dto.AnalyticsSpendTotalArgs) (dto.AnalyticsSpendTotalResult, error)
 	GetSpendBreakdown(ctx context.Context, uid string, args dto.AnalyticsSpendBreakdownArgs) (dto.AnalyticsSpendBreakdownResult, error)
-	GetTransactions(ctx context.Context, uid string, args dto.AnalyticsTransactionsArgs) (dto.AnalyticsTransactionsResult, error)
 	GetPeriodComparison(ctx context.Context, uid string, args dto.AnalyticsPeriodComparisonArgs) (dto.AnalyticsPeriodComparisonResult, error)
 	GetRecurringTransactions(ctx context.Context, uid string, args dto.AnalyticsRecurringArgs) (dto.RecurringTransactionsResult, error)
 	GetMovingAverage(ctx context.Context, uid string, args dto.AnalyticsMovingAverageArgs) (dto.AnalyticsMovingAverageResult, error)
 	GetTopN(ctx context.Context, uid string, args dto.AnalyticsTopNArgs) (dto.AnalyticsTopNResult, error)
 	GetIncomeVsExpenses(ctx context.Context, uid string, args dto.AnalyticsIncomeVsExpensesArgs) (dto.IncomeVsExpensesResult, error)
+}
+
+type aiTransactions interface {
+	ListTransactions(ctx context.Context, uid string, args dto.TransactionListArgs) (dto.TransactionListResult, error)
 }
 
 type aiStore interface {
@@ -36,20 +39,22 @@ type aiStore interface {
 }
 
 type aiService struct {
-	vertex   vertexClient
-	analysis analyticsClient
-	store    aiStore
-	ttl      time.Duration
-	clockNow func() time.Time
+	vertex       vertexClient
+	analysis     analyticsClient
+	transactions aiTransactions
+	store        aiStore
+	ttl          time.Duration
+	clockNow     func() time.Time
 }
 
-func NewAIService(vertex vertexClient, analysis analyticsClient, store aiStore, ttl time.Duration) *aiService {
+func NewAIService(vertex vertexClient, analysis analyticsClient, transactions aiTransactions, store aiStore, ttl time.Duration) *aiService {
 	return &aiService{
-		vertex:   vertex,
-		analysis: analysis,
-		store:    store,
-		ttl:      ttl,
-		clockNow: time.Now,
+		vertex:       vertex,
+		analysis:     analysis,
+		transactions: transactions,
+		store:        store,
+		ttl:          ttl,
+		clockNow:     time.Now,
 	}
 }
 
@@ -290,13 +295,13 @@ func (s *aiService) executeTool(ctx context.Context, uid string, call dto.Vertex
 			ctx,
 			uid,
 			call,
-			func(a *dto.AnalyticsTransactionsArgs) **bool { return &a.Pending },
-			func(a *dto.AnalyticsTransactionsArgs) **string { return &a.DateFrom },
-			func(a *dto.AnalyticsTransactionsArgs) **string { return &a.DateTo },
-			func(a *dto.AnalyticsTransactionsArgs) *string { return a.PFCPrimary },
+			func(a *dto.TransactionListArgs) **bool { return &a.Pending },
+			func(a *dto.TransactionListArgs) **string { return &a.DateFrom },
+			func(a *dto.TransactionListArgs) **string { return &a.DateTo },
+			func(a *dto.TransactionListArgs) *string { return a.PFCPrimary },
 			nil,
 			s.applyDefaults,
-			s.analysis.GetTransactions,
+			s.transactions.ListTransactions,
 		)
 	case "get_period_comparison":
 		args, err := decodeArgs[dto.AnalyticsPeriodComparisonArgs](call.Args)

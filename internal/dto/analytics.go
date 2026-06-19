@@ -1,7 +1,5 @@
 package dto
 
-import "github.com/GregMSThompson/finance-backend/internal/models"
-
 type AnalyticsSpendTotalArgs struct {
 	Pending    *bool
 	PFCPrimary *string
@@ -39,22 +37,6 @@ type AnalyticsSpendBreakdownResult struct {
 	Currency string                   `json:"currency"`
 	From     string                   `json:"from,omitempty"`
 	To       string                   `json:"to,omitempty"`
-}
-
-type AnalyticsTransactionsArgs struct {
-	Pending    *bool
-	PFCPrimary *string
-	BankID     *string
-	Merchant   *string
-	DateFrom   *string
-	DateTo     *string
-	OrderBy    string
-	Desc       bool
-	Limit      int
-}
-
-type AnalyticsTransactionsResult struct {
-	Transactions []models.Transaction `json:"transactions"`
 }
 
 type AnalyticsPeriodComparisonArgs struct {

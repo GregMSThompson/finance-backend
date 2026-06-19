@@ -35,9 +35,12 @@ type evaluatorAlertEventStore interface {
 
 type evaluatorAnalytics interface {
 	GetSpendTotal(ctx context.Context, uid string, args dto.AnalyticsSpendTotalArgs) (dto.AnalyticsSpendTotalResult, error)
-	GetTransactions(ctx context.Context, uid string, args dto.AnalyticsTransactionsArgs) (dto.AnalyticsTransactionsResult, error)
 	GetIncomeVsExpenses(ctx context.Context, uid string, args dto.AnalyticsIncomeVsExpensesArgs) (dto.IncomeVsExpensesResult, error)
 	GetRecurringTransactions(ctx context.Context, uid string, args dto.AnalyticsRecurringArgs) (dto.RecurringTransactionsResult, error)
+}
+
+type evaluatorTransactions interface {
+	ListTransactions(ctx context.Context, uid string, args dto.TransactionListArgs) (dto.TransactionListResult, error)
 }
 
 type evaluatorTasksClient interface {
@@ -45,13 +48,14 @@ type evaluatorTasksClient interface {
 }
 
 type alertEvaluatorService struct {
-	users       evaluatorUserStore
-	alerts      evaluatorAlertStore
-	alertEvents evaluatorAlertEventStore
-	analytics   evaluatorAnalytics
-	tasks       evaluatorTasksClient
-	clockNow    func() time.Time
-	period      evalPeriod
+	users        evaluatorUserStore
+	alerts       evaluatorAlertStore
+	alertEvents  evaluatorAlertEventStore
+	analytics    evaluatorAnalytics
+	transactions evaluatorTransactions
+	tasks        evaluatorTasksClient
+	clockNow     func() time.Time
+	period       evalPeriod
 }
 
 func NewAlertEvaluatorService(
@@ -59,15 +63,17 @@ func NewAlertEvaluatorService(
 	alerts evaluatorAlertStore,
 	alertEvents evaluatorAlertEventStore,
 	analytics evaluatorAnalytics,
+	transactions evaluatorTransactions,
 	tasks evaluatorTasksClient,
 ) *alertEvaluatorService {
 	return &alertEvaluatorService{
-		users:       users,
-		alerts:      alerts,
-		alertEvents: alertEvents,
-		analytics:   analytics,
-		tasks:       tasks,
-		clockNow:    time.Now,
+		users:        users,
+		alerts:       alerts,
+		alertEvents:  alertEvents,
+		analytics:    analytics,
+		transactions: transactions,
+		tasks:        tasks,
+		clockNow:     time.Now,
 	}
 }
 
@@ -175,7 +181,7 @@ func (s *alertEvaluatorService) evaluateSpendThreshold(ctx context.Context, uid 
 
 func (s *alertEvaluatorService) evaluateLargeTransaction(ctx context.Context, uid string, alert *models.Alert) (bool, string, string, error) {
 	pending := false
-	result, err := s.analytics.GetTransactions(ctx, uid, dto.AnalyticsTransactionsArgs{
+	result, err := s.transactions.ListTransactions(ctx, uid, dto.TransactionListArgs{
 		Pending:  helpers.Ptr(pending),
 		DateFrom: helpers.Ptr(s.period.yesterday),
 		DateTo:   helpers.Ptr(s.period.today),

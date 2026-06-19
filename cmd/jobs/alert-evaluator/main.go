@@ -25,7 +25,8 @@ func main() {
 	transactionStore := store.NewTransactionStore(bs.Firestore)
 
 	analyticsSvc := services.NewAnalyticsService(transactionStore)
-	evaluatorSvc := services.NewAlertEvaluatorService(userStore, alertStore, alertEventStore, analyticsSvc, bs.CloudTasks)
+	txSvc := services.NewTransactionsService(transactionStore)
+	evaluatorSvc := services.NewAlertEvaluatorService(userStore, alertStore, alertEventStore, analyticsSvc, txSvc, bs.CloudTasks)
 
 	err = evaluatorSvc.Run(ctx)
 	helpers.ExitOnError("alert evaluation failed", err, bs.Log)

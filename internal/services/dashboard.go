@@ -29,18 +29,22 @@ type dashboardAnalytics interface {
 	GetTopN(ctx context.Context, uid string, args dto.AnalyticsTopNArgs) (dto.AnalyticsTopNResult, error)
 	GetMovingAverage(ctx context.Context, uid string, args dto.AnalyticsMovingAverageArgs) (dto.AnalyticsMovingAverageResult, error)
 	GetPeriodComparison(ctx context.Context, uid string, args dto.AnalyticsPeriodComparisonArgs) (dto.AnalyticsPeriodComparisonResult, error)
-	GetTransactions(ctx context.Context, uid string, args dto.AnalyticsTransactionsArgs) (dto.AnalyticsTransactionsResult, error)
 	GetRecurringTransactions(ctx context.Context, uid string, args dto.AnalyticsRecurringArgs) (dto.RecurringTransactionsResult, error)
 }
 
-type dashboardService struct {
-	store     dashboardStore
-	analytics dashboardAnalytics
-	clockNow  func() time.Time
+type dashboardTransactions interface {
+	ListTransactions(ctx context.Context, uid string, args dto.TransactionListArgs) (dto.TransactionListResult, error)
 }
 
-func NewDashboardService(store dashboardStore, analytics dashboardAnalytics) *dashboardService {
-	return &dashboardService{store: store, analytics: analytics, clockNow: time.Now}
+type dashboardService struct {
+	store        dashboardStore
+	analytics    dashboardAnalytics
+	transactions dashboardTransactions
+	clockNow     func() time.Time
+}
+
+func NewDashboardService(store dashboardStore, analytics dashboardAnalytics, transactions dashboardTransactions) *dashboardService {
+	return &dashboardService{store: store, analytics: analytics, transactions: transactions, clockNow: time.Now}
 }
 
 func (s *dashboardService) GetDashboard(ctx context.Context, uid string) ([]*models.Widget, error) {
@@ -246,7 +250,7 @@ func (s *dashboardService) fetchLargestTransactions(ctx context.Context, uid str
 	if err != nil {
 		return dto.LargestTransactionsData{}, err
 	}
-	result, err := s.analytics.GetTransactions(ctx, uid, dto.AnalyticsTransactionsArgs{
+	result, err := s.transactions.ListTransactions(ctx, uid, dto.TransactionListArgs{
 		Pending:    helpers.Ptr(false),
 		PFCPrimary: optString(cfg.Category),
 		BankID:     optString(cfg.BankID),

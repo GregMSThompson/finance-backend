@@ -41,8 +41,9 @@ func main() {
 	bserv := services.NewBankService(bstore, tstore, jobsvc)
 	plserv := services.NewPlaidService(bs.PlaidAdapter, bstore, tstore, jobsvc, bserv)
 	anserv := services.NewAnalyticsService(tstore)
-	aiserv := services.NewAIService(bs.VertexAdapter, anserv, astore, cfg.AITTL)
-	dashsvc := services.NewDashboardService(dstore, anserv)
+	txserv := services.NewTransactionsService(tstore)
+	aiserv := services.NewAIService(bs.VertexAdapter, anserv, txserv, astore, cfg.AITTL)
+	dashsvc := services.NewDashboardService(dstore, anserv, txserv)
 	alertsvc := services.NewAlertService(alstore, aestore)
 
 	// response handler

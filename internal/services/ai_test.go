@@ -43,10 +43,6 @@ type fakeAnalyticsClient struct {
 	breakdownArgs     dto.AnalyticsSpendBreakdownArgs
 	breakdownResp     dto.AnalyticsSpendBreakdownResult
 	breakdownErr      error
-	transactionsCalls int
-	transactionsArgs  dto.AnalyticsTransactionsArgs
-	transactionsResp  dto.AnalyticsTransactionsResult
-	transactionsErr   error
 	comparisonCalls   int
 	comparisonArgs    dto.AnalyticsPeriodComparisonArgs
 	comparisonResp    dto.AnalyticsPeriodComparisonResult
@@ -85,15 +81,6 @@ func (f *fakeAnalyticsClient) GetSpendBreakdown(ctx context.Context, uid string,
 		return dto.AnalyticsSpendBreakdownResult{}, f.breakdownErr
 	}
 	return f.breakdownResp, nil
-}
-
-func (f *fakeAnalyticsClient) GetTransactions(ctx context.Context, uid string, args dto.AnalyticsTransactionsArgs) (dto.AnalyticsTransactionsResult, error) {
-	f.transactionsCalls++
-	f.transactionsArgs = args
-	if f.transactionsErr != nil {
-		return dto.AnalyticsTransactionsResult{}, f.transactionsErr
-	}
-	return f.transactionsResp, nil
 }
 
 func (f *fakeAnalyticsClient) GetPeriodComparison(ctx context.Context, uid string, args dto.AnalyticsPeriodComparisonArgs) (dto.AnalyticsPeriodComparisonResult, error) {
@@ -141,6 +128,22 @@ func (f *fakeAnalyticsClient) GetIncomeVsExpenses(ctx context.Context, uid strin
 	return f.incomeVsExpResp, nil
 }
 
+type fakeTransactionsLister struct {
+	calls int
+	args  dto.TransactionListArgs
+	resp  dto.TransactionListResult
+	err   error
+}
+
+func (f *fakeTransactionsLister) ListTransactions(ctx context.Context, uid string, args dto.TransactionListArgs) (dto.TransactionListResult, error) {
+	f.calls++
+	f.args = args
+	if f.err != nil {
+		return dto.TransactionListResult{}, f.err
+	}
+	return f.resp, nil
+}
+
 type fakeAIStore struct {
 	messages []models.AIMessage
 }
@@ -172,7 +175,8 @@ func TestAIQueryToolFlow(t *testing.T) {
 		totalResp: dto.AnalyticsSpendTotalResult{Total: 5, Currency: "USD"},
 	}
 	store := &fakeAIStore{}
-	svc := NewAIService(vertex, analytics, store, 0)
+	transactions := &fakeTransactionsLister{}
+	svc := NewAIService(vertex, analytics, transactions, store, 0)
 	svc.clockNow = func() time.Time {
 		return time.Date(2025, time.February, 15, 12, 0, 0, 0, time.UTC)
 	}
@@ -205,7 +209,8 @@ func TestAIQueryNoToolCall(t *testing.T) {
 	}
 	analytics := &fakeAnalyticsClient{}
 	store := &fakeAIStore{}
-	svc := NewAIService(vertex, analytics, store, 0)
+	transactions := &fakeTransactionsLister{}
+	svc := NewAIService(vertex, analytics, transactions, store, 0)
 
 	ctx := helpers.TestCtx()
 	resp, err := svc.Query(ctx, "user", dto.AIQueryRequest{SessionID: "session", Message: "Hi"})
@@ -232,7 +237,8 @@ func TestAIQueryUnknownTool(t *testing.T) {
 	}
 	analytics := &fakeAnalyticsClient{}
 	store := &fakeAIStore{}
-	svc := NewAIService(vertex, analytics, store, 0)
+	transactions := &fakeTransactionsLister{}
+	svc := NewAIService(vertex, analytics, transactions, store, 0)
 
 	ctx := helpers.TestCtx()
 	_, err := svc.Query(ctx, "user", dto.AIQueryRequest{SessionID: "session", Message: "What is this?"})
@@ -257,7 +263,8 @@ func TestAIQueryMultipleToolCallsUsesFirst(t *testing.T) {
 		totalResp: dto.AnalyticsSpendTotalResult{Total: 1, Currency: "USD"},
 	}
 	store := &fakeAIStore{}
-	svc := NewAIService(vertex, analytics, store, 0)
+	transactions := &fakeTransactionsLister{}
+	svc := NewAIService(vertex, analytics, transactions, store, 0)
 
 	ctx := helpers.TestCtx()
 	_, err := svc.Query(ctx, "user", dto.AIQueryRequest{SessionID: "session", Message: "Multi"})
@@ -267,8 +274,8 @@ func TestAIQueryMultipleToolCallsUsesFirst(t *testing.T) {
 	if analytics.totalCalls != 1 {
 		t.Fatalf("expected spend total call, got %d", analytics.totalCalls)
 	}
-	if analytics.transactionsCalls != 0 || analytics.breakdownCalls != 0 {
-		t.Fatalf("unexpected analytics calls: tx=%d breakdown=%d", analytics.transactionsCalls, analytics.breakdownCalls)
+	if transactions.calls != 0 || analytics.breakdownCalls != 0 {
+		t.Fatalf("unexpected analytics calls: tx=%d breakdown=%d", transactions.calls, analytics.breakdownCalls)
 	}
 }
 
@@ -286,7 +293,8 @@ func TestAIQueryAnalyticsErrorPropagates(t *testing.T) {
 		totalErr: errors.New("analytics down"),
 	}
 	store := &fakeAIStore{}
-	svc := NewAIService(vertex, analytics, store, 0)
+	transactions := &fakeTransactionsLister{}
+	svc := NewAIService(vertex, analytics, transactions, store, 0)
 
 	ctx := helpers.TestCtx()
 	_, err := svc.Query(ctx, "user", dto.AIQueryRequest{SessionID: "session", Message: "How much?"})
@@ -303,7 +311,8 @@ func TestAIQueryDoesNotRetryOnOtherErrors(t *testing.T) {
 	}
 	analytics := &fakeAnalyticsClient{}
 	store := &fakeAIStore{}
-	svc := NewAIService(vertex, analytics, store, 0)
+	transactions := &fakeTransactionsLister{}
+	svc := NewAIService(vertex, analytics, transactions, store, 0)
 
 	ctx := helpers.TestCtx()
 	_, err := svc.Query(ctx, "user", dto.AIQueryRequest{SessionID: "session", Message: "Hi"})
@@ -326,7 +335,8 @@ func TestAIQueryRetriesWithStrictPromptOnMalformedCall(t *testing.T) {
 	}
 	analytics := &fakeAnalyticsClient{}
 	store := &fakeAIStore{}
-	svc := NewAIService(vertex, analytics, store, 0)
+	transactions := &fakeTransactionsLister{}
+	svc := NewAIService(vertex, analytics, transactions, store, 0)
 
 	ctx := helpers.TestCtx()
 	resp, err := svc.Query(ctx, "user", dto.AIQueryRequest{SessionID: "session", Message: "Hello"})

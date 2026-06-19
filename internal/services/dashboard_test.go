@@ -18,7 +18,7 @@ func withFixedClock(t time.Time) func(*dashboardService) {
 
 // newSvc creates a dashboardService with optional overrides applied.
 func newSvc(store dashboardStore, an dashboardAnalytics, opts ...func(*dashboardService)) *dashboardService {
-	s := NewDashboardService(store, an)
+	s := NewDashboardService(store, an, &fakeTransactionsLister{})
 	for _, o := range opts {
 		o(s)
 	}
@@ -107,14 +107,11 @@ type fakeDashboardAnalytics struct {
 	movingAvgErr     error
 	periodResult     dto.AnalyticsPeriodComparisonResult
 	periodErr        error
-	txResult         dto.AnalyticsTransactionsResult
-	txErr            error
 	recurringResult  dto.RecurringTransactionsResult
 	recurringErr     error
 	lastTopNArgs     dto.AnalyticsTopNArgs
 	lastMovingAvgArgs dto.AnalyticsMovingAverageArgs
 	lastPeriodArgs   dto.AnalyticsPeriodComparisonArgs
-	lastTxArgs       dto.AnalyticsTransactionsArgs
 	lastRecurringArgs dto.AnalyticsRecurringArgs
 }
 
@@ -133,11 +130,6 @@ func (f *fakeDashboardAnalytics) GetPeriodComparison(_ context.Context, _ string
 	return f.periodResult, f.periodErr
 }
 
-func (f *fakeDashboardAnalytics) GetTransactions(_ context.Context, _ string, args dto.AnalyticsTransactionsArgs) (dto.AnalyticsTransactionsResult, error) {
-	f.lastTxArgs = args
-	return f.txResult, f.txErr
-}
-
 func (f *fakeDashboardAnalytics) GetRecurringTransactions(_ context.Context, _ string, args dto.AnalyticsRecurringArgs) (dto.RecurringTransactionsResult, error) {
 	f.lastRecurringArgs = args
 	return f.recurringResult, f.recurringErr
@@ -148,7 +140,7 @@ func (f *fakeDashboardAnalytics) GetRecurringTransactions(_ context.Context, _ s
 func TestAddWidget_TopSpenders_Defaults(t *testing.T) {
 	store := newFakeStore()
 	an := &fakeDashboardAnalytics{}
-	svc := NewDashboardService(store, an)
+	svc := NewDashboardService(store, an, &fakeTransactionsLister{})
 
 	req := dto.CreateWidgetRequest{
 		Type:          dto.WidgetTypeTopSpenders,
@@ -175,7 +167,7 @@ func TestAddWidget_TopSpenders_Defaults(t *testing.T) {
 }
 
 func TestAddWidget_InvalidType(t *testing.T) {
-	svc := NewDashboardService(newFakeStore(), &fakeDashboardAnalytics{})
+	svc := NewDashboardService(newFakeStore(), &fakeDashboardAnalytics{}, &fakeTransactionsLister{})
 	_, err := svc.AddWidget(context.Background(), "uid1", dto.CreateWidgetRequest{
 		Type:          "badType",
 		Visualization: dto.VisPie,
@@ -187,7 +179,7 @@ func TestAddWidget_InvalidType(t *testing.T) {
 }
 
 func TestAddWidget_InvalidVisualization(t *testing.T) {
-	svc := NewDashboardService(newFakeStore(), &fakeDashboardAnalytics{})
+	svc := NewDashboardService(newFakeStore(), &fakeDashboardAnalytics{}, &fakeTransactionsLister{})
 	_, err := svc.AddWidget(context.Background(), "uid1", dto.CreateWidgetRequest{
 		Type:          dto.WidgetTypeTopSpenders,
 		Visualization: dto.VisLine, // not valid for topSpenders
@@ -203,7 +195,7 @@ func TestAddWidget_InvalidVisualization(t *testing.T) {
 }
 
 func TestAddWidget_TopSpenders_MissingDateRange(t *testing.T) {
-	svc := NewDashboardService(newFakeStore(), &fakeDashboardAnalytics{})
+	svc := NewDashboardService(newFakeStore(), &fakeDashboardAnalytics{}, &fakeTransactionsLister{})
 	_, err := svc.AddWidget(context.Background(), "uid1", dto.CreateWidgetRequest{
 		Type:          dto.WidgetTypeTopSpenders,
 		Visualization: dto.VisPie,
@@ -218,7 +210,7 @@ func TestAddWidget_TopSpenders_MissingDateRange(t *testing.T) {
 }
 
 func TestAddWidget_LimitOutOfRange(t *testing.T) {
-	svc := NewDashboardService(newFakeStore(), &fakeDashboardAnalytics{})
+	svc := NewDashboardService(newFakeStore(), &fakeDashboardAnalytics{}, &fakeTransactionsLister{})
 	_, err := svc.AddWidget(context.Background(), "uid1", dto.CreateWidgetRequest{
 		Type:          dto.WidgetTypeTopSpenders,
 		Visualization: dto.VisPie,
@@ -248,7 +240,7 @@ func TestUpdateWidgetConfig_OK(t *testing.T) {
 			Limit:     10,
 		},
 	}
-	svc := NewDashboardService(store, &fakeDashboardAnalytics{})
+	svc := NewDashboardService(store, &fakeDashboardAnalytics{}, &fakeTransactionsLister{})
 
 	updated, err := svc.UpdateWidgetConfig(context.Background(), "uid1", "w1", dto.UpdateWidgetConfigRequest{
 		Visualization: dto.VisBar,
@@ -281,7 +273,7 @@ func TestUpdateWidgetConfig_InvalidVisualization(t *testing.T) {
 			Limit:     10,
 		},
 	}
-	svc := NewDashboardService(store, &fakeDashboardAnalytics{})
+	svc := NewDashboardService(store, &fakeDashboardAnalytics{}, &fakeTransactionsLister{})
 
 	_, err := svc.UpdateWidgetConfig(context.Background(), "uid1", "w1", dto.UpdateWidgetConfigRequest{
 		Visualization: dto.VisLine, // not valid for topSpenders
@@ -298,7 +290,7 @@ func TestUpdateWidgetConfig_InvalidVisualization(t *testing.T) {
 }
 
 func TestUpdateWidgetConfig_NotFound(t *testing.T) {
-	svc := NewDashboardService(newFakeStore(), &fakeDashboardAnalytics{})
+	svc := NewDashboardService(newFakeStore(), &fakeDashboardAnalytics{}, &fakeTransactionsLister{})
 	_, err := svc.UpdateWidgetConfig(context.Background(), "uid1", "nonexistent", dto.UpdateWidgetConfigRequest{})
 	var nfe *errs.NotFoundError
 	if !errors.As(err, &nfe) {
@@ -311,7 +303,7 @@ func TestUpdateWidgetConfig_NotFound(t *testing.T) {
 func TestReorderWidgets_OK(t *testing.T) {
 	store := newFakeStore()
 	an := &fakeDashboardAnalytics{}
-	svc := NewDashboardService(store, an)
+	svc := NewDashboardService(store, an, &fakeTransactionsLister{})
 
 	req := dto.ReorderWidgetsRequest{
 		WidgetOrder: []dto.ReorderWidgetItem{
@@ -332,7 +324,7 @@ func TestReorderWidgets_OK(t *testing.T) {
 func TestDeleteWidget_OK(t *testing.T) {
 	store := newFakeStore()
 	store.widgets["w1"] = &models.Widget{WidgetID: "w1"}
-	svc := NewDashboardService(store, &fakeDashboardAnalytics{})
+	svc := NewDashboardService(store, &fakeDashboardAnalytics{}, &fakeTransactionsLister{})
 
 	if err := svc.DeleteWidget(context.Background(), "uid1", "w1"); err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -343,7 +335,7 @@ func TestDeleteWidget_OK(t *testing.T) {
 }
 
 func TestDeleteWidget_NotFound(t *testing.T) {
-	svc := NewDashboardService(newFakeStore(), &fakeDashboardAnalytics{})
+	svc := NewDashboardService(newFakeStore(), &fakeDashboardAnalytics{}, &fakeTransactionsLister{})
 	err := svc.DeleteWidget(context.Background(), "uid1", "nonexistent")
 	var nfe *errs.NotFoundError
 	if !errors.As(err, &nfe) {
@@ -354,7 +346,7 @@ func TestDeleteWidget_NotFound(t *testing.T) {
 // --- GetWidgetData tests ---
 
 func TestGetWidgetData_WidgetNotFound(t *testing.T) {
-	svc := NewDashboardService(newFakeStore(), &fakeDashboardAnalytics{})
+	svc := NewDashboardService(newFakeStore(), &fakeDashboardAnalytics{}, &fakeTransactionsLister{})
 	_, err := svc.GetWidgetData(context.Background(), "uid1", "nonexistent")
 	var nfe *errs.NotFoundError
 	if !errors.As(err, &nfe) {
@@ -383,7 +375,7 @@ func TestGetWidgetData_TopSpenders(t *testing.T) {
 			},
 		},
 	}
-	svc := NewDashboardService(store, an)
+	svc := NewDashboardService(store, an, &fakeTransactionsLister{})
 
 	resp, err := svc.GetWidgetData(context.Background(), "uid1", "w1")
 	if err != nil {
@@ -420,7 +412,7 @@ func TestGetWidgetData_SpendingTrend(t *testing.T) {
 			Currency: "USD",
 		},
 	}
-	svc := NewDashboardService(store, an)
+	svc := NewDashboardService(store, an, &fakeTransactionsLister{})
 
 	resp, err := svc.GetWidgetData(context.Background(), "uid1", "w1")
 	if err != nil {
@@ -454,7 +446,7 @@ func TestGetWidgetData_PeriodComparison(t *testing.T) {
 			Change:   dto.PeriodChange{AbsoluteChange: 100, PercentageChange: &pct, CountChange: 2},
 		},
 	}
-	svc := NewDashboardService(store, an)
+	svc := NewDashboardService(store, an, &fakeTransactionsLister{})
 
 	resp, err := svc.GetWidgetData(context.Background(), "uid1", "w1")
 	if err != nil {
@@ -486,14 +478,15 @@ func TestGetWidgetData_LargestTransactions(t *testing.T) {
 			Limit:     5,
 		},
 	}
-	an := &fakeDashboardAnalytics{
-		txResult: dto.AnalyticsTransactionsResult{
+	an := &fakeDashboardAnalytics{}
+	txs := &fakeTransactionsLister{
+		resp: dto.TransactionListResult{
 			Transactions: []models.Transaction{
 				{TransactionID: "tx1", Name: "Amazon", Amount: 99.99, PFCPrimary: "Shopping", Date: "2026-01-15"},
 			},
 		},
 	}
-	svc := NewDashboardService(store, an)
+	svc := NewDashboardService(store, an, txs)
 
 	resp, err := svc.GetWidgetData(context.Background(), "uid1", "w1")
 	if err != nil {
@@ -513,8 +506,8 @@ func TestGetWidgetData_LargestTransactions(t *testing.T) {
 	if tx.Category != "Shopping" {
 		t.Errorf("expected category=Shopping, got %s", tx.Category)
 	}
-	if an.lastTxArgs.OrderBy != "amount" || !an.lastTxArgs.Desc {
-		t.Errorf("expected orderBy=amount desc, got %s desc=%v", an.lastTxArgs.OrderBy, an.lastTxArgs.Desc)
+	if txs.args.OrderBy != "amount" || !txs.args.Desc {
+		t.Errorf("expected orderBy=amount desc, got %s desc=%v", txs.args.OrderBy, txs.args.Desc)
 	}
 }
 
@@ -699,7 +692,7 @@ func TestResolvePeriodPreset_WeekOverWeek(t *testing.T) {
 // --- spendingTrend dateRange tests ---
 
 func TestAddWidget_SpendingTrend_WithDateRange(t *testing.T) {
-	svc := NewDashboardService(newFakeStore(), &fakeDashboardAnalytics{})
+	svc := NewDashboardService(newFakeStore(), &fakeDashboardAnalytics{}, &fakeTransactionsLister{})
 	_, err := svc.AddWidget(context.Background(), "uid1", dto.CreateWidgetRequest{
 		Type:          dto.WidgetTypeSpendingTrend,
 		Visualization: dto.VisLine,
@@ -714,7 +707,7 @@ func TestAddWidget_SpendingTrend_WithDateRange(t *testing.T) {
 }
 
 func TestAddWidget_SpendingTrend_BothWindowAndDateRange(t *testing.T) {
-	svc := NewDashboardService(newFakeStore(), &fakeDashboardAnalytics{})
+	svc := NewDashboardService(newFakeStore(), &fakeDashboardAnalytics{}, &fakeTransactionsLister{})
 	_, err := svc.AddWidget(context.Background(), "uid1", dto.CreateWidgetRequest{
 		Type:          dto.WidgetTypeSpendingTrend,
 		Visualization: dto.VisLine,
@@ -741,7 +734,7 @@ func TestGetWidgetData_SpendingTrend_WithDateRange(t *testing.T) {
 		},
 	}
 	an := &fakeDashboardAnalytics{}
-	svc := NewDashboardService(store, an)
+	svc := NewDashboardService(store, an, &fakeTransactionsLister{})
 
 	if _, err := svc.GetWidgetData(context.Background(), "uid1", "w1"); err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -757,7 +750,7 @@ func TestGetWidgetData_SpendingTrend_WithDateRange(t *testing.T) {
 // --- periodComparison custom range tests ---
 
 func TestAddWidget_PeriodComparison_CustomRanges(t *testing.T) {
-	svc := NewDashboardService(newFakeStore(), &fakeDashboardAnalytics{})
+	svc := NewDashboardService(newFakeStore(), &fakeDashboardAnalytics{}, &fakeTransactionsLister{})
 	_, err := svc.AddWidget(context.Background(), "uid1", dto.CreateWidgetRequest{
 		Type:          dto.WidgetTypePeriodComparison,
 		Visualization: dto.VisSummary,
@@ -773,7 +766,7 @@ func TestAddWidget_PeriodComparison_CustomRanges(t *testing.T) {
 
 
 func TestAddWidget_PeriodComparison_BothPresetAndCustom(t *testing.T) {
-	svc := NewDashboardService(newFakeStore(), &fakeDashboardAnalytics{})
+	svc := NewDashboardService(newFakeStore(), &fakeDashboardAnalytics{}, &fakeTransactionsLister{})
 	_, err := svc.AddWidget(context.Background(), "uid1", dto.CreateWidgetRequest{
 		Type:          dto.WidgetTypePeriodComparison,
 		Visualization: dto.VisSummary,
@@ -789,7 +782,7 @@ func TestAddWidget_PeriodComparison_BothPresetAndCustom(t *testing.T) {
 }
 
 func TestAddWidget_PeriodComparison_OnlyOneCustomRange(t *testing.T) {
-	svc := NewDashboardService(newFakeStore(), &fakeDashboardAnalytics{})
+	svc := NewDashboardService(newFakeStore(), &fakeDashboardAnalytics{}, &fakeTransactionsLister{})
 	_, err := svc.AddWidget(context.Background(), "uid1", dto.CreateWidgetRequest{
 		Type:          dto.WidgetTypePeriodComparison,
 		Visualization: dto.VisSummary,
@@ -815,7 +808,7 @@ func TestGetWidgetData_PeriodComparison_CustomRanges(t *testing.T) {
 		},
 	}
 	an := &fakeDashboardAnalytics{}
-	svc := NewDashboardService(store, an)
+	svc := NewDashboardService(store, an, &fakeTransactionsLister{})
 
 	if _, err := svc.GetWidgetData(context.Background(), "uid1", "w1"); err != nil {
 		t.Fatalf("unexpected error: %v", err)
