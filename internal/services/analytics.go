@@ -34,12 +34,12 @@ func (s *analyticsService) GetSpendTotal(ctx context.Context, uid string, args d
 	var total float64
 	var currency string
 	if err := s.txs.Query(ctx, uid, dto.TransactionQuery{
-		Pending:    args.Pending,
-		PFCPrimary: args.PFCPrimary,
-		BankID:     args.BankID,
-		Merchant:   args.Merchant,
-		DateFrom:   args.DateFrom,
-		DateTo:     args.DateTo,
+		Pending:      args.Pending,
+		PFCPrimaries: helpers.PrimarySlice(args.PFCPrimary),
+		BankID:       args.BankID,
+		Merchant:     args.Merchant,
+		DateFrom:     args.DateFrom,
+		DateTo:       args.DateTo,
 	}, func(tx *models.Transaction) error {
 		total += tx.Amount
 		if currency == "" && tx.Currency != "" {
@@ -66,11 +66,11 @@ func (s *analyticsService) GetSpendBreakdown(ctx context.Context, uid string, ar
 	}
 
 	data, err := collectPeriod(ctx, s.txs, uid, dto.TransactionQuery{
-		Pending:    args.Pending,
-		PFCPrimary: args.PFCPrimary,
-		BankID:     args.BankID,
-		DateFrom:   args.DateFrom,
-		DateTo:     args.DateTo,
+		Pending:      args.Pending,
+		PFCPrimaries: helpers.PrimarySlice(args.PFCPrimary),
+		BankID:       args.BankID,
+		DateFrom:     args.DateFrom,
+		DateTo:       args.DateTo,
 	}, args.GroupBy)
 	if err != nil {
 		return result, err
@@ -93,20 +93,20 @@ func (s *analyticsService) GetPeriodComparison(ctx context.Context, uid string, 
 	}
 
 	currentQuery := dto.TransactionQuery{
-		Pending:    args.Pending,
-		PFCPrimary: args.PFCPrimary,
-		BankID:     args.BankID,
-		Merchant:   args.Merchant,
-		DateFrom:   &args.CurrentFrom,
-		DateTo:     &args.CurrentTo,
+		Pending:      args.Pending,
+		PFCPrimaries: helpers.PrimarySlice(args.PFCPrimary),
+		BankID:       args.BankID,
+		Merchant:     args.Merchant,
+		DateFrom:     &args.CurrentFrom,
+		DateTo:       &args.CurrentTo,
 	}
 	previousQuery := dto.TransactionQuery{
-		Pending:    args.Pending,
-		PFCPrimary: args.PFCPrimary,
-		BankID:     args.BankID,
-		Merchant:   args.Merchant,
-		DateFrom:   &args.PreviousFrom,
-		DateTo:     &args.PreviousTo,
+		Pending:      args.Pending,
+		PFCPrimaries: helpers.PrimarySlice(args.PFCPrimary),
+		BankID:       args.BankID,
+		Merchant:     args.Merchant,
+		DateFrom:     &args.PreviousFrom,
+		DateTo:       &args.PreviousTo,
 	}
 
 	var wg sync.WaitGroup
@@ -460,11 +460,11 @@ func (s *analyticsService) GetTopN(ctx context.Context, uid string, args dto.Ana
 
 	pending := false
 	data, err := collectPeriod(ctx, s.txs, uid, dto.TransactionQuery{
-		Pending:    &pending,
-		PFCPrimary: args.PFCPrimary,
-		BankID:     args.BankID,
-		DateFrom:   &args.DateFrom,
-		DateTo:     &args.DateTo,
+		Pending:      &pending,
+		PFCPrimaries: helpers.PrimarySlice(args.PFCPrimary),
+		BankID:       args.BankID,
+		DateFrom:     &args.DateFrom,
+		DateTo:       &args.DateTo,
 	}, groupBy)
 	if err != nil {
 		return result, err
@@ -578,12 +578,12 @@ func (s *analyticsService) GetMovingAverage(ctx context.Context, uid string, arg
 
 	pending := false
 	if err := s.txs.Query(ctx, uid, dto.TransactionQuery{
-		Pending:    &pending,
-		PFCPrimary: args.PFCPrimary,
-		BankID:     args.BankID,
-		Merchant:   args.Merchant,
-		DateFrom:   &args.DateFrom,
-		DateTo:     &args.DateTo,
+		Pending:      &pending,
+		PFCPrimaries: helpers.PrimarySlice(args.PFCPrimary),
+		BankID:       args.BankID,
+		Merchant:     args.Merchant,
+		DateFrom:     &args.DateFrom,
+		DateTo:       &args.DateTo,
 	}, func(tx *models.Transaction) error {
 		pk, err := maPeriodKey(tx.Date, args.Granularity)
 		if err != nil {

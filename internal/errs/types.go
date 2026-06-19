@@ -1,6 +1,8 @@
 package errs
 
-import "errors"
+import (
+	"errors"
+)
 
 // IsTransient reports whether err wraps an ExternalServiceError flagged as transient.
 // Used by task handlers to decide whether to ack (permanent) or 5xx (retryable).
@@ -74,9 +76,16 @@ func NewAlreadyExistsError(message string) *AlreadyExistsError {
 	}
 }
 
-func NewValidationError(message string) *ValidationError {
+func NewValidationError(message string, cause ...error) *ValidationError {
+	var cau error = nil
+	if len(cause) > 0 {
+		cau = cause[0]
+	}
 	return &ValidationError{
-		ErrorMessage: ErrorMessage{Message: message},
+		ErrorMessage: ErrorMessage{
+			Message: message,
+			Cause:   cau,
+		},
 	}
 }
 

@@ -82,6 +82,9 @@ func setupTransactionIndexes(ctx *pulumi.Context, prov *gcp.Provider, db *firest
 		{name: "txPendingBankIdDateAsc", fields: indexFields("pending", "ASCENDING", "bankId", "ASCENDING", "date", "ASCENDING")},
 		{name: "txPendingBankIdDateDesc", fields: indexFields("pending", "ASCENDING", "bankId", "ASCENDING", "date", "DESCENDING")},
 		{name: "txPendingBankIdDateDescNameDesc", fields: indexFieldsWithNameOrder("DESCENDING", "pending", "ASCENDING", "bankId", "ASCENDING", "date", "DESCENDING")},
+		{name: "txPendingPfcPrimaryBankIdDateAsc", fields: indexFields("pending", "ASCENDING", "pfcPrimary", "ASCENDING", "bankId", "ASCENDING", "date", "ASCENDING")},
+		{name: "txPendingPfcPrimaryBankIdDateDesc", fields: indexFields("pending", "ASCENDING", "pfcPrimary", "ASCENDING", "bankId", "ASCENDING", "date", "DESCENDING")},
+		{name: "txPendingPfcPrimaryBankIdDateDescNameDesc", fields: indexFieldsWithNameOrder("DESCENDING", "pending", "ASCENDING", "pfcPrimary", "ASCENDING", "bankId", "ASCENDING", "date", "DESCENDING")},
 		// largestTransactions query support:
 		// pending == false, optional bankId/pfcPrimary filters, date range on date, order by amount desc
 		{name: "txPendingAmountDescDateDescNameDesc", fields: indexFieldsWithNameOrder("DESCENDING", "pending", "ASCENDING", "amount", "DESCENDING", "date", "DESCENDING")},

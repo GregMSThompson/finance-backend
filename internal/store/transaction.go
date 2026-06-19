@@ -14,6 +14,7 @@ import (
 	"github.com/GregMSThompson/finance-backend/internal/errs"
 	"github.com/GregMSThompson/finance-backend/internal/models"
 	"github.com/GregMSThompson/finance-backend/pkg/helpers"
+	"github.com/GregMSThompson/finance-backend/pkg/pagination"
 )
 
 type transactionStore struct {
@@ -69,8 +70,13 @@ func (s *transactionStore) query(ctx context.Context, uid string, q dto.Transact
 	if q.Pending != nil {
 		query = query.Where("pending", "==", *q.Pending)
 	}
-	if q.PFCPrimary != nil {
-		query = query.Where("pfcPrimary", "==", *q.PFCPrimary)
+	switch len(q.PFCPrimaries) {
+	case 0:
+		// no filter
+	case 1:
+		query = query.Where("pfcPrimary", "==", q.PFCPrimaries[0])
+	default:
+		query = query.Where("pfcPrimary", "in", q.PFCPrimaries)
 	}
 	if q.BankID != nil {
 		query = query.Where("bankId", "==", *q.BankID)
@@ -91,6 +97,32 @@ func (s *transactionStore) query(ctx context.Context, uid string, q dto.Transact
 		dir = firestore.Desc
 	}
 	query = query.OrderBy(orderField, dir)
+
+	if q.Cursor != nil {
+		docID, err := pagination.DecodeCursor(*q.Cursor)
+		if err != nil {
+			errCh <- errs.NewValidationError("invalid cursor", err)
+			close(out)
+			close(errCh)
+			return out, errCh
+		}
+		// StartAfter(snapshot) lets Firestore line up the cursor against the
+		// query's order-by clauses (including its implicit __name__ tiebreaker)
+		// without us having to thread every order field through the cursor.
+		// Costs one extra read per paginated request.
+		snap, err := s.txCollection(uid).Doc(docID).Get(ctx)
+		if err != nil {
+			if status.Code(err) == codes.NotFound {
+				errCh <- errs.NewValidationError("invalid cursor")
+			} else {
+				errCh <- errs.NewDatabaseError("read", "failed to load cursor document", err)
+			}
+			close(out)
+			close(errCh)
+			return out, errCh
+		}
+		query = query.StartAfter(snap)
+	}
 
 	if q.Limit > 0 {
 		query = query.Limit(q.Limit)

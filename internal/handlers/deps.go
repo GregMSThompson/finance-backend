@@ -23,4 +23,5 @@ type Deps struct {
 	DashboardSvc    dashboardService
 	AlertSvc        alertService
 	JobSvc          jobService
+	TransactionsSvc transactionsService
 }

@@ -30,6 +30,7 @@ func NewAPIRouter(deps *handlers.Deps) chi.Router {
 	dsh := handlers.NewDashboardHandlers(deps)
 	alh := handlers.NewAlertHandlers(deps)
 	jh := handlers.NewJobHandlers(deps)
+	txh := handlers.NewTransactionsHandlers(deps)
 	wkh := handlers.NewWellKnownHandlers(deps)
 
 	// AASA: fetched anonymously by Apple, no auth middleware
@@ -51,6 +52,7 @@ func NewAPIRouter(deps *handlers.Deps) chi.Router {
 		r.Mount("/dashboard", dsh.DashboardRoutes())
 		r.Mount("/alerts", alh.AlertRoutes())
 		r.Mount("/jobs", jh.JobRoutes())
+		r.Mount("/transactions", txh.TransactionRoutes())
 	})
 
 	return r

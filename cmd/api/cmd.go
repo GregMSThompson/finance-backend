@@ -67,6 +67,7 @@ func main() {
 	deps.DashboardSvc = dashsvc
 	deps.AlertSvc = alertsvc
 	deps.JobSvc = jobsvc
+	deps.TransactionsSvc = txserv
 
 	// router
 	r := router.NewAPIRouter(deps)

@@ -152,8 +152,8 @@ func (s *dashboardService) fetchTopSpenders(ctx context.Context, uid string, cfg
 		Dimension:  cfg.Dimension,
 		Direction:  "top",
 		Limit:      cfg.Limit,
-		PFCPrimary: optString(cfg.Category),
-		BankID:     optString(cfg.BankID),
+		PFCPrimary: helpers.OptString(cfg.Category),
+		BankID:     helpers.OptString(cfg.BankID),
 		DateFrom:   from,
 		DateTo:     to,
 	})
@@ -193,8 +193,8 @@ func (s *dashboardService) fetchSpendingTrend(ctx context.Context, uid string, c
 	return s.analytics.GetMovingAverage(ctx, uid, dto.AnalyticsMovingAverageArgs{
 		Granularity: "day",
 		Scope:       cfg.Dimension,
-		PFCPrimary:  optString(cfg.Category),
-		BankID:      optString(cfg.BankID),
+		PFCPrimary:  helpers.OptString(cfg.Category),
+		BankID:      helpers.OptString(cfg.BankID),
 		DateFrom:    from,
 		DateTo:      to,
 	})
@@ -213,7 +213,7 @@ func (s *dashboardService) fetchPeriodComparison(ctx context.Context, uid string
 		}
 	}
 	result, err := s.analytics.GetPeriodComparison(ctx, uid, dto.AnalyticsPeriodComparisonArgs{
-		BankID:       optString(cfg.BankID),
+		BankID:       helpers.OptString(cfg.BankID),
 		CurrentFrom:  currFrom,
 		CurrentTo:    currTo,
 		PreviousFrom: prevFrom,
@@ -251,14 +251,14 @@ func (s *dashboardService) fetchLargestTransactions(ctx context.Context, uid str
 		return dto.LargestTransactionsData{}, err
 	}
 	result, err := s.transactions.ListTransactions(ctx, uid, dto.TransactionListArgs{
-		Pending:    helpers.Ptr(false),
-		PFCPrimary: optString(cfg.Category),
-		BankID:     optString(cfg.BankID),
-		DateFrom:   &from,
-		DateTo:     &to,
-		OrderBy:    "amount",
-		Desc:       true,
-		Limit:      cfg.Limit,
+		Pending:      helpers.Ptr(false),
+		PFCPrimaries: helpers.PrimarySlice(helpers.OptString(cfg.Category)),
+		BankID:       helpers.OptString(cfg.BankID),
+		DateFrom:     &from,
+		DateTo:       &to,
+		OrderBy:      "amount",
+		Desc:         true,
+		Limit:        cfg.Limit,
 	})
 	if err != nil {
 		return dto.LargestTransactionsData{}, err
@@ -290,7 +290,7 @@ func (s *dashboardService) fetchRecurringSubscriptions(ctx context.Context, uid 
 		to = now.Format(dashDateLayout)
 	}
 	result, err := s.analytics.GetRecurringTransactions(ctx, uid, dto.AnalyticsRecurringArgs{
-		BankID:   optString(cfg.BankID),
+		BankID:   helpers.OptString(cfg.BankID),
 		DateFrom: from,
 		DateTo:   to,
 	})
@@ -576,11 +576,4 @@ func mondayOfWeek(t time.Time) time.Time {
 		weekday = 7 // ISO: Sunday = 7
 	}
 	return t.AddDate(0, 0, -(weekday - 1))
-}
-
-func optString(s string) *string {
-	if s == "" {
-		return nil
-	}
-	return &s
 }

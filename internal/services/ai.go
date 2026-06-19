@@ -33,6 +33,21 @@ type aiTransactions interface {
 	ListTransactions(ctx context.Context, uid string, args dto.TransactionListArgs) (dto.TransactionListResult, error)
 }
 
+// aiGetTransactionsArgs decodes Vertex's get_transactions tool call. Vertex
+// still emits a single pfcPrimary; we convert to PFCPrimaries before calling
+// the transactions service.
+type aiGetTransactionsArgs struct {
+	Pending    *bool   `json:"pending,omitempty"`
+	PFCPrimary *string `json:"pfcPrimary,omitempty"`
+	BankID     *string `json:"bankId,omitempty"`
+	Merchant   *string `json:"merchant,omitempty"`
+	DateFrom   *string `json:"dateFrom,omitempty"`
+	DateTo     *string `json:"dateTo,omitempty"`
+	OrderBy    string  `json:"orderBy,omitempty"`
+	Desc       bool    `json:"desc,omitempty"`
+	Limit      int     `json:"limit,omitempty"`
+}
+
 type aiStore interface {
 	SaveMessage(ctx context.Context, uid, sessionID string, msg models.AIMessage) error
 	ListMessages(ctx context.Context, uid, sessionID string, limit int) ([]models.AIMessage, error)
@@ -291,18 +306,35 @@ func (s *aiService) executeTool(ctx context.Context, uid string, call dto.Vertex
 			s.analysis.GetSpendBreakdown,
 		)
 	case "get_transactions":
-		return executeAnalyticsTool(
-			ctx,
-			uid,
-			call,
-			func(a *dto.TransactionListArgs) **bool { return &a.Pending },
-			func(a *dto.TransactionListArgs) **string { return &a.DateFrom },
-			func(a *dto.TransactionListArgs) **string { return &a.DateTo },
-			func(a *dto.TransactionListArgs) *string { return a.PFCPrimary },
-			nil,
-			s.applyDefaults,
-			s.transactions.ListTransactions,
-		)
+		raw, err := decodeArgs[aiGetTransactionsArgs](call.Args)
+		if err != nil {
+			return dto.VertexToolResult{}, err
+		}
+		if err := s.applyDefaults(&raw.Pending, &raw.DateFrom, &raw.DateTo); err != nil {
+			return dto.VertexToolResult{}, err
+		}
+		if err := validatePrimary(raw.PFCPrimary); err != nil {
+			return dto.VertexToolResult{}, err
+		}
+		result, err := s.transactions.ListTransactions(ctx, uid, dto.TransactionListArgs{
+			Pending:      raw.Pending,
+			PFCPrimaries: helpers.PrimarySlice(raw.PFCPrimary),
+			BankID:       raw.BankID,
+			Merchant:     raw.Merchant,
+			DateFrom:     raw.DateFrom,
+			DateTo:       raw.DateTo,
+			OrderBy:      raw.OrderBy,
+			Desc:         raw.Desc,
+			Limit:        raw.Limit,
+		})
+		if err != nil {
+			return dto.VertexToolResult{}, err
+		}
+		payload, err := toMap(result)
+		if err != nil {
+			return dto.VertexToolResult{}, err
+		}
+		return dto.VertexToolResult{Name: call.Name, Response: payload}, nil
 	case "get_period_comparison":
 		args, err := decodeArgs[dto.AnalyticsPeriodComparisonArgs](call.Args)
 		if err != nil {
