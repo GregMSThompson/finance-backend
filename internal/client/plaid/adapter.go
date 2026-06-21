@@ -95,6 +95,31 @@ func (a *Adapter) WebhookVerificationKeyGet(ctx context.Context, kid string) (Pl
 	return out, nil
 }
 
+// GetAccounts fetches the accounts associated with the given access token.
+func (a *Adapter) GetAccounts(ctx context.Context, accessToken string) ([]models.Account, error) {
+	req := plaid.NewAccountsGetRequest(accessToken)
+	resp, _, err := a.client.PlaidApi.AccountsGet(ctx).AccountsGetRequest(*req).Execute()
+	if err != nil {
+		return nil, errs.NewExternalServiceError("plaid", "failed to get accounts", IsTransientError(err), err)
+	}
+
+	now := time.Now()
+	accounts := make([]models.Account, 0, len(resp.GetAccounts()))
+	for _, acct := range resp.GetAccounts() {
+		accounts = append(accounts, models.Account{
+			AccountID:    acct.GetAccountId(),
+			Name:         acct.GetName(),
+			OfficialName: acct.GetOfficialName(),
+			Type:         string(acct.GetType()),
+			Subtype:      string(acct.GetSubtype()),
+			Mask:         acct.GetMask(),
+			CreatedAt:    now,
+			UpdatedAt:    now,
+		})
+	}
+	return accounts, nil
+}
+
 func (a *Adapter) ExchangePublicToken(ctx context.Context, publicToken string) (itemID, accessToken string, err error) {
 	req := plaid.NewItemPublicTokenExchangeRequest(publicToken)
 	resp, _, err := a.client.PlaidApi.ItemPublicTokenExchange(ctx).ItemPublicTokenExchangeRequest(*req).Execute()
@@ -129,6 +154,7 @@ func (a *Adapter) SyncTransactions(ctx context.Context, bankID string, accessTok
 		return models.Transaction{
 			TransactionID:  plaidTx.GetTransactionId(),
 			BankID:         bankID,
+			AccountID:      plaidTx.GetAccountId(),
 			Name:           plaidTx.GetName(),
 			Amount:         plaidTx.GetAmount(),
 			Currency:       plaidTx.GetIsoCurrencyCode(),

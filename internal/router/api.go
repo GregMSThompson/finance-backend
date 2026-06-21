@@ -31,6 +31,7 @@ func NewAPIRouter(deps *handlers.Deps) chi.Router {
 	alh := handlers.NewAlertHandlers(deps)
 	jh := handlers.NewJobHandlers(deps)
 	txh := handlers.NewTransactionsHandlers(deps)
+	ach := handlers.NewAccountsHandlers(deps)
 	wkh := handlers.NewWellKnownHandlers(deps)
 
 	// AASA: fetched anonymously by Apple, no auth middleware
@@ -48,6 +49,7 @@ func NewAPIRouter(deps *handlers.Deps) chi.Router {
 		r.Mount("/users", ush.UserRoutes())
 		r.Mount("/plaid", ph.PlaidRoutes())
 		r.Mount("/banks", bh.BankRoutes())
+		r.Mount("/banks/{bankId}/accounts", ach.AccountRoutes())
 		r.Mount("/ai", aih.AIRoutes())
 		r.Mount("/dashboard", dsh.DashboardRoutes())
 		r.Mount("/alerts", alh.AlertRoutes())

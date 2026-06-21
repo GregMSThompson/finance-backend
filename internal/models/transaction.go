@@ -7,6 +7,7 @@ import (
 type Transaction struct {
 	TransactionID  string    `firestore:"transactionId" json:"transactionId"` // Plaid transaction_id (doc ID)
 	BankID         string    `firestore:"bankId" json:"bankId"`               // Plaid item_id
+	AccountID      string    `firestore:"accountId" json:"accountId"`          // Plaid account_id
 	Name           string    `firestore:"name" json:"name"`
 	Amount         float64   `firestore:"amount" json:"amount"`
 	Currency       string    `firestore:"currency" json:"currency"`

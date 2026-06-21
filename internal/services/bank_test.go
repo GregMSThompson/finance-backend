@@ -47,9 +47,19 @@ func (f *bankFakeTxStore) DeleteCursor(ctx context.Context, uid, bankID string) 
 	return f.deleteCursorErr
 }
 
+type bankFakeAccountStore struct {
+	deleteByBankErr error
+	deleted         []string
+}
+
+func (f *bankFakeAccountStore) DeleteByBank(ctx context.Context, uid, bankID string) error {
+	f.deleted = append(f.deleted, uid+":"+bankID)
+	return f.deleteByBankErr
+}
+
 func TestBankServiceListBanks(t *testing.T) {
 	expected := []*models.Bank{{BankID: "b1"}, {BankID: "b2"}}
-	svc := NewBankService(&bankFakeBankStore{list: expected}, &bankFakeTxStore{}, &fakeJobs{})
+	svc := NewBankService(&bankFakeBankStore{list: expected}, &bankFakeTxStore{}, &bankFakeAccountStore{}, &fakeJobs{})
 
 	ctx := helpers.TestCtx()
 	got, err := svc.ListBanks(ctx, "uid-1")
@@ -63,7 +73,7 @@ func TestBankServiceListBanks(t *testing.T) {
 
 func TestBankServiceDeleteBankSubmitsJob(t *testing.T) {
 	jobs := &fakeJobs{jobID: "job-del"}
-	svc := NewBankService(&bankFakeBankStore{}, &bankFakeTxStore{}, jobs)
+	svc := NewBankService(&bankFakeBankStore{}, &bankFakeTxStore{}, &bankFakeAccountStore{}, jobs)
 
 	ctx := helpers.TestCtx()
 	got, err := svc.DeleteBank(ctx, "uid-1", "bank-1")
@@ -88,7 +98,8 @@ func TestBankServiceDeleteBankSubmitsJob(t *testing.T) {
 func TestBankServiceRunDeleteSuccess(t *testing.T) {
 	banks := &bankFakeBankStore{}
 	txs := &bankFakeTxStore{}
-	svc := NewBankService(banks, txs, &fakeJobs{})
+	accounts := &bankFakeAccountStore{}
+	svc := NewBankService(banks, txs, accounts, &fakeJobs{})
 
 	ctx := helpers.TestCtx()
 	if _, err := svc.RunDelete(ctx, "uid-1", dto.BankDeleteParams{BankID: "bank-1"}); err != nil {
@@ -100,6 +111,9 @@ func TestBankServiceRunDeleteSuccess(t *testing.T) {
 	if txs.calls[0] != "txs:uid-1:bank-1" || txs.calls[1] != "cursor:uid-1:bank-1" {
 		t.Fatalf("unexpected tx call order: %#v", txs.calls)
 	}
+	if len(accounts.deleted) != 1 || accounts.deleted[0] != "uid-1:bank-1" {
+		t.Fatalf("unexpected account delete calls: %#v", accounts.deleted)
+	}
 	if len(banks.deleted) != 1 || banks.deleted[0] != "uid-1:bank-1" {
 		t.Fatalf("unexpected bank delete calls: %#v", banks.deleted)
 	}
@@ -109,7 +123,7 @@ func TestBankServiceRunDeleteStopsOnDeleteByBankError(t *testing.T) {
 	expectedErr := errors.New("delete txs failed")
 	banks := &bankFakeBankStore{}
 	txs := &bankFakeTxStore{deleteByBankErr: expectedErr}
-	svc := NewBankService(banks, txs, &fakeJobs{})
+	svc := NewBankService(banks, txs, &bankFakeAccountStore{}, &fakeJobs{})
 
 	ctx := helpers.TestCtx()
 	if _, err := svc.RunDelete(ctx, "uid-1", dto.BankDeleteParams{BankID: "bank-1"}); err != expectedErr {
@@ -127,7 +141,7 @@ func TestBankServiceRunDeleteStopsOnDeleteCursorError(t *testing.T) {
 	expectedErr := errors.New("delete cursor failed")
 	banks := &bankFakeBankStore{}
 	txs := &bankFakeTxStore{deleteCursorErr: expectedErr}
-	svc := NewBankService(banks, txs, &fakeJobs{})
+	svc := NewBankService(banks, txs, &bankFakeAccountStore{}, &fakeJobs{})
 
 	ctx := helpers.TestCtx()
 	if _, err := svc.RunDelete(ctx, "uid-1", dto.BankDeleteParams{BankID: "bank-1"}); err != expectedErr {

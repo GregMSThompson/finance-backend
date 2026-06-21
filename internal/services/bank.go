@@ -19,17 +19,23 @@ type transactionBSStore interface {
 	DeleteCursor(ctx context.Context, uid, bankID string) error
 }
 
-type bankService struct {
-	banks bankBSStore
-	txs   transactionBSStore
-	jobs  jobSubmitter
+type accountBSStore interface {
+	DeleteByBank(ctx context.Context, uid, bankID string) error
 }
 
-func NewBankService(banks bankBSStore, txs transactionBSStore, jobs jobSubmitter) *bankService {
+type bankService struct {
+	banks    bankBSStore
+	txs      transactionBSStore
+	accounts accountBSStore
+	jobs     jobSubmitter
+}
+
+func NewBankService(banks bankBSStore, txs transactionBSStore, accounts accountBSStore, jobs jobSubmitter) *bankService {
 	return &bankService{
-		banks: banks,
-		txs:   txs,
-		jobs:  jobs,
+		banks:    banks,
+		txs:      txs,
+		accounts: accounts,
+		jobs:     jobs,
 	}
 }
 
@@ -55,6 +61,9 @@ func (s *bankService) RunDelete(ctx context.Context, uid string, params dto.Bank
 		return dto.BankDeleteResult{}, err
 	}
 	if err := s.txs.DeleteCursor(ctx, uid, params.BankID); err != nil {
+		return dto.BankDeleteResult{}, err
+	}
+	if err := s.accounts.DeleteByBank(ctx, uid, params.BankID); err != nil {
 		return dto.BankDeleteResult{}, err
 	}
 	if err := s.banks.Delete(ctx, uid, params.BankID); err != nil {

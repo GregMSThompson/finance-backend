@@ -139,6 +139,13 @@ func (s *plaidService) HandleWebhook(ctx context.Context, p dto.PlaidWebhook) er
 		_, err := s.bankSvc.DeleteBank(ctx, uid, p.ItemID)
 		return err
 
+	case "ITEM:NEW_ACCOUNTS_AVAILABLE":
+		// A new account appeared on this Item (e.g. the user opened a new product
+		// at the same institution). The user must re-link via Plaid Link to grant
+		// access. Full account refresh on this event is not implemented yet.
+		log.Info("new accounts available for item — re-link required", "item_id", p.ItemID)
+		return nil
+
 	default:
 		log.Info("unhandled plaid webhook", "type", p.WebhookType, "code", p.WebhookCode)
 		return nil

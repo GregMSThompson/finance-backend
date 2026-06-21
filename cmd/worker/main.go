@@ -28,13 +28,15 @@ func main() {
 	alertEventStore := store.NewAlertEventStore(bs.Firestore)
 	bankStore := store.NewBankStore(bs.Firestore, kmsHelper)
 	transactionStore := store.NewTransactionStore(bs.Firestore)
+	accountStore := store.NewAccountStore(bs.Firestore)
 	jobStore := store.NewJobStore(bs.Firestore)
 
 	notificationSvc := services.NewNotificationService(userStore, alertEventStore, bs.Messaging)
 	// Worker only consumes jobs; pass nil enqueuer since Submit is not called here.
 	jobSvc := services.NewJobService(jobStore, nil)
-	bankSvc := services.NewBankService(bankStore, transactionStore, jobSvc)
+	bankSvc := services.NewBankService(bankStore, transactionStore, accountStore, jobSvc)
 	plaidSvc := services.NewPlaidService(bs.PlaidAdapter, bankStore, transactionStore, jobSvc, bankSvc)
+	accountsSvc := services.NewAccountsService(bs.PlaidAdapter, bankStore, accountStore, jobSvc)
 
 	deps := &taskhandlers.Deps{
 		Log:               bs.Log,
@@ -47,6 +49,7 @@ func main() {
 		JobSvc:            jobSvc,
 		PlaidSvc:          plaidSvc,
 		BankSvc:           bankSvc,
+		AccountsSvc:       accountsSvc,
 	}
 
 	r := router.NewWorkerRouter(deps)
