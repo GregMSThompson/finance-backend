@@ -5,7 +5,7 @@ import "github.com/GregMSThompson/finance-backend/internal/models"
 type TransactionQuery struct {
 	Pending      *bool
 	PFCPrimaries []string
-	BankID       *string
+	AccountID    *string
 	Merchant     *string
 	DateFrom     *string
 	DateTo       *string
@@ -20,7 +20,7 @@ type TransactionQuery struct {
 type TransactionListArgs struct {
 	Pending      *bool
 	PFCPrimaries []string
-	BankID       *string
+	AccountID    *string
 	Merchant     *string
 	DateFrom     *string
 	DateTo       *string

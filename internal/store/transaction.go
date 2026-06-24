@@ -78,8 +78,8 @@ func (s *transactionStore) query(ctx context.Context, uid string, q dto.Transact
 	default:
 		query = query.Where("pfcPrimary", "in", q.PFCPrimaries)
 	}
-	if q.BankID != nil {
-		query = query.Where("bankId", "==", *q.BankID)
+	if q.AccountID != nil {
+		query = query.Where("accountId", "==", *q.AccountID)
 	}
 	if q.DateFrom != nil {
 		query = query.Where("date", ">=", *q.DateFrom)

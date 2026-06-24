@@ -32,14 +32,14 @@ func TestListTransactionsPassesFilters(t *testing.T) {
 	svc := NewTransactionsService(store)
 
 	pending := true
-	bankID := "bank-1"
+	accountID := "bank-1"
 	merchant := "amazon"
 	from := "2025-01-01"
 	to := "2025-01-31"
 	args := dto.TransactionListArgs{
 		Pending:      &pending,
 		PFCPrimaries: []string{"FOOD_RETAIL", "ENTERTAINMENT"},
-		BankID:       &bankID,
+		AccountID:    &accountID,
 		Merchant:     &merchant,
 		DateFrom:     &from,
 		DateTo:       &to,
@@ -64,8 +64,8 @@ func TestListTransactionsPassesFilters(t *testing.T) {
 	if len(store.lastQuery.PFCPrimaries) != 2 || store.lastQuery.PFCPrimaries[0] != "FOOD_RETAIL" || store.lastQuery.PFCPrimaries[1] != "ENTERTAINMENT" {
 		t.Fatalf("pfcPrimaries mismatch: %+v", store.lastQuery.PFCPrimaries)
 	}
-	if store.lastQuery.BankID == nil || *store.lastQuery.BankID != "bank-1" {
-		t.Fatalf("bankId mismatch: %+v", store.lastQuery.BankID)
+	if store.lastQuery.AccountID == nil || *store.lastQuery.AccountID != "bank-1" {
+		t.Fatalf("accountId mismatch: %+v", store.lastQuery.AccountID)
 	}
 	if store.lastQuery.Merchant == nil || *store.lastQuery.Merchant != "amazon" {
 		t.Fatalf("merchant mismatch: %+v", store.lastQuery.Merchant)

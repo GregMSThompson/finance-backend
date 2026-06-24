@@ -67,7 +67,7 @@ func parseListTransactionsArgs(r *http.Request) (dto.TransactionListArgs, error)
 
 	args := dto.TransactionListArgs{
 		PFCPrimaries: q["category"],
-		BankID:       helpers.OptString(q.Get("bankId")),
+		AccountID:    helpers.OptString(q.Get("accountId")),
 		Merchant:     helpers.OptString(q.Get("merchant")),
 		DateFrom:     helpers.OptString(q.Get("dateFrom")),
 		DateTo:       helpers.OptString(q.Get("dateTo")),

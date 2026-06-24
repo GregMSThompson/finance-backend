@@ -3,7 +3,7 @@ package dto
 type AnalyticsSpendTotalArgs struct {
 	Pending    *bool
 	PFCPrimary *string
-	BankID     *string
+	AccountID     *string
 	Merchant   *string
 	DateFrom   *string
 	DateTo     *string
@@ -19,7 +19,7 @@ type AnalyticsSpendTotalResult struct {
 type AnalyticsSpendBreakdownArgs struct {
 	Pending    *bool
 	PFCPrimary *string
-	BankID     *string
+	AccountID     *string
 	DateFrom   *string
 	DateTo     *string
 	GroupBy    string
@@ -42,7 +42,7 @@ type AnalyticsSpendBreakdownResult struct {
 type AnalyticsPeriodComparisonArgs struct {
 	Pending      *bool
 	PFCPrimary   *string
-	BankID       *string
+	AccountID       *string
 	Merchant     *string
 	CurrentFrom  string
 	CurrentTo    string
@@ -82,7 +82,7 @@ type AnalyticsPeriodComparisonResult struct {
 }
 
 type AnalyticsRecurringArgs struct {
-	BankID   *string
+	AccountID   *string
 	DateFrom string
 	DateTo   string
 }
@@ -112,7 +112,7 @@ type AnalyticsMovingAverageArgs struct {
 	Scope       string
 	PFCPrimary  *string
 	Merchant    *string
-	BankID      *string
+	AccountID      *string
 	DateFrom    string
 	DateTo      string
 }
@@ -136,7 +136,7 @@ type AnalyticsTopNArgs struct {
 	Limit      int
 	MinCount   int
 	PFCPrimary *string
-	BankID     *string
+	AccountID     *string
 	DateFrom   string
 	DateTo     string
 }
@@ -159,7 +159,7 @@ type AnalyticsTopNResult struct {
 }
 
 type AnalyticsIncomeVsExpensesArgs struct {
-	BankID   *string
+	AccountID   *string
 	DateFrom string
 	DateTo   string
 }

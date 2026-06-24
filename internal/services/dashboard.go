@@ -153,7 +153,7 @@ func (s *dashboardService) fetchTopSpenders(ctx context.Context, uid string, cfg
 		Direction:  "top",
 		Limit:      cfg.Limit,
 		PFCPrimary: helpers.OptString(cfg.Category),
-		BankID:     helpers.OptString(cfg.BankID),
+		AccountID:  helpers.OptString(cfg.AccountID),
 		DateFrom:   from,
 		DateTo:     to,
 	})
@@ -194,7 +194,7 @@ func (s *dashboardService) fetchSpendingTrend(ctx context.Context, uid string, c
 		Granularity: "day",
 		Scope:       cfg.Dimension,
 		PFCPrimary:  helpers.OptString(cfg.Category),
-		BankID:      helpers.OptString(cfg.BankID),
+		AccountID:   helpers.OptString(cfg.AccountID),
 		DateFrom:    from,
 		DateTo:      to,
 	})
@@ -213,7 +213,7 @@ func (s *dashboardService) fetchPeriodComparison(ctx context.Context, uid string
 		}
 	}
 	result, err := s.analytics.GetPeriodComparison(ctx, uid, dto.AnalyticsPeriodComparisonArgs{
-		BankID:       helpers.OptString(cfg.BankID),
+		AccountID:    helpers.OptString(cfg.AccountID),
 		CurrentFrom:  currFrom,
 		CurrentTo:    currTo,
 		PreviousFrom: prevFrom,
@@ -253,7 +253,7 @@ func (s *dashboardService) fetchLargestTransactions(ctx context.Context, uid str
 	result, err := s.transactions.ListTransactions(ctx, uid, dto.TransactionListArgs{
 		Pending:      helpers.Ptr(false),
 		PFCPrimaries: helpers.PrimarySlice(helpers.OptString(cfg.Category)),
-		BankID:       helpers.OptString(cfg.BankID),
+		AccountID:    helpers.OptString(cfg.AccountID),
 		DateFrom:     &from,
 		DateTo:       &to,
 		OrderBy:      "amount",
@@ -290,9 +290,9 @@ func (s *dashboardService) fetchRecurringSubscriptions(ctx context.Context, uid 
 		to = now.Format(dashDateLayout)
 	}
 	result, err := s.analytics.GetRecurringTransactions(ctx, uid, dto.AnalyticsRecurringArgs{
-		BankID:   helpers.OptString(cfg.BankID),
-		DateFrom: from,
-		DateTo:   to,
+		AccountID: helpers.OptString(cfg.AccountID),
+		DateFrom:  from,
+		DateTo:    to,
 	})
 	if err != nil {
 		return dto.RecurringSubscriptionsData{}, err

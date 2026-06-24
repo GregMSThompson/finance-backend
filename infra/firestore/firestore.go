@@ -73,24 +73,24 @@ func setupTransactionIndexes(ctx *pulumi.Context, prov *gcp.Provider, db *firest
 		{name: "txPfcPrimaryDateAsc", fields: indexFields("pfcPrimary", "ASCENDING", "date", "ASCENDING")},
 		{name: "txPfcPrimaryDateDesc", fields: indexFields("pfcPrimary", "ASCENDING", "date", "DESCENDING")},
 		{name: "txPfcPrimaryDateDescNameDesc", fields: indexFieldsWithNameOrder("DESCENDING", "pfcPrimary", "ASCENDING", "date", "DESCENDING")},
-		{name: "txBankIdDateAsc", fields: indexFields("bankId", "ASCENDING", "date", "ASCENDING")},
-		{name: "txBankIdDateDesc", fields: indexFields("bankId", "ASCENDING", "date", "DESCENDING")},
-		{name: "txBankIdDateDescNameDesc", fields: indexFieldsWithNameOrder("DESCENDING", "bankId", "ASCENDING", "date", "DESCENDING")},
+		{name: "txAccountIdDateAsc", fields: indexFields("accountId", "ASCENDING", "date", "ASCENDING")},
+		{name: "txAccountIdDateDesc", fields: indexFields("accountId", "ASCENDING", "date", "DESCENDING")},
+		{name: "txAccountIdDateDescNameDesc", fields: indexFieldsWithNameOrder("DESCENDING", "accountId", "ASCENDING", "date", "DESCENDING")},
 		{name: "txPendingPfcPrimaryDateAsc", fields: indexFields("pending", "ASCENDING", "pfcPrimary", "ASCENDING", "date", "ASCENDING")},
 		{name: "txPendingPfcPrimaryDateDesc", fields: indexFields("pending", "ASCENDING", "pfcPrimary", "ASCENDING", "date", "DESCENDING")},
 		{name: "txPendingPfcPrimaryDateDescNameDesc", fields: indexFieldsWithNameOrder("DESCENDING", "pending", "ASCENDING", "pfcPrimary", "ASCENDING", "date", "DESCENDING")},
-		{name: "txPendingBankIdDateAsc", fields: indexFields("pending", "ASCENDING", "bankId", "ASCENDING", "date", "ASCENDING")},
-		{name: "txPendingBankIdDateDesc", fields: indexFields("pending", "ASCENDING", "bankId", "ASCENDING", "date", "DESCENDING")},
-		{name: "txPendingBankIdDateDescNameDesc", fields: indexFieldsWithNameOrder("DESCENDING", "pending", "ASCENDING", "bankId", "ASCENDING", "date", "DESCENDING")},
-		{name: "txPendingPfcPrimaryBankIdDateAsc", fields: indexFields("pending", "ASCENDING", "pfcPrimary", "ASCENDING", "bankId", "ASCENDING", "date", "ASCENDING")},
-		{name: "txPendingPfcPrimaryBankIdDateDesc", fields: indexFields("pending", "ASCENDING", "pfcPrimary", "ASCENDING", "bankId", "ASCENDING", "date", "DESCENDING")},
-		{name: "txPendingPfcPrimaryBankIdDateDescNameDesc", fields: indexFieldsWithNameOrder("DESCENDING", "pending", "ASCENDING", "pfcPrimary", "ASCENDING", "bankId", "ASCENDING", "date", "DESCENDING")},
+		{name: "txPendingAccountIdDateAsc", fields: indexFields("pending", "ASCENDING", "accountId", "ASCENDING", "date", "ASCENDING")},
+		{name: "txPendingAccountIdDateDesc", fields: indexFields("pending", "ASCENDING", "accountId", "ASCENDING", "date", "DESCENDING")},
+		{name: "txPendingAccountIdDateDescNameDesc", fields: indexFieldsWithNameOrder("DESCENDING", "pending", "ASCENDING", "accountId", "ASCENDING", "date", "DESCENDING")},
+		{name: "txPendingPfcPrimaryAccountIdDateAsc", fields: indexFields("pending", "ASCENDING", "pfcPrimary", "ASCENDING", "accountId", "ASCENDING", "date", "ASCENDING")},
+		{name: "txPendingPfcPrimaryAccountIdDateDesc", fields: indexFields("pending", "ASCENDING", "pfcPrimary", "ASCENDING", "accountId", "ASCENDING", "date", "DESCENDING")},
+		{name: "txPendingPfcPrimaryAccountIdDateDescNameDesc", fields: indexFieldsWithNameOrder("DESCENDING", "pending", "ASCENDING", "pfcPrimary", "ASCENDING", "accountId", "ASCENDING", "date", "DESCENDING")},
 		// largestTransactions query support:
-		// pending == false, optional bankId/pfcPrimary filters, date range on date, order by amount desc
+		// pending == false, optional accountId/pfcPrimary filters, date range on date, order by amount desc
 		{name: "txPendingAmountDescDateDescNameDesc", fields: indexFieldsWithNameOrder("DESCENDING", "pending", "ASCENDING", "amount", "DESCENDING", "date", "DESCENDING")},
-		{name: "txPendingBankIdAmountDescDateDescNameDesc", fields: indexFieldsWithNameOrder("DESCENDING", "pending", "ASCENDING", "bankId", "ASCENDING", "amount", "DESCENDING", "date", "DESCENDING")},
+		{name: "txPendingAccountIdAmountDescDateDescNameDesc", fields: indexFieldsWithNameOrder("DESCENDING", "pending", "ASCENDING", "accountId", "ASCENDING", "amount", "DESCENDING", "date", "DESCENDING")},
 		{name: "txPendingPfcPrimaryAmountDescDateDescNameDesc", fields: indexFieldsWithNameOrder("DESCENDING", "pending", "ASCENDING", "pfcPrimary", "ASCENDING", "amount", "DESCENDING", "date", "DESCENDING")},
-		{name: "txPendingPfcPrimaryBankIdAmountDescDateDescNameDesc", fields: indexFieldsWithNameOrder("DESCENDING", "pending", "ASCENDING", "pfcPrimary", "ASCENDING", "bankId", "ASCENDING", "amount", "DESCENDING", "date", "DESCENDING")},
+		{name: "txPendingPfcPrimaryAccountIdAmountDescDateDescNameDesc", fields: indexFieldsWithNameOrder("DESCENDING", "pending", "ASCENDING", "pfcPrimary", "ASCENDING", "accountId", "ASCENDING", "amount", "DESCENDING", "date", "DESCENDING")},
 	}
 
 	for _, idx := range indexes {

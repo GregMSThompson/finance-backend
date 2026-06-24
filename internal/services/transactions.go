@@ -46,7 +46,7 @@ func (s *transactionsService) ListTransactions(ctx context.Context, uid string, 
 	if err := s.txs.Query(ctx, uid, dto.TransactionQuery{
 		Pending:      args.Pending,
 		PFCPrimaries: args.PFCPrimaries,
-		BankID:       args.BankID,
+		AccountID:    args.AccountID,
 		Merchant:     args.Merchant,
 		DateFrom:     args.DateFrom,
 		DateTo:       args.DateTo,

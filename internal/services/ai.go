@@ -39,7 +39,7 @@ type aiTransactions interface {
 type aiGetTransactionsArgs struct {
 	Pending    *bool   `json:"pending,omitempty"`
 	PFCPrimary *string `json:"pfcPrimary,omitempty"`
-	BankID     *string `json:"bankId,omitempty"`
+	AccountID  *string `json:"accountId,omitempty"`
 	Merchant   *string `json:"merchant,omitempty"`
 	DateFrom   *string `json:"dateFrom,omitempty"`
 	DateTo     *string `json:"dateTo,omitempty"`
@@ -319,7 +319,7 @@ func (s *aiService) executeTool(ctx context.Context, uid string, call dto.Vertex
 		result, err := s.transactions.ListTransactions(ctx, uid, dto.TransactionListArgs{
 			Pending:      raw.Pending,
 			PFCPrimaries: helpers.PrimarySlice(raw.PFCPrimary),
-			BankID:       raw.BankID,
+			AccountID:    raw.AccountID,
 			Merchant:     raw.Merchant,
 			DateFrom:     raw.DateFrom,
 			DateTo:       raw.DateTo,
@@ -498,7 +498,7 @@ func toolSchemas() []dto.VertexTool {
 				Properties: map[string]*dto.VertexSchema{
 					"pfcPrimary": {Type: "string", Enum: taxonomy.PFCPrimaryList, Description: "Primary category filter."},
 					"pending":    {Type: "boolean", Description: "Defaults to false if omitted."},
-					"bankId":     {Type: "string", Description: "Filter by bank id."},
+					"accountId":  {Type: "string", Description: "Filter by account id."},
 					"merchant":   {Type: "string", Description: "Partial, case-insensitive merchant name filter."},
 					"dateFrom":   {Type: "string", Description: "YYYY-MM-DD start date; defaults to month-to-date."},
 					"dateTo":     {Type: "string", Description: "YYYY-MM-DD end date; defaults to today when month-to-date."},
@@ -513,7 +513,7 @@ func toolSchemas() []dto.VertexTool {
 				Properties: map[string]*dto.VertexSchema{
 					"pfcPrimary": {Type: "string", Enum: taxonomy.PFCPrimaryList, Description: "Primary category filter."},
 					"pending":    {Type: "boolean", Description: "Defaults to false if omitted."},
-					"bankId":     {Type: "string", Description: "Filter by bank id."},
+					"accountId":  {Type: "string", Description: "Filter by account id."},
 					"dateFrom":   {Type: "string", Description: "YYYY-MM-DD start date; defaults to month-to-date."},
 					"dateTo":     {Type: "string", Description: "YYYY-MM-DD end date; defaults to today when month-to-date."},
 					"groupBy": {Type: "string", Enum: []string{
@@ -533,7 +533,7 @@ func toolSchemas() []dto.VertexTool {
 				Properties: map[string]*dto.VertexSchema{
 					"pfcPrimary": {Type: "string", Enum: taxonomy.PFCPrimaryList, Description: "Primary category filter."},
 					"pending":    {Type: "boolean", Description: "Defaults to false if omitted."},
-					"bankId":     {Type: "string", Description: "Filter by bank id."},
+					"accountId":  {Type: "string", Description: "Filter by account id."},
 					"merchant":   {Type: "string", Description: "Partial, case-insensitive merchant name filter."},
 					"dateFrom":   {Type: "string", Description: "YYYY-MM-DD start date; defaults to month-to-date."},
 					"dateTo":     {Type: "string", Description: "YYYY-MM-DD end date; defaults to today when month-to-date."},
@@ -554,7 +554,7 @@ func toolSchemas() []dto.VertexTool {
 				Properties: map[string]*dto.VertexSchema{
 					"dateFrom": {Type: "string", Description: "YYYY-MM-DD start of the lookback window. Required. Default to 3 months ago."},
 					"dateTo":   {Type: "string", Description: "YYYY-MM-DD end of the lookback window. Required. Default to today."},
-					"bankId":   {Type: "string", Description: "Filter by bank id."},
+					"accountId": {Type: "string", Description: "Filter by account id."},
 				},
 				Required: []string{"dateFrom", "dateTo"},
 			},
@@ -591,7 +591,7 @@ func toolSchemas() []dto.VertexTool {
 					"limit":      {Type: "integer", Description: "Number of results to return. Defaults to 5."},
 					"minCount":   {Type: "integer", Description: "Minimum transaction count for a result to be included. Optional."},
 					"pfcPrimary": {Type: "string", Enum: taxonomy.PFCPrimaryList, Description: "Filter to a specific category. Most useful with dimension=merchant."},
-					"bankId":     {Type: "string", Description: "Filter by bank id."},
+					"accountId":  {Type: "string", Description: "Filter by account id."},
 					"dateFrom":   {Type: "string", Description: "YYYY-MM-DD start of the window. Required. Default to 30 days ago."},
 					"dateTo":     {Type: "string", Description: "YYYY-MM-DD end of the window. Required. Default to today."},
 				},
@@ -609,7 +609,7 @@ func toolSchemas() []dto.VertexTool {
 				Properties: map[string]*dto.VertexSchema{
 					"dateFrom": {Type: "string", Description: "YYYY-MM-DD start of the window. Required."},
 					"dateTo":   {Type: "string", Description: "YYYY-MM-DD end of the window. Required."},
-					"bankId":   {Type: "string", Description: "Filter by bank id."},
+					"accountId": {Type: "string", Description: "Filter by account id."},
 				},
 				Required: []string{"dateFrom", "dateTo"},
 			},
@@ -631,7 +631,7 @@ func toolSchemas() []dto.VertexTool {
 					}, Description: "Optional. Group comparison by category, merchant, or day. Omit for totals only."},
 					"pfcPrimary": {Type: "string", Enum: taxonomy.PFCPrimaryList, Description: "Primary category filter."},
 					"pending":    {Type: "boolean", Description: "Defaults to false if omitted."},
-					"bankId":     {Type: "string", Description: "Filter by bank id."},
+					"accountId":  {Type: "string", Description: "Filter by account id."},
 					"merchant":   {Type: "string", Description: "Partial, case-insensitive merchant name filter."},
 				},
 				Required: []string{"currentFrom", "currentTo", "previousFrom", "previousTo"},

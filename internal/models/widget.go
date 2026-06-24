@@ -24,7 +24,7 @@ type WidgetConfig struct {
 	Dimension     string             `firestore:"dimension,omitempty" json:"dimension,omitempty"`
 	Limit         int                `firestore:"limit,omitempty" json:"limit,omitempty"`
 	Category      string             `firestore:"category,omitempty" json:"category,omitempty"` // maps to PFCPrimary in the analytics layer
-	BankID       string             `firestore:"bankId,omitempty" json:"bankId,omitempty"`
+	AccountID    string             `firestore:"accountId,omitempty" json:"accountId,omitempty"`
 }
 
 // DateRangeConfig represents either a named preset or an explicit custom range.

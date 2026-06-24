@@ -72,7 +72,7 @@ func TestListTransactionsHandlerParsesFilters(t *testing.T) {
 	svc := &fakeTransactionsSvc{}
 	h := newTestTransactionsHandler(svc)
 
-	req := httptest.NewRequest(http.MethodGet, "/transactions?category=FOOD_RETAIL&category=ENTERTAINMENT&bankId=b1&merchant=amazon&dateFrom=2025-01-01&dateTo=2025-01-31&pending=true&limit=25", nil).WithContext(ctxWithUID(context.Background()))
+	req := httptest.NewRequest(http.MethodGet, "/transactions?category=FOOD_RETAIL&category=ENTERTAINMENT&accountId=b1&merchant=amazon&dateFrom=2025-01-01&dateTo=2025-01-31&pending=true&limit=25", nil).WithContext(ctxWithUID(context.Background()))
 	rr := httptest.NewRecorder()
 	h.ListTransactions(rr, req)
 
@@ -82,8 +82,8 @@ func TestListTransactionsHandlerParsesFilters(t *testing.T) {
 	if len(svc.lastArgs.PFCPrimaries) != 2 || svc.lastArgs.PFCPrimaries[0] != "FOOD_RETAIL" || svc.lastArgs.PFCPrimaries[1] != "ENTERTAINMENT" {
 		t.Fatalf("categories mismatch: %+v", svc.lastArgs.PFCPrimaries)
 	}
-	if svc.lastArgs.BankID == nil || *svc.lastArgs.BankID != "b1" {
-		t.Fatalf("bankId mismatch: %+v", svc.lastArgs.BankID)
+	if svc.lastArgs.AccountID == nil || *svc.lastArgs.AccountID != "b1" {
+		t.Fatalf("accountId mismatch: %+v", svc.lastArgs.AccountID)
 	}
 	if svc.lastArgs.Merchant == nil || *svc.lastArgs.Merchant != "amazon" {
 		t.Fatalf("merchant mismatch: %+v", svc.lastArgs.Merchant)
