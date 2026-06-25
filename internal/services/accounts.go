@@ -20,6 +20,7 @@ type accountsBankStore interface {
 
 type accountsStore interface {
 	UpsertBatch(ctx context.Context, uid, bankID string, accounts []models.Account) error
+	List(ctx context.Context, uid, bankID string) ([]models.Account, error)
 }
 
 type accountsService struct {
@@ -36,6 +37,11 @@ func NewAccountsService(plaid accountsPlaid, banks accountsBankStore, accounts a
 		accounts: accounts,
 		jobs:     jobs,
 	}
+}
+
+// GetAccounts returns the stored accounts for the given bank.
+func (s *accountsService) GetAccounts(ctx context.Context, uid, bankID string) ([]models.Account, error) {
+	return s.accounts.List(ctx, uid, bankID)
 }
 
 // SyncAccounts submits an account.sync job for the given bank and returns the

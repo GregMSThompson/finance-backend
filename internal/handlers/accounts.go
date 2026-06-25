@@ -8,10 +8,12 @@ import (
 
 	"github.com/GregMSThompson/finance-backend/internal/dto"
 	"github.com/GregMSThompson/finance-backend/internal/middleware"
+	"github.com/GregMSThompson/finance-backend/internal/models"
 	"github.com/GregMSThompson/finance-backend/internal/response"
 )
 
 type accountsService interface {
+	GetAccounts(ctx context.Context, uid, bankID string) ([]models.Account, error)
 	SyncAccounts(ctx context.Context, uid, bankID string) (string, error)
 }
 
@@ -29,8 +31,22 @@ func NewAccountsHandlers(deps *Deps) *accountsHandlers {
 
 func (h *accountsHandlers) AccountRoutes() chi.Router {
 	r := chi.NewRouter()
+	r.Get("/", h.ListAccounts)
 	r.Post("/sync", h.SyncAccounts)
 	return r
+}
+
+func (h *accountsHandlers) ListAccounts(w http.ResponseWriter, r *http.Request) {
+	uid := middleware.UID(r.Context())
+	bankID := chi.URLParam(r, "bankId")
+
+	accounts, err := h.AccountsSvc.GetAccounts(r.Context(), uid, bankID)
+	if err != nil {
+		h.ResponseHandler.HandleError(w, r, err)
+		return
+	}
+
+	h.ResponseHandler.WriteSuccess(w, r, http.StatusOK, accounts)
 }
 
 func (h *accountsHandlers) SyncAccounts(w http.ResponseWriter, r *http.Request) {

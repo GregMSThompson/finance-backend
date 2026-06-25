@@ -59,6 +59,29 @@ func (s *accountStore) UpsertBatch(ctx context.Context, uid, bankID string, acco
 	return nil
 }
 
+// List returns all accounts stored under the given bank subcollection.
+func (s *accountStore) List(ctx context.Context, uid, bankID string) ([]models.Account, error) {
+	iter := s.collection(uid, bankID).Documents(ctx)
+	var accounts []models.Account
+
+	for {
+		doc, err := iter.Next()
+		if err == iterator.Done {
+			break
+		}
+		if err != nil {
+			return nil, errs.NewDatabaseError("read", "failed to list accounts", err)
+		}
+		var a models.Account
+		if err := doc.DataTo(&a); err != nil {
+			return nil, errs.NewDatabaseError("read", "failed to decode account", err)
+		}
+		accounts = append(accounts, a)
+	}
+
+	return accounts, nil
+}
+
 // DeleteByBank removes all accounts under the given bank subcollection. Called
 // as part of the bank delete cascade so accounts don't outlive their parent Item.
 func (s *accountStore) DeleteByBank(ctx context.Context, uid, bankID string) error {
