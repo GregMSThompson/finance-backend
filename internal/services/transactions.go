@@ -42,7 +42,7 @@ func (s *transactionsService) ListTransactions(ctx context.Context, uid string, 
 		storeLimit++
 	}
 
-	var txs []models.Transaction
+	txs := make([]models.Transaction, 0)
 	if err := s.txs.Query(ctx, uid, dto.TransactionQuery{
 		Pending:      args.Pending,
 		PFCPrimaries: args.PFCPrimaries,
