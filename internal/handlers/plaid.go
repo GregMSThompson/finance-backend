@@ -12,6 +12,7 @@ import (
 	"github.com/GregMSThompson/finance-backend/internal/dto"
 	"github.com/GregMSThompson/finance-backend/internal/middleware"
 	"github.com/GregMSThompson/finance-backend/internal/response"
+	"github.com/GregMSThompson/finance-backend/internal/taxonomy"
 )
 
 type plaidService interface {
@@ -34,9 +35,14 @@ func NewPlaidHandlers(deps *Deps) *plaidHandlers {
 
 func (h *plaidHandlers) PlaidRoutes() chi.Router {
 	r := chi.NewRouter()
+	r.Get("/categories", h.ListCategories)
 	r.Post("/link-token", h.CreateLinkToken)
 	r.Post("/sync", h.SyncTransactions)
 	return r
+}
+
+func (h *plaidHandlers) ListCategories(w http.ResponseWriter, r *http.Request) {
+	h.ResponseHandler.WriteSuccess(w, r, http.StatusOK, taxonomy.PFCPrimaryList)
 }
 
 func (h *plaidHandlers) CreateLinkToken(w http.ResponseWriter, r *http.Request) {
