@@ -106,15 +106,22 @@ func (a *Adapter) GetAccounts(ctx context.Context, accessToken string) ([]models
 	now := time.Now()
 	accounts := make([]models.Account, 0, len(resp.GetAccounts()))
 	for _, acct := range resp.GetAccounts() {
+		bal := acct.GetBalances()
+		available, _ := bal.GetAvailableOk()
+		current, _ := bal.GetCurrentOk()
+		limit, _ := bal.GetLimitOk()
 		accounts = append(accounts, models.Account{
-			AccountID:    acct.GetAccountId(),
-			Name:         acct.GetName(),
-			OfficialName: acct.GetOfficialName(),
-			Type:         string(acct.GetType()),
-			Subtype:      string(acct.GetSubtype()),
-			Mask:         acct.GetMask(),
-			CreatedAt:    now,
-			UpdatedAt:    now,
+			AccountID:        acct.GetAccountId(),
+			Name:             acct.GetName(),
+			OfficialName:     acct.GetOfficialName(),
+			Type:             string(acct.GetType()),
+			Subtype:          string(acct.GetSubtype()),
+			Mask:             acct.GetMask(),
+			BalanceAvailable: available,
+			BalanceCurrent:   current,
+			BalanceLimit:     limit,
+			CreatedAt:        now,
+			UpdatedAt:        now,
 		})
 	}
 	return accounts, nil

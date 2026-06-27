@@ -139,6 +139,19 @@ func (f *fakeJobs) Submit(ctx context.Context, uid string, jobType models.JobTyp
 	return f.jobID, f.err
 }
 
+type fakeAccountSyncer struct {
+	jobID  string
+	err    error
+	gotUID string
+	gotBank string
+}
+
+func (f *fakeAccountSyncer) SyncAccounts(ctx context.Context, uid, bankID string) (string, error) {
+	f.gotUID = uid
+	f.gotBank = bankID
+	return f.jobID, f.err
+}
+
 // --- tests ---
 
 func TestExchangePublicTokenStoresBank(t *testing.T) {
@@ -147,7 +160,7 @@ func TestExchangePublicTokenStoresBank(t *testing.T) {
 	txs := &fakeTxStore{}
 	jobs := &fakeJobs{}
 
-	svc := NewPlaidService(pl, banks, txs, jobs, &fakeBankSvc{})
+	svc := NewPlaidService(pl, banks, txs, jobs, &fakeBankSvc{}, &fakeAccountSyncer{})
 
 	ctx := helpers.TestCtx()
 	_, err := svc.ExchangePublicToken(ctx, "uid-1", dto.LinkBankRequest{PublicToken: "public-xyz", InstitutionName: "Chase"})
@@ -172,7 +185,7 @@ func TestSyncTransactionsSubmitsJob(t *testing.T) {
 	txs := &fakeTxStore{}
 	jobs := &fakeJobs{jobID: "job-xyz"}
 
-	svc := NewPlaidService(pl, banks, txs, jobs, &fakeBankSvc{})
+	svc := NewPlaidService(pl, banks, txs, jobs, &fakeBankSvc{}, &fakeAccountSyncer{})
 	ctx := helpers.TestCtx()
 	bankID := "item-1"
 	got, err := svc.SyncTransactions(ctx, "uid-1", dto.SyncTransactionsRequest{BankID: &bankID})
@@ -204,7 +217,7 @@ func TestRunSyncUsesCursorAndSetsNewCursor(t *testing.T) {
 	banks := &fakeBankStore{list: []*models.Bank{{BankID: "item-1", PlaidPublicToken: "at-123"}}}
 	txs := &fakeTxStore{cursor: "prev-cursor"}
 
-	svc := NewPlaidService(pl, banks, txs, &fakeJobs{}, &fakeBankSvc{})
+	svc := NewPlaidService(pl, banks, txs, &fakeJobs{}, &fakeBankSvc{}, &fakeAccountSyncer{})
 	now := time.Unix(1000, 0)
 	svc.clockNow = func() time.Time { return now }
 
@@ -230,7 +243,7 @@ func TestRunSyncPropagatesErrors(t *testing.T) {
 	banks := &fakeBankStore{err: errors.New("boom")}
 	txs := &fakeTxStore{}
 
-	svc := NewPlaidService(pl, banks, txs, &fakeJobs{}, &fakeBankSvc{})
+	svc := NewPlaidService(pl, banks, txs, &fakeJobs{}, &fakeBankSvc{}, &fakeAccountSyncer{})
 	ctx := helpers.TestCtx()
 	_, err := svc.RunSync(ctx, "uid-1", dto.PlaidSyncParams{})
 	if err == nil {
@@ -243,7 +256,7 @@ func TestExchangePublicTokenPropagatesExchangeError(t *testing.T) {
 	banks := &fakeBankStore{}
 	txs := &fakeTxStore{}
 
-	svc := NewPlaidService(pl, banks, txs, &fakeJobs{}, &fakeBankSvc{})
+	svc := NewPlaidService(pl, banks, txs, &fakeJobs{}, &fakeBankSvc{}, &fakeAccountSyncer{})
 	ctx := helpers.TestCtx()
 	_, err := svc.ExchangePublicToken(ctx, "uid-1", dto.LinkBankRequest{PublicToken: "public-xyz", InstitutionName: "Chase"})
 	if err == nil {
@@ -259,7 +272,7 @@ func TestExchangePublicTokenPropagatesCreateError(t *testing.T) {
 	banks := &fakeBankStore{err: errors.New("create failed")}
 	txs := &fakeTxStore{}
 
-	svc := NewPlaidService(pl, banks, txs, &fakeJobs{}, &fakeBankSvc{})
+	svc := NewPlaidService(pl, banks, txs, &fakeJobs{}, &fakeBankSvc{}, &fakeAccountSyncer{})
 	ctx := helpers.TestCtx()
 	_, err := svc.ExchangePublicToken(ctx, "uid-1", dto.LinkBankRequest{PublicToken: "public-xyz", InstitutionName: "Chase"})
 	if err == nil {
@@ -272,7 +285,7 @@ func TestRunSyncMissingAccessToken(t *testing.T) {
 	banks := &fakeBankStore{list: []*models.Bank{{BankID: "item-1", PlaidPublicToken: ""}}}
 	txs := &fakeTxStore{}
 
-	svc := NewPlaidService(pl, banks, txs, &fakeJobs{}, &fakeBankSvc{})
+	svc := NewPlaidService(pl, banks, txs, &fakeJobs{}, &fakeBankSvc{}, &fakeAccountSyncer{})
 	ctx := helpers.TestCtx()
 	_, err := svc.RunSync(ctx, "uid-1", dto.PlaidSyncParams{})
 	if err == nil {
@@ -285,7 +298,7 @@ func TestRunSyncGetCursorError(t *testing.T) {
 	banks := &fakeBankStore{list: []*models.Bank{{BankID: "item-1", PlaidPublicToken: "at-123"}}}
 	txs := &fakeTxStore{getErr: errors.New("get cursor failed")}
 
-	svc := NewPlaidService(pl, banks, txs, &fakeJobs{}, &fakeBankSvc{})
+	svc := NewPlaidService(pl, banks, txs, &fakeJobs{}, &fakeBankSvc{}, &fakeAccountSyncer{})
 	ctx := helpers.TestCtx()
 	_, err := svc.RunSync(ctx, "uid-1", dto.PlaidSyncParams{})
 	if err == nil {
@@ -298,7 +311,7 @@ func TestRunSyncPlaidError(t *testing.T) {
 	banks := &fakeBankStore{list: []*models.Bank{{BankID: "item-1", PlaidPublicToken: "at-123"}}}
 	txs := &fakeTxStore{}
 
-	svc := NewPlaidService(pl, banks, txs, &fakeJobs{}, &fakeBankSvc{})
+	svc := NewPlaidService(pl, banks, txs, &fakeJobs{}, &fakeBankSvc{}, &fakeAccountSyncer{})
 	ctx := helpers.TestCtx()
 	_, err := svc.RunSync(ctx, "uid-1", dto.PlaidSyncParams{})
 	if err == nil {
@@ -315,11 +328,31 @@ func TestRunSyncUpsertError(t *testing.T) {
 	banks := &fakeBankStore{list: []*models.Bank{{BankID: "item-1", PlaidPublicToken: "at-123"}}}
 	txs := &fakeTxStore{upsertErr: errors.New("upsert failed")}
 
-	svc := NewPlaidService(pl, banks, txs, &fakeJobs{}, &fakeBankSvc{})
+	svc := NewPlaidService(pl, banks, txs, &fakeJobs{}, &fakeBankSvc{}, &fakeAccountSyncer{})
 	ctx := helpers.TestCtx()
 	_, err := svc.RunSync(ctx, "uid-1", dto.PlaidSyncParams{})
 	if err == nil {
 		t.Fatalf("expected error")
+	}
+}
+
+func TestWebhookSyncUpdatesAvailableSubmitsBothJobs(t *testing.T) {
+	banks := &fakeBankStore{findUID: "uid-1"}
+	accounts := &fakeAccountSyncer{jobID: "acct-job"}
+
+	svc := NewPlaidService(&fakePlaid{}, banks, &fakeTxStore{}, &fakeJobs{jobID: "tx-job"}, &fakeBankSvc{}, accounts)
+	ctx := helpers.TestCtx()
+
+	err := svc.HandleWebhook(ctx, dto.PlaidWebhook{
+		WebhookType: "TRANSACTIONS",
+		WebhookCode: "SYNC_UPDATES_AVAILABLE",
+		ItemID:      "item-1",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if accounts.gotUID != "uid-1" || accounts.gotBank != "item-1" {
+		t.Fatalf("account sync not called with expected args: uid=%q bank=%q", accounts.gotUID, accounts.gotBank)
 	}
 }
 
@@ -332,7 +365,7 @@ func TestRunSyncSetCursorError(t *testing.T) {
 	banks := &fakeBankStore{list: []*models.Bank{{BankID: "item-1", PlaidPublicToken: "at-123"}}}
 	txs := &fakeTxStore{setCurErr: errors.New("set cursor failed")}
 
-	svc := NewPlaidService(pl, banks, txs, &fakeJobs{}, &fakeBankSvc{})
+	svc := NewPlaidService(pl, banks, txs, &fakeJobs{}, &fakeBankSvc{}, &fakeAccountSyncer{})
 	ctx := helpers.TestCtx()
 	_, err := svc.RunSync(ctx, "uid-1", dto.PlaidSyncParams{})
 	if err == nil {

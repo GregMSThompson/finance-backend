@@ -29,6 +29,12 @@ type bankDeleter interface {
 	DeleteBank(ctx context.Context, uid, bankID string) (string, error)
 }
 
+// accountSyncer submits an account sync job. Used by the webhook handler to
+// refresh balances alongside transaction updates.
+type accountSyncer interface {
+	SyncAccounts(ctx context.Context, uid, bankID string) (string, error)
+}
+
 // transactionPSStore is the minimal surface required for sync operations.
 type transactionPSStore interface {
 	UpsertBatch(ctx context.Context, uid string, txs []models.Transaction) error
@@ -54,16 +60,18 @@ type plaidService struct {
 	txs      transactionPSStore
 	jobs     jobSubmitter
 	bankSvc  bankDeleter
+	accounts accountSyncer
 	clockNow func() time.Time
 }
 
-func NewPlaidService(plaid plaidClient, banks bankPSStore, txs transactionPSStore, jobs jobSubmitter, bankSvc bankDeleter) *plaidService {
+func NewPlaidService(plaid plaidClient, banks bankPSStore, txs transactionPSStore, jobs jobSubmitter, bankSvc bankDeleter, accounts accountSyncer) *plaidService {
 	return &plaidService{
 		plaid:    plaid,
 		banks:    banks,
 		txs:      txs,
 		jobs:     jobs,
 		bankSvc:  bankSvc,
+		accounts: accounts,
 		clockNow: time.Now,
 	}
 }
@@ -120,7 +128,10 @@ func (s *plaidService) HandleWebhook(ctx context.Context, p dto.PlaidWebhook) er
 	switch fmt.Sprintf("%s:%s", p.WebhookType, p.WebhookCode) {
 	case "TRANSACTIONS:SYNC_UPDATES_AVAILABLE":
 		bankID := p.ItemID
-		_, err := s.SyncTransactions(ctx, uid, dto.SyncTransactionsRequest{BankID: &bankID})
+		if _, err := s.SyncTransactions(ctx, uid, dto.SyncTransactionsRequest{BankID: &bankID}); err != nil {
+			return err
+		}
+		_, err = s.accounts.SyncAccounts(ctx, uid, p.ItemID)
 		return err
 
 	case "ITEM:ERROR":
