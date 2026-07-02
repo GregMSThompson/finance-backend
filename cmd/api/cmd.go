@@ -44,7 +44,7 @@ func main() {
 	plserv := services.NewPlaidService(bs.PlaidAdapter, bstore, tstore, jobsvc, bserv, accountsvc)
 	anserv := services.NewAnalyticsService(tstore)
 	txserv := services.NewTransactionsService(tstore)
-	aiserv := services.NewAIService(bs.VertexAdapter, anserv, txserv, astore, cfg.AITTL)
+	aiserv := services.NewAIService(bs.GenAIAdapter, anserv, txserv, astore, cfg.AITTL)
 	dashsvc := services.NewDashboardService(dstore, anserv, txserv)
 	alertsvc := services.NewAlertService(alstore, aestore)
 

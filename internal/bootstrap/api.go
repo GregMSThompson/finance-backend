@@ -9,20 +9,20 @@ import (
 	"firebase.google.com/go/v4/auth"
 
 	cloudtasksclient "github.com/GregMSThompson/finance-backend/internal/client/cloudtasks"
+	genaiclient "github.com/GregMSThompson/finance-backend/internal/client/genai"
 	plaidclient "github.com/GregMSThompson/finance-backend/internal/client/plaid"
-	vertexclient "github.com/GregMSThompson/finance-backend/internal/client/vertex"
 	"github.com/GregMSThompson/finance-backend/internal/config"
 )
 
 // APIBootstrap contains the runtime dependencies required by the API binary.
 type APIBootstrap struct {
-	Log           *slog.Logger
-	Firestore     *firestore.Client
-	Firebase      *auth.Client
-	KMS           *kms.KeyManagementClient
-	PlaidAdapter  *plaidclient.Adapter
-	VertexAdapter *vertexclient.Adapter
-	CloudTasks    *cloudtasksclient.Adapter
+	Log          *slog.Logger
+	Firestore    *firestore.Client
+	Firebase     *auth.Client
+	KMS          *kms.KeyManagementClient
+	PlaidAdapter *plaidclient.Adapter
+	GenAIAdapter *genaiclient.Adapter
+	CloudTasks   *cloudtasksclient.Adapter
 }
 
 // RunAPI initializes the runtime dependencies required by the API binary.
@@ -50,7 +50,7 @@ func RunAPI(cfg *config.APIConfig) (*APIBootstrap, error) {
 	}
 
 	bs.PlaidAdapter = newPlaidAdapter(cfg)
-	bs.VertexAdapter, err = newVertexAdapter(applicationCtx, cfg, bs.Log)
+	bs.GenAIAdapter, err = newGenAIAdapter(applicationCtx, cfg)
 	if err != nil {
 		return bs, err
 	}
@@ -77,7 +77,6 @@ func (bs *APIBootstrap) Close() {
 		return
 	}
 
-	closeVertex(bs.Log, bs.VertexAdapter)
 	closeFirestore(bs.Log, bs.Firestore)
 	closeKMS(bs.Log, bs.KMS)
 	if bs.CloudTasks != nil {

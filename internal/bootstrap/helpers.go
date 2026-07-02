@@ -10,8 +10,8 @@ import (
 	"firebase.google.com/go/v4/auth"
 	"firebase.google.com/go/v4/messaging"
 
+	genaiclient "github.com/GregMSThompson/finance-backend/internal/client/genai"
 	plaidclient "github.com/GregMSThompson/finance-backend/internal/client/plaid"
-	vertexclient "github.com/GregMSThompson/finance-backend/internal/client/vertex"
 	"github.com/GregMSThompson/finance-backend/internal/config"
 	"github.com/GregMSThompson/finance-backend/pkg/logger"
 )
@@ -48,8 +48,8 @@ func newPlaidAdapter(cfg *config.APIConfig) *plaidclient.Adapter {
 	return plaidclient.NewAdapter(cfg.PlaidClientID, cfg.PlaidSecret, cfg.PlaidEnvironment, cfg.PlaidWebhookURL, cfg.PlaidOAuthRedirectURL)
 }
 
-func newVertexAdapter(ctx context.Context, cfg *config.APIConfig, log *slog.Logger) (*vertexclient.Adapter, error) {
-	return vertexclient.NewAdapter(ctx, log, cfg.ProjectID, cfg.Region, cfg.VertexModel)
+func newGenAIAdapter(ctx context.Context, cfg *config.APIConfig) (*genaiclient.Adapter, error) {
+	return genaiclient.NewAdapter(ctx, cfg.ProjectID, cfg.Region, cfg.VertexModel)
 }
 
 func closeFirestore(log *slog.Logger, client *firestore.Client) {
@@ -70,11 +70,3 @@ func closeKMS(log *slog.Logger, client *kms.KeyManagementClient) {
 	}
 }
 
-func closeVertex(log *slog.Logger, adapter *vertexclient.Adapter) {
-	if adapter == nil {
-		return
-	}
-	if err := adapter.Close(); err != nil && log != nil {
-		log.Error("vertex close failed", "error", err)
-	}
-}
