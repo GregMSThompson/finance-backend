@@ -1,5 +1,7 @@
 #!/usr/bin/make -f
 
+.PHONY: delete-images
+
 SHELL = /bin/bash
 
 PROJECT ?= finance-app-dev-491520
@@ -26,6 +28,16 @@ gcpbootstrap:
 	gcloud services enable cloudresourcemanager.googleapis.com --project $(PROJECT)
 	gcloud services enable serviceusage.googleapis.com --project $(PROJECT)
 	gcloud services enable compute.googleapis.com --project $(PROJECT)
+
+delete-images:
+	@if [ -z "$(name)" ]; then \
+		echo "Usage: make delete-image name=<image-name>"; \
+		exit 1; \
+	fi
+	@docker images --format "{{.Repository}}:{{.Tag}} {{.ID}}" | \
+		grep "$(name)" | \
+		awk '{print $$2}' | \
+		xargs docker rmi
 
 taxonomy:
 	go generate ./internal/taxonomy
