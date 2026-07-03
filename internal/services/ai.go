@@ -493,8 +493,7 @@ func toolSchemas() []dto.VertexTool {
 		},
 		{
 			Name: "get_transactions",
-			Description: "Return a filtered list of transactions. All parameters are optional. " +
-				"Call with no date range to get this month's transactions (dateFrom defaults to the 1st of the current month, dateTo defaults to today). " +
+			Description: "Return a filtered list of transactions. Call with no date range to get this month's transactions. " +
 				"To find the most recent transaction, set orderBy=date, desc=true, limit=1 — no date range needed. " +
 				"If the result is empty, retry with a wider date range before asking the user.",
 			Parameters: &dto.VertexSchema{
@@ -504,8 +503,8 @@ func toolSchemas() []dto.VertexTool {
 					"pending":    {Type: "boolean", Description: "Defaults to false if omitted."},
 					"accountId":  {Type: "string", Description: "Filter by account id."},
 					"merchant":   {Type: "string", Description: "Partial, case-insensitive merchant name filter."},
-					"dateFrom":   {Type: "string", Description: "YYYY-MM-DD start date. Optional; defaults to the 1st of the current month."},
-					"dateTo":     {Type: "string", Description: "YYYY-MM-DD end date. Optional; defaults to today."},
+					"dateFrom":   {Type: "string", Description: "YYYY-MM-DD start date. Defaults to the 1st of the current month."},
+					"dateTo":     {Type: "string", Description: "YYYY-MM-DD end date. Defaults to today."},
 					"orderBy":    {Type: "string", Description: "Sort field; defaults to date."},
 					"desc":       {Type: "boolean", Description: "Sort descending if true. Set to true with orderBy=date to get most recent first."},
 					"limit":      {Type: "integer", Description: "Maximum number of results; defaults to 25."},
@@ -618,7 +617,7 @@ func systemPrompt(now time.Time) string {
 		"All financial data (transactions, amounts, categories) must come from tool results - never fabricate these. " +
 		"If a query is ambiguous (e.g., which category?), ask for clarification. " +
 		"If a tool returns empty results, automatically retry with a wider date range before responding. Always tell the user what period you searched. " +
-		"Defaults: pending=false; date range defaults to month-to-date if not provided. " +
+		"Defaults: pending=false. Tools with a default date range will apply it automatically when you omit the dates — do not ask the user for a date range you can default. " +
 		"Today is " + today + " (" + weekday + ", US)."
 }
 
