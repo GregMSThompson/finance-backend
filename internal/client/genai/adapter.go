@@ -133,8 +133,17 @@ func (a *Adapter) GenerateContent(ctx context.Context, req dto.VertexGenerateReq
 		log := logger.FromContext(ctx)
 		finishReasons := make([]string, 0, len(resp.Candidates))
 		partsDebug := make([]map[string]any, 0)
-		for _, candidate := range resp.Candidates {
+		malformedDetails := make([]map[string]any, 0)
+		for i, candidate := range resp.Candidates {
 			finishReasons = append(finishReasons, string(candidate.FinishReason))
+			// A malformed function call returns no usable parts, so the only
+			// diagnostic detail is the candidate's finish message.
+			if candidate.FinishReason == genai.FinishReasonMalformedFunctionCall {
+				malformedDetails = append(malformedDetails, map[string]any{
+					"candidate":     i,
+					"finishMessage": candidate.FinishMessage,
+				})
+			}
 			if candidate.Content == nil {
 				continue
 			}
@@ -162,6 +171,7 @@ func (a *Adapter) GenerateContent(ctx context.Context, req dto.VertexGenerateReq
 			"textLen", len(out.Text),
 			"finishReasons", finishReasons,
 			"parts", partsDebug,
+			"malformedDetails", malformedDetails,
 		)
 	}
 
