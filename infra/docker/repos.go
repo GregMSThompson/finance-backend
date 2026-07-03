@@ -74,7 +74,7 @@ func (m *Manager) BuildImage(ctx *pulumi.Context, cmdName string, res ...pulumi.
 			Context:    pulumi.String("../.."),
 			Dockerfile: pulumi.String(dockerfilePath),
 		},
-		ImageName: pulumi.String(fmt.Sprintf("%s-docker.pkg.dev/%s/%s/finannce-%s:%s", region, projectID, baseName, baseName, hash)),
+		ImageName: pulumi.String(fmt.Sprintf("%s-docker.pkg.dev/%s/%s/finance-%s:%s", region, projectID, baseName, baseName, hash)),
 	},
 		pulumi.DependsOn(res),
 	)
