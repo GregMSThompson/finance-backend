@@ -76,104 +76,77 @@ func NewAIService(vertex vertexClient, analysis analyticsClient, transactions ai
 func (s *aiService) Query(ctx context.Context, uid string, q dto.AIQueryRequest) (dto.AIQueryResponse, error) {
 	log := logger.FromContext(ctx)
 
-	history, err := s.store.ListMessages(ctx, uid, q.SessionID, 8)
+	history, err := s.store.ListMessages(ctx, uid, q.SessionID, 20)
 	if err != nil {
 		return dto.AIQueryResponse{}, err
 	}
 
+	now := s.clockNow()
 	contents := convertMessagesToContents(history, q.Message)
-	req := dto.VertexGenerateRequest{
-		System:   systemPrompt(s.clockNow()),
-		Contents: contents,
-		Tools:    toolSchemas(),
-		ToolConfig: &dto.VertexToolConfig{
-			Mode: dto.FunctionCallingModeAuto,
-		},
-	}
+	var lastToolCall *dto.VertexToolCall
 
-	resp, err := s.vertex.GenerateContent(ctx, req)
-	if err != nil {
-		var malformed *errs.MalformedFunctionCallError
-		if errors.As(err, &malformed) {
-			strictReq := req
-			strictReq.System = strictSystemPrompt(s.clockNow())
-			resp, err = s.vertex.GenerateContent(ctx, strictReq)
+	for i := 0; i < 3; i++ {
+		req := dto.VertexGenerateRequest{
+			System:   systemPrompt(now),
+			Contents: contents,
+			Tools:    toolSchemas(),
+			ToolConfig: &dto.VertexToolConfig{
+				Mode: dto.FunctionCallingModeAuto,
+			},
 		}
-	}
-	if err != nil {
-		return dto.AIQueryResponse{}, err
-	}
 
-	if len(resp.ToolCalls) == 0 {
-		if err := s.saveMessage(ctx, uid, q.SessionID, models.AIMessage{
-			Role:    "user",
-			Content: q.Message,
-		}); err != nil {
-			return dto.AIQueryResponse{}, err
-		}
-		// Only save non-empty assistant responses
-		if resp.Text != "" {
-			if err := s.saveMessage(ctx, uid, q.SessionID, models.AIMessage{
-				Role:    "assistant",
-				Content: resp.Text,
-			}); err != nil {
-				return dto.AIQueryResponse{}, err
+		resp, err := s.vertex.GenerateContent(ctx, req)
+		if err != nil {
+			var malformed *errs.MalformedFunctionCallError
+			if errors.As(err, &malformed) && i == 0 {
+				strictReq := req
+				strictReq.System = strictSystemPrompt(now)
+				resp, err = s.vertex.GenerateContent(ctx, strictReq)
 			}
 		}
-		log.Info("ai query completed", "session_id", q.SessionID)
-		return dto.AIQueryResponse{Answer: resp.Text}, nil
+		if err != nil {
+			return dto.AIQueryResponse{}, err
+		}
+
+		if len(resp.ToolCalls) == 0 {
+			return s.finishQuery(ctx, uid, q, resp.Text, lastToolCall)
+		}
+
+		if len(resp.ToolCalls) > 1 {
+			log.Warn("received multiple tool calls, only processing the first", "count", len(resp.ToolCalls))
+		}
+
+		toolCall := resp.ToolCalls[0]
+
+		if !isValidToolName(toolCall.Name) {
+			return dto.AIQueryResponse{}, errs.NewValidationError(fmt.Sprintf("model requested unknown tool: %s", toolCall.Name))
+		}
+
+		log.Info("executing tool", "tool", toolCall.Name, "call", i+1)
+
+		toolResult, err := s.executeTool(ctx, uid, toolCall)
+		if err != nil {
+			return dto.AIQueryResponse{}, fmt.Errorf("failed to execute tool %s: %w", toolCall.Name, err)
+		}
+
+		contents = append(contents,
+			dto.VertexContent{
+				Role:  "model",
+				Parts: []dto.VertexPart{{FunctionCall: &toolCall}},
+			},
+			dto.VertexContent{
+				Role:  "user",
+				Parts: []dto.VertexPart{{FunctionResponse: &toolResult}},
+			},
+		)
+
+		lastToolCall = &toolCall
 	}
 
-	// Handle multiple tool calls (currently only processing the first one)
-	if len(resp.ToolCalls) > 1 {
-		log.Warn("received multiple tool calls, only processing the first", "count", len(resp.ToolCalls))
-	}
-
-	toolCall := resp.ToolCalls[0]
-
-	// Validate tool call name before executing
-	if !isValidToolName(toolCall.Name) {
-		return dto.AIQueryResponse{}, errs.NewValidationError(fmt.Sprintf("model requested unknown tool: %s", toolCall.Name))
-	}
-
-	log.Info("executing tool", "tool", toolCall.Name)
-
-	toolResult, err := s.executeTool(ctx, uid, toolCall)
-	if err != nil {
-		return dto.AIQueryResponse{}, fmt.Errorf("failed to execute tool %s: %w", toolCall.Name, err)
-	}
-
-	if err := s.saveMessage(ctx, uid, q.SessionID, models.AIMessage{
-		Role:    "user",
-		Content: q.Message,
-	}); err != nil {
-		return dto.AIQueryResponse{}, err
-	}
-	if err := s.saveMessage(ctx, uid, q.SessionID, models.AIMessage{
-		Role:       "tool",
-		ToolName:   toolCall.Name,
-		ToolArgs:   toolCall.Args,
-		ToolResult: toolResult.Response,
-	}); err != nil {
-		return dto.AIQueryResponse{}, err
-	}
-
-	// For the second request after tool execution, add the tool result to contents
-	contentsWithToolResult := append(contents, dto.VertexContent{
-		Role: "model",
-		Parts: []dto.VertexPart{
-			{FunctionCall: &toolCall},
-		},
-	}, dto.VertexContent{
-		Role: "user",
-		Parts: []dto.VertexPart{
-			{FunctionResponse: &toolResult},
-		},
-	})
-
+	// Tool call budget exhausted — force a text synthesis response.
 	finalResp, err := s.vertex.GenerateContent(ctx, dto.VertexGenerateRequest{
-		System:   systemPrompt(s.clockNow()),
-		Contents: contentsWithToolResult,
+		System:   systemPrompt(now),
+		Contents: contents,
 		Tools:    toolSchemas(),
 		ToolConfig: &dto.VertexToolConfig{
 			Mode: dto.FunctionCallingModeNone,
@@ -183,21 +156,40 @@ func (s *aiService) Query(ctx context.Context, uid string, q dto.AIQueryRequest)
 		return dto.AIQueryResponse{}, err
 	}
 
+	return s.finishQuery(ctx, uid, q, finalResp.Text, lastToolCall)
+}
+
+func (s *aiService) finishQuery(ctx context.Context, uid string, q dto.AIQueryRequest, text string, lastToolCall *dto.VertexToolCall) (dto.AIQueryResponse, error) {
+	log := logger.FromContext(ctx)
+
 	if err := s.saveMessage(ctx, uid, q.SessionID, models.AIMessage{
-		Role:    "assistant",
-		Content: finalResp.Text,
+		Role:    "user",
+		Content: q.Message,
 	}); err != nil {
 		return dto.AIQueryResponse{}, err
 	}
 
-	log.Info("ai query completed", "session_id", q.SessionID, "tool", toolCall.Name)
-	return dto.AIQueryResponse{
-		Answer: finalResp.Text,
-		Debug: &dto.AIDebugInfo{
-			Tool: toolCall.Name,
-			Args: toolCall.Args,
-		},
-	}, nil
+	if text != "" {
+		if err := s.saveMessage(ctx, uid, q.SessionID, models.AIMessage{
+			Role:    "assistant",
+			Content: text,
+		}); err != nil {
+			return dto.AIQueryResponse{}, err
+		}
+	}
+
+	out := dto.AIQueryResponse{Answer: text}
+	if lastToolCall != nil {
+		log.Info("ai query completed", "session_id", q.SessionID, "tool", lastToolCall.Name)
+		out.Debug = &dto.AIDebugInfo{
+			Tool: lastToolCall.Name,
+			Args: lastToolCall.Args,
+		}
+	} else {
+		log.Info("ai query completed", "session_id", q.SessionID)
+	}
+
+	return out, nil
 }
 
 func convertMessagesToContents(history []models.AIMessage, currentMessage string) []dto.VertexContent {
@@ -219,32 +211,6 @@ func convertMessagesToContents(history []models.AIMessage, currentMessage string
 					Role: "model",
 					Parts: []dto.VertexPart{
 						{Text: &msg.Content},
-					},
-				})
-			}
-
-		case "tool":
-			// Tool calls and results need explicit function call/response parts.
-			if msg.ToolName != "" && msg.ToolArgs != nil {
-				contents = append(contents, dto.VertexContent{
-					Role: "model",
-					Parts: []dto.VertexPart{
-						{FunctionCall: &dto.VertexToolCall{
-							Name: msg.ToolName,
-							Args: msg.ToolArgs,
-						}},
-					},
-				})
-			}
-
-			if msg.ToolName != "" && msg.ToolResult != nil {
-				contents = append(contents, dto.VertexContent{
-					Role: "user",
-					Parts: []dto.VertexPart{
-						{FunctionResponse: &dto.VertexToolResult{
-							Name:     msg.ToolName,
-							Response: msg.ToolResult,
-						}},
 					},
 				})
 			}
@@ -526,8 +492,11 @@ func toolSchemas() []dto.VertexTool {
 			},
 		},
 		{
-			Name:        "get_transactions",
-			Description: "Return a filtered list of transactions.",
+			Name: "get_transactions",
+			Description: "Return a filtered list of transactions. All parameters are optional. " +
+				"Call with no date range to get this month's transactions (dateFrom defaults to the 1st of the current month, dateTo defaults to today). " +
+				"To find the most recent transaction, set orderBy=date, desc=true, limit=1 — no date range needed. " +
+				"If the result is empty, retry with a wider date range before asking the user.",
 			Parameters: &dto.VertexSchema{
 				Type: "object",
 				Properties: map[string]*dto.VertexSchema{
@@ -535,10 +504,10 @@ func toolSchemas() []dto.VertexTool {
 					"pending":    {Type: "boolean", Description: "Defaults to false if omitted."},
 					"accountId":  {Type: "string", Description: "Filter by account id."},
 					"merchant":   {Type: "string", Description: "Partial, case-insensitive merchant name filter."},
-					"dateFrom":   {Type: "string", Description: "YYYY-MM-DD start date; defaults to month-to-date."},
-					"dateTo":     {Type: "string", Description: "YYYY-MM-DD end date; defaults to today when month-to-date."},
+					"dateFrom":   {Type: "string", Description: "YYYY-MM-DD start date. Optional; defaults to the 1st of the current month."},
+					"dateTo":     {Type: "string", Description: "YYYY-MM-DD end date. Optional; defaults to today."},
 					"orderBy":    {Type: "string", Description: "Sort field; defaults to date."},
-					"desc":       {Type: "boolean", Description: "Sort descending if true."},
+					"desc":       {Type: "boolean", Description: "Sort descending if true. Set to true with orderBy=date to get most recent first."},
 					"limit":      {Type: "integer", Description: "Maximum number of results; defaults to 25."},
 				},
 			},
@@ -552,8 +521,8 @@ func toolSchemas() []dto.VertexTool {
 			Parameters: &dto.VertexSchema{
 				Type: "object",
 				Properties: map[string]*dto.VertexSchema{
-					"dateFrom": {Type: "string", Description: "YYYY-MM-DD start of the lookback window. Required. Default to 3 months ago."},
-					"dateTo":   {Type: "string", Description: "YYYY-MM-DD end of the lookback window. Required. Default to today."},
+					"dateFrom":  {Type: "string", Description: "YYYY-MM-DD start of the lookback window. Required. Default to 3 months ago."},
+					"dateTo":    {Type: "string", Description: "YYYY-MM-DD end of the lookback window. Required. Default to today."},
 					"accountId": {Type: "string", Description: "Filter by account id."},
 				},
 				Required: []string{"dateFrom", "dateTo"},
@@ -573,7 +542,7 @@ func toolSchemas() []dto.VertexTool {
 					"scope":       {Type: "string", Enum: []string{"overall", "category", "merchant"}, Description: "Group the breakdown by category or merchant. Defaults to overall."},
 					"pfcPrimary":  {Type: "string", Enum: taxonomy.PFCPrimaryList, Description: "Filter by category."},
 					"merchant":    {Type: "string", Description: "Partial, case-insensitive merchant name filter."},
-					"bankId":      {Type: "string", Description: "Filter by bank id."},
+					"accountId":   {Type: "string", Description: "Filter by account id."},
 				},
 				Required: []string{"dateFrom", "dateTo"},
 			},
@@ -607,8 +576,8 @@ func toolSchemas() []dto.VertexTool {
 			Parameters: &dto.VertexSchema{
 				Type: "object",
 				Properties: map[string]*dto.VertexSchema{
-					"dateFrom": {Type: "string", Description: "YYYY-MM-DD start of the window. Required."},
-					"dateTo":   {Type: "string", Description: "YYYY-MM-DD end of the window. Required."},
+					"dateFrom":  {Type: "string", Description: "YYYY-MM-DD start of the window. Required."},
+					"dateTo":    {Type: "string", Description: "YYYY-MM-DD end of the window. Required."},
 					"accountId": {Type: "string", Description: "Filter by account id."},
 				},
 				Required: []string{"dateFrom", "dateTo"},
@@ -644,10 +613,11 @@ func systemPrompt(now time.Time) string {
 	today := now.Format("2006-01-02")
 	weekday := now.Weekday().String()
 	return "You are a finance analytics assistant. Use tools for deterministic queries. " +
-		"Make only one tool call per request. For multi-part questions, address the primary question first. " +
+		"You may make up to 3 tool calls per turn to gather the data you need. " +
 		"Calculate date ranges from natural language (e.g., 'last week', 'this month'). A week is defined as Monday to Sunday. " +
 		"All financial data (transactions, amounts, categories) must come from tool results - never fabricate these. " +
 		"If a query is ambiguous (e.g., which category?), ask for clarification. " +
+		"If a tool returns empty results, automatically retry with a wider date range before responding. Always tell the user what period you searched. " +
 		"Defaults: pending=false; date range defaults to month-to-date if not provided. " +
 		"Today is " + today + " (" + weekday + ", US)."
 }

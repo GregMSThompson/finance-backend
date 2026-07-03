@@ -353,3 +353,97 @@ func TestAIQueryRetriesWithStrictPromptOnMalformedCall(t *testing.T) {
 		t.Fatalf("expected strict prompt on retry")
 	}
 }
+
+func TestAIQueryMultiToolLoop(t *testing.T) {
+	vertex := &fakeVertexClient{
+		responses: []dto.VertexGenerateResponse{
+			{ToolCalls: []dto.VertexToolCall{{Name: "get_spend_total", Args: map[string]any{}}}},
+			{ToolCalls: []dto.VertexToolCall{{Name: "get_spend_breakdown", Args: map[string]any{"groupBy": "pfcPrimary"}}}},
+			{Text: "Here is your analysis."},
+		},
+	}
+	analytics := &fakeAnalyticsClient{
+		totalResp:     dto.AnalyticsSpendTotalResult{Total: 100, Currency: "USD"},
+		breakdownResp: dto.AnalyticsSpendBreakdownResult{},
+	}
+	store := &fakeAIStore{}
+	svc := NewAIService(vertex, analytics, &fakeTransactionsLister{}, store, 0)
+
+	ctx := helpers.TestCtx()
+	resp, err := svc.Query(ctx, "user", dto.AIQueryRequest{SessionID: "session", Message: "Full analysis?"})
+	if err != nil {
+		t.Fatalf("Query error: %v", err)
+	}
+	if resp.Answer != "Here is your analysis." {
+		t.Fatalf("answer mismatch: %q", resp.Answer)
+	}
+	if analytics.totalCalls != 1 || analytics.breakdownCalls != 1 {
+		t.Fatalf("expected 2 tool calls: total=%d breakdown=%d", analytics.totalCalls, analytics.breakdownCalls)
+	}
+	if len(vertex.requests) != 3 {
+		t.Fatalf("expected 3 vertex requests, got %d", len(vertex.requests))
+	}
+}
+
+func TestAIQueryToolLoopExhausted(t *testing.T) {
+	vertex := &fakeVertexClient{
+		responses: []dto.VertexGenerateResponse{
+			{ToolCalls: []dto.VertexToolCall{{Name: "get_spend_total", Args: map[string]any{}}}},
+			{ToolCalls: []dto.VertexToolCall{{Name: "get_spend_total", Args: map[string]any{}}}},
+			{ToolCalls: []dto.VertexToolCall{{Name: "get_spend_total", Args: map[string]any{}}}},
+			{Text: "Forced synthesis."},
+		},
+	}
+	analytics := &fakeAnalyticsClient{
+		totalResp: dto.AnalyticsSpendTotalResult{Total: 5, Currency: "USD"},
+	}
+	store := &fakeAIStore{}
+	svc := NewAIService(vertex, analytics, &fakeTransactionsLister{}, store, 0)
+
+	ctx := helpers.TestCtx()
+	resp, err := svc.Query(ctx, "user", dto.AIQueryRequest{SessionID: "session", Message: "Spend?"})
+	if err != nil {
+		t.Fatalf("Query error: %v", err)
+	}
+	if resp.Answer != "Forced synthesis." {
+		t.Fatalf("answer: %q", resp.Answer)
+	}
+	if len(vertex.requests) != 4 {
+		t.Fatalf("expected 4 vertex requests (3 loop + 1 forced), got %d", len(vertex.requests))
+	}
+	if analytics.totalCalls != 3 {
+		t.Fatalf("expected 3 analytics calls, got %d", analytics.totalCalls)
+	}
+	if vertex.requests[3].ToolConfig == nil || vertex.requests[3].ToolConfig.Mode != dto.FunctionCallingModeNone {
+		t.Fatalf("expected NONE mode on forced synthesis request")
+	}
+}
+
+func TestAIQueryToolMessagesNotSavedToHistory(t *testing.T) {
+	vertex := &fakeVertexClient{
+		responses: []dto.VertexGenerateResponse{
+			{ToolCalls: []dto.VertexToolCall{{Name: "get_spend_total", Args: map[string]any{}}}},
+			{Text: "You spent $5."},
+		},
+	}
+	analytics := &fakeAnalyticsClient{totalResp: dto.AnalyticsSpendTotalResult{Total: 5, Currency: "USD"}}
+	store := &fakeAIStore{}
+	svc := NewAIService(vertex, analytics, &fakeTransactionsLister{}, store, 0)
+
+	ctx := helpers.TestCtx()
+	_, err := svc.Query(ctx, "user", dto.AIQueryRequest{SessionID: "session", Message: "How much?"})
+	if err != nil {
+		t.Fatalf("Query error: %v", err)
+	}
+	for _, msg := range store.messages {
+		if msg.Role == "tool" {
+			t.Fatalf("tool message should not be saved to history, got %+v", msg)
+		}
+	}
+	if len(store.messages) != 2 {
+		t.Fatalf("expected 2 saved messages (user + assistant), got %d", len(store.messages))
+	}
+	if store.messages[0].Role != "user" || store.messages[1].Role != "assistant" {
+		t.Fatalf("expected user then assistant, got %q and %q", store.messages[0].Role, store.messages[1].Role)
+	}
+}
