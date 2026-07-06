@@ -3,7 +3,6 @@ package services
 import (
 	"context"
 	"errors"
-	"strings"
 	"testing"
 	"time"
 
@@ -324,10 +323,10 @@ func TestAIQueryDoesNotRetryOnOtherErrors(t *testing.T) {
 	}
 }
 
-func TestAIQueryRetriesWithStrictPromptOnMalformedCall(t *testing.T) {
+func TestAIQueryRetriesWithForcedCallOnMalformed(t *testing.T) {
 	vertex := &fakeVertexClient{
 		errors: []error{
-			errs.NewMalformedFunctionCallError(),
+			errs.NewMalformedFunctionCallError("print(default_api.get_transactions(orderBy='date'))"),
 		},
 		responses: []dto.VertexGenerateResponse{
 			{Text: "Recovered"},
@@ -349,8 +348,46 @@ func TestAIQueryRetriesWithStrictPromptOnMalformedCall(t *testing.T) {
 	if len(vertex.requests) != 2 {
 		t.Fatalf("expected 2 vertex requests, got %d", len(vertex.requests))
 	}
-	if !strings.Contains(vertex.requests[1].System, "You must respond with a valid tool call") {
-		t.Fatalf("expected strict prompt on retry")
+	retry := vertex.requests[1]
+	if retry.ToolConfig == nil || retry.ToolConfig.Mode != dto.FunctionCallingModeAny {
+		t.Fatalf("expected ANY mode on retry, got %+v", retry.ToolConfig)
+	}
+	if len(retry.ToolConfig.AllowedFunctionNames) != 1 || retry.ToolConfig.AllowedFunctionNames[0] != "get_transactions" {
+		t.Fatalf("expected retry scoped to get_transactions, got %v", retry.ToolConfig.AllowedFunctionNames)
+	}
+	if retry.Temperature == nil || *retry.Temperature != 0 {
+		t.Fatalf("expected temperature 0 on retry, got %v", retry.Temperature)
+	}
+}
+
+func TestAIQueryMalformedFallsBackToTextReply(t *testing.T) {
+	vertex := &fakeVertexClient{
+		errors: []error{
+			errs.NewMalformedFunctionCallError("print(default_api.get_transactions())"),
+			errs.NewMalformedFunctionCallError("print(default_api.get_transactions())"),
+		},
+		responses: []dto.VertexGenerateResponse{
+			{Text: "I couldn't run that query — could you rephrase?"},
+		},
+	}
+	analytics := &fakeAnalyticsClient{}
+	store := &fakeAIStore{}
+	transactions := &fakeTransactionsLister{}
+	svc := NewAIService(vertex, analytics, transactions, store, 0)
+
+	ctx := helpers.TestCtx()
+	resp, err := svc.Query(ctx, "user", dto.AIQueryRequest{SessionID: "session", Message: "Hello"})
+	if err != nil {
+		t.Fatalf("Query error: %v", err)
+	}
+	if resp.Answer != "I couldn't run that query — could you rephrase?" {
+		t.Fatalf("unexpected answer: %q", resp.Answer)
+	}
+	if len(vertex.requests) != 3 {
+		t.Fatalf("expected 3 vertex requests (auto, any, none), got %d", len(vertex.requests))
+	}
+	if vertex.requests[2].ToolConfig == nil || vertex.requests[2].ToolConfig.Mode != dto.FunctionCallingModeNone {
+		t.Fatalf("expected NONE mode on final fallback, got %+v", vertex.requests[2].ToolConfig)
 	}
 }
 

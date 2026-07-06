@@ -62,4 +62,7 @@ const (
 
 type VertexToolConfig struct {
 	Mode FunctionCallingMode
+	// AllowedFunctionNames scopes the callable tools when Mode is ANY. Only
+	// honoured by Vertex in ANY mode; ignored otherwise.
+	AllowedFunctionNames []string
 }

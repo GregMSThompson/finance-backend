@@ -60,7 +60,8 @@ func (a *Adapter) GenerateContent(ctx context.Context, req dto.VertexGenerateReq
 	if req.ToolConfig != nil {
 		cfg.ToolConfig = &genai.ToolConfig{
 			FunctionCallingConfig: &genai.FunctionCallingConfig{
-				Mode: genai.FunctionCallingConfigMode(req.ToolConfig.Mode),
+				Mode:                 genai.FunctionCallingConfigMode(req.ToolConfig.Mode),
+				AllowedFunctionNames: req.ToolConfig.AllowedFunctionNames,
 			},
 		}
 	}
@@ -112,12 +113,14 @@ func (a *Adapter) GenerateContent(ctx context.Context, req dto.VertexGenerateReq
 	}
 
 	malformed := false
+	malformedMessages := make([]string, 0)
 	for _, candidate := range resp.Candidates {
 		switch candidate.FinishReason {
 		case genai.FinishReasonSafety:
 			return out, errs.NewExternalServiceError("genai", "response blocked by safety filters", false, nil)
 		case genai.FinishReasonMalformedFunctionCall:
 			malformed = true
+			malformedMessages = append(malformedMessages, candidate.FinishMessage)
 		}
 	}
 
@@ -133,17 +136,8 @@ func (a *Adapter) GenerateContent(ctx context.Context, req dto.VertexGenerateReq
 		log := logger.FromContext(ctx)
 		finishReasons := make([]string, 0, len(resp.Candidates))
 		partsDebug := make([]map[string]any, 0)
-		malformedDetails := make([]map[string]any, 0)
-		for i, candidate := range resp.Candidates {
+		for _, candidate := range resp.Candidates {
 			finishReasons = append(finishReasons, string(candidate.FinishReason))
-			// A malformed function call returns no usable parts, so the only
-			// diagnostic detail is the candidate's finish message.
-			if candidate.FinishReason == genai.FinishReasonMalformedFunctionCall {
-				malformedDetails = append(malformedDetails, map[string]any{
-					"candidate":     i,
-					"finishMessage": candidate.FinishMessage,
-				})
-			}
 			if candidate.Content == nil {
 				continue
 			}
@@ -171,13 +165,14 @@ func (a *Adapter) GenerateContent(ctx context.Context, req dto.VertexGenerateReq
 			"textLen", len(out.Text),
 			"finishReasons", finishReasons,
 			"parts", partsDebug,
-			"malformedDetails", malformedDetails,
+			"malformed", malformed,
+			"malformedMessages", malformedMessages,
 		)
 	}
 
 	if len(out.Text) == 0 && len(out.ToolCalls) == 0 {
 		if malformed {
-			return out, errs.NewMalformedFunctionCallError()
+			return out, errs.NewMalformedFunctionCallError(malformedMessages...)
 		}
 		return out, fmt.Errorf("genai response contained no text or tool calls")
 	}

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/GregMSThompson/finance-backend/internal/dto"
@@ -14,6 +15,8 @@ import (
 	"github.com/GregMSThompson/finance-backend/pkg/helpers"
 	"github.com/GregMSThompson/finance-backend/pkg/logger"
 )
+
+var toolNameSet = buildToolNameSet()
 
 type vertexClient interface {
 	GenerateContent(ctx context.Context, req dto.VertexGenerateRequest) (dto.VertexGenerateResponse, error)
@@ -95,15 +98,7 @@ func (s *aiService) Query(ctx context.Context, uid string, q dto.AIQueryRequest)
 			},
 		}
 
-		resp, err := s.vertex.GenerateContent(ctx, req)
-		if err != nil {
-			var malformed *errs.MalformedFunctionCallError
-			if errors.As(err, &malformed) && i == 0 {
-				strictReq := req
-				strictReq.System = strictSystemPrompt(now)
-				resp, err = s.vertex.GenerateContent(ctx, strictReq)
-			}
-		}
+		resp, err := s.generate(ctx, req)
 		if err != nil {
 			return dto.AIQueryResponse{}, err
 		}
@@ -157,6 +152,74 @@ func (s *aiService) Query(ctx context.Context, uid string, q dto.AIQueryRequest)
 	}
 
 	return s.finishQuery(ctx, uid, q, finalResp.Text, lastToolCall)
+}
+
+// generate performs a single logical model generation, recovering from
+// malformed function calls with an escalating retry ladder:
+//
+//	attempt 0: the caller's requested mode/temperature
+//	attempt 1: Mode ANY (scoped to the intended tool when we can identify it)
+//	           at temperature 0 — forces a cleanly decoded call
+//	attempt 2: Mode NONE at temperature 0 — stop calling, reply in natural
+//	           language
+//
+// Non-malformed errors propagate immediately.
+func (s *aiService) generate(ctx context.Context, req dto.VertexGenerateRequest) (dto.VertexGenerateResponse, error) {
+	log := logger.FromContext(ctx)
+
+	resp, err := s.vertex.GenerateContent(ctx, req)
+	var malformed *errs.MalformedFunctionCallError
+	if !errors.As(err, &malformed) {
+		return resp, err
+	}
+
+	// attempt 1: force a scoped, deterministic call.
+	allowed := toolNamesFromMessages(malformed.FinishMessages)
+	log.Warn("malformed function call, retrying with forced call",
+		"finishMessages", malformed.FinishMessages,
+		"allowedFunctionNames", allowed,
+	)
+	anyReq := req
+	anyReq.Temperature = helpers.Ptr[float32](0)
+	anyReq.ToolConfig = &dto.VertexToolConfig{
+		Mode:                 dto.FunctionCallingModeAny,
+		AllowedFunctionNames: allowed,
+	}
+	resp, err = s.vertex.GenerateContent(ctx, anyReq)
+	if !errors.As(err, &malformed) {
+		return resp, err
+	}
+
+	// attempt 2: stop trying to call; reply in natural language.
+	log.Warn("malformed function call again, falling back to text reply",
+		"finishMessages", malformed.FinishMessages,
+	)
+	noneReq := req
+	noneReq.Temperature = helpers.Ptr[float32](0)
+	noneReq.ToolConfig = &dto.VertexToolConfig{Mode: dto.FunctionCallingModeNone}
+	return s.vertex.GenerateContent(ctx, noneReq)
+}
+
+// toolNamesFromMessages scans malformed finish messages for known tool names,
+// returning a single match to scope a forced retry. It returns nil when zero or
+// multiple distinct tools are referenced, so the caller falls back to an
+// unscoped ANY call rather than forcing the wrong tool.
+func toolNamesFromMessages(messages []string) []string {
+	matches := make(map[string]bool)
+	for _, msg := range messages {
+		for name := range toolNameSet {
+			if strings.Contains(msg, name) {
+				matches[name] = true
+			}
+		}
+	}
+	if len(matches) != 1 {
+		return nil
+	}
+	for name := range matches {
+		return []string{name}
+	}
+	return nil
 }
 
 func (s *aiService) finishQuery(ctx context.Context, uid string, q dto.AIQueryRequest, text string, lastToolCall *dto.VertexToolCall) (dto.AIQueryResponse, error) {
@@ -621,11 +684,6 @@ func systemPrompt(now time.Time) string {
 		"Today is " + today + " (" + weekday + ", US)."
 }
 
-func strictSystemPrompt(now time.Time) string {
-	return systemPrompt(now) + " You must respond with a valid tool call that matches the schema. " +
-		"If required information is missing, ask a clarification question instead of calling a tool."
-}
-
 func decodeArgs[T any](args map[string]any) (T, error) {
 	var out T
 	if len(args) == 0 {
@@ -680,16 +738,15 @@ func toMap(value any) (map[string]any, error) {
 	return out, nil
 }
 
-func isValidToolName(name string) bool {
-	validTools := map[string]bool{
-		"get_spend_total":            true,
-		"get_spend_breakdown":        true,
-		"get_transactions":           true,
-		"get_period_comparison":      true,
-		"get_recurring_transactions": true,
-		"get_moving_average":         true,
-		"get_top_n":                  true,
-		"get_income_vs_expenses":     true,
+func buildToolNameSet() map[string]bool {
+	schemas := toolSchemas()
+	set := make(map[string]bool, len(schemas))
+	for _, t := range schemas {
+		set[t.Name] = true
 	}
-	return validTools[name]
+	return set
+}
+
+func isValidToolName(name string) bool {
+	return toolNameSet[name]
 }

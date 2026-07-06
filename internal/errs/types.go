@@ -47,6 +47,10 @@ type UnsupportedGroupByError struct {
 
 type MalformedFunctionCallError struct {
 	ErrorMessage
+	// FinishMessages holds the raw finish message(s) Vertex returns for a
+	// malformed call — the only diagnostic detail available, used to recover
+	// the intended tool name on retry.
+	FinishMessages []string
 }
 
 type DatabaseError struct {
@@ -95,9 +99,10 @@ func NewUnsupportedGroupByError() *UnsupportedGroupByError {
 	}
 }
 
-func NewMalformedFunctionCallError() *MalformedFunctionCallError {
+func NewMalformedFunctionCallError(finishMessages ...string) *MalformedFunctionCallError {
 	return &MalformedFunctionCallError{
-		ErrorMessage: ErrorMessage{Message: "malformed function call"},
+		ErrorMessage:   ErrorMessage{Message: "malformed function call"},
+		FinishMessages: finishMessages,
 	}
 }
 
