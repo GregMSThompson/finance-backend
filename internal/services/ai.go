@@ -121,7 +121,20 @@ func (s *aiService) Query(ctx context.Context, uid string, q dto.AIQueryRequest)
 
 		toolResult, err := s.executeTool(ctx, uid, toolCall)
 		if err != nil {
-			return dto.AIQueryResponse{}, fmt.Errorf("failed to execute tool %s: %w", toolCall.Name, err)
+			var validationErr *errs.ValidationError
+			switch {
+			case errors.As(err, &validationErr):
+				// A bad-input error is something the model can fix — reflect it
+				// back as the tool result so it can adjust args and retry,
+				// rather than aborting the whole query.
+				log.Info("reflecting tool validation error to model", "tool", toolCall.Name, "error", err.Error())
+				toolResult = dto.VertexToolResult{
+					Name:     toolCall.Name,
+					Response: map[string]any{"error": err.Error()},
+				}
+			default:
+				return dto.AIQueryResponse{}, fmt.Errorf("failed to execute tool %s: %w", toolCall.Name, err)
+			}
 		}
 
 		contents = append(contents,
@@ -345,6 +358,12 @@ func (s *aiService) executeTool(ctx context.Context, uid string, call dto.Vertex
 		if err := validatePrimary(raw.PFCPrimary); err != nil {
 			return dto.VertexToolResult{}, err
 		}
+		if err := s.validateMaxDateRange(raw.DateFrom, raw.DateTo); err != nil {
+			return dto.VertexToolResult{}, err
+		}
+		if raw.Limit <= 0 {
+			raw.Limit = defaultTransactionLimit
+		}
 		result, err := s.transactions.ListTransactions(ctx, uid, dto.TransactionListArgs{
 			Pending:      raw.Pending,
 			PFCPrimaries: helpers.PrimarySlice(raw.PFCPrimary),
@@ -363,6 +382,10 @@ func (s *aiService) executeTool(ctx context.Context, uid string, call dto.Vertex
 		if err != nil {
 			return dto.VertexToolResult{}, err
 		}
+		// The model can't paginate, so surface a plain hasMore flag instead of
+		// leaking the opaque cursor into its context.
+		delete(payload, "nextCursor")
+		payload["hasMore"] = result.NextCursor != nil
 		return dto.VertexToolResult{Name: call.Name, Response: payload}, nil
 	case "get_period_comparison":
 		args, err := decodeArgs[dto.AnalyticsPeriodComparisonArgs](call.Args)
@@ -558,6 +581,8 @@ func toolSchemas() []dto.VertexTool {
 			Name: "get_transactions",
 			Description: "Return a filtered list of transactions. Call with no date range to get this month's transactions. " +
 				"To find the most recent transaction, set orderBy=date, desc=true, limit=1 — no date range needed. " +
+				"For the largest/smallest transactions, set orderBy=amount (desc=true for largest). " +
+				"The date range must span at most one year. " +
 				"If the result is empty, retry with a wider date range before asking the user.",
 			Parameters: &dto.VertexSchema{
 				Type: "object",
@@ -568,8 +593,8 @@ func toolSchemas() []dto.VertexTool {
 					"merchant":   {Type: "string", Description: "Partial, case-insensitive merchant name filter."},
 					"dateFrom":   {Type: "string", Description: "YYYY-MM-DD start date. Defaults to the 1st of the current month."},
 					"dateTo":     {Type: "string", Description: "YYYY-MM-DD end date. Defaults to today."},
-					"orderBy":    {Type: "string", Description: "Sort field; defaults to date."},
-					"desc":       {Type: "boolean", Description: "Sort descending if true. Set to true with orderBy=date to get most recent first."},
+					"orderBy":    {Type: "string", Enum: sortableTransactionFields(), Description: "Sort field; defaults to date."},
+					"desc":       {Type: "boolean", Description: "Sort descending if true. desc=true with orderBy=date gives most recent first; with orderBy=amount gives largest first."},
 					"limit":      {Type: "integer", Description: "Maximum number of results; defaults to 25."},
 				},
 			},
@@ -724,6 +749,45 @@ func validatePrimary(primary *string) error {
 		return nil
 	}
 	return errs.NewValidationError(fmt.Sprintf("invalid pfcPrimary: %s", *primary))
+}
+
+// defaultTransactionLimit bounds how many rows get_transactions returns to the
+// model when it doesn't specify a limit, keeping the tool result out of
+// context-blowing territory.
+const defaultTransactionLimit = 25
+
+// maxTransactionDateRange caps the window get_transactions may scan. It bounds
+// how many docs the read pulls back (the amount sort reads the whole window)
+// without a per-doc cap. 366 days accommodates a full leap year.
+const maxTransactionDateRange = 366 * 24 * time.Hour
+
+// validateMaxDateRange rejects get_transactions windows wider than
+// maxTransactionDateRange. A missing dateTo is treated as today; a missing
+// dateFrom is rejected outright, since an open-ended past is unbounded.
+func (s *aiService) validateMaxDateRange(dateFrom, dateTo *string) error {
+	const layout = "2006-01-02"
+
+	toTime := s.clockNow()
+	if dateTo != nil && *dateTo != "" {
+		t, err := time.Parse(layout, *dateTo)
+		if err != nil {
+			return errs.NewValidationError(fmt.Sprintf("invalid dateTo: %s", *dateTo))
+		}
+		toTime = t
+	}
+
+	if dateFrom == nil || *dateFrom == "" {
+		return errs.NewValidationError("a dateFrom within one year of dateTo is required")
+	}
+	fromTime, err := time.Parse(layout, *dateFrom)
+	if err != nil {
+		return errs.NewValidationError(fmt.Sprintf("invalid dateFrom: %s", *dateFrom))
+	}
+
+	if toTime.Sub(fromTime) > maxTransactionDateRange {
+		return errs.NewValidationError("date range exceeds the one-year maximum; narrow the range")
+	}
+	return nil
 }
 
 func toMap(value any) (map[string]any, error) {

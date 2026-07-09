@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"fmt"
+	"sort"
 
 	"github.com/GregMSThompson/finance-backend/internal/dto"
 	"github.com/GregMSThompson/finance-backend/internal/errs"
@@ -14,6 +15,23 @@ import (
 // pfcPrimariesLimit caps the number of category filters per call so we stay
 // within Firestore's `in` operator limit (currently 30 values).
 const pfcPrimariesLimit = 30
+
+// sortableTransactionFields lists the fields transactions may be ordered by.
+// `date` is served natively by Firestore; `amount` is sorted in memory (see
+// ListTransactions) because a range filter on `date` precludes ordering by a
+// second field without a combinatorial explosion of composite indexes.
+func sortableTransactionFields() []string {
+	return []string{"date", "amount"}
+}
+
+func isSortableTransactionField(field string) bool {
+	for _, f := range sortableTransactionFields() {
+		if field == f {
+			return true
+		}
+	}
+	return false
+}
 
 type transactionStore interface {
 	Query(ctx context.Context, uid string, q dto.TransactionQuery, handle func(*models.Transaction) error) error
@@ -33,12 +51,23 @@ func (s *transactionsService) ListTransactions(ctx context.Context, uid string, 
 	if err := validatePFCPrimaries(args.PFCPrimaries); err != nil {
 		return result, err
 	}
+	if args.OrderBy != "" && !isSortableTransactionField(args.OrderBy) {
+		return result, errs.NewValidationError(fmt.Sprintf("invalid orderBy field: %s", args.OrderBy))
+	}
 
-	// Fetch one extra row to detect whether more pages exist without an
-	// additional round-trip. The extra row is trimmed before returning;
-	// its presence tells us to emit a NextCursor.
+	// The store always streams in date order. Amount sorting is therefore done
+	// in memory below: fetch the whole window (no limit, no cursor) and re-sort.
+	// Callers bound the read via the date range (see the AI service's max-range
+	// guard).
+	byAmount := args.OrderBy == "amount"
+
 	storeLimit := args.Limit
-	if storeLimit > 0 {
+	storeCursor := args.Cursor
+	if byAmount {
+		storeLimit = 0
+		storeCursor = nil
+	} else if storeLimit > 0 {
+		// Fetch one extra row to detect a next page without a second round-trip.
 		storeLimit++
 	}
 
@@ -50,15 +79,23 @@ func (s *transactionsService) ListTransactions(ctx context.Context, uid string, 
 		Merchant:     args.Merchant,
 		DateFrom:     args.DateFrom,
 		DateTo:       args.DateTo,
-		OrderBy:      args.OrderBy,
 		Desc:         args.Desc,
 		Limit:        storeLimit,
-		Cursor:       args.Cursor,
+		Cursor:       storeCursor,
 	}, func(tx *models.Transaction) error {
 		txs = append(txs, *tx)
 		return nil
 	}); err != nil {
 		return result, err
+	}
+
+	if byAmount {
+		sortTransactionsByAmount(txs, args.Desc)
+		if args.Limit > 0 && len(txs) > args.Limit {
+			txs = txs[:args.Limit]
+		}
+		result.Transactions = txs
+		return result, nil
 	}
 
 	if args.Limit > 0 && len(txs) > args.Limit {
@@ -69,6 +106,25 @@ func (s *transactionsService) ListTransactions(ctx context.Context, uid string, 
 
 	result.Transactions = txs
 	return result, nil
+}
+
+// sortTransactionsByAmount sorts in place by amount (descending when desc is
+// true), tie-breaking on date (most recent first) then transaction id for a
+// stable, repeatable order.
+func sortTransactionsByAmount(txs []models.Transaction, desc bool) {
+	sort.Slice(txs, func(i, j int) bool {
+		a, b := txs[i], txs[j]
+		if a.Amount != b.Amount {
+			if desc {
+				return a.Amount > b.Amount
+			}
+			return a.Amount < b.Amount
+		}
+		if a.Date != b.Date {
+			return a.Date > b.Date
+		}
+		return a.TransactionID < b.TransactionID
+	})
 }
 
 func validatePFCPrimaries(primaries []string) error {

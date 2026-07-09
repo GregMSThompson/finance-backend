@@ -9,9 +9,11 @@ type TransactionQuery struct {
 	Merchant     *string
 	DateFrom     *string
 	DateTo       *string
-	OrderBy      string
-	Desc         bool
-	Limit        int
+	// Results are always ordered by date (the only field Firestore can order
+	// alongside the date-range filter); Desc controls the direction. Sorting by
+	// any other field is done in memory by the caller.
+	Desc  bool
+	Limit int
 	// Cursor is an opaque value pointing at a position in the sorted stream;
 	// when set, the store skips rows up to and including the cursor row.
 	Cursor *string

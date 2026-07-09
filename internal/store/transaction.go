@@ -88,15 +88,14 @@ func (s *transactionStore) query(ctx context.Context, uid string, q dto.Transact
 		query = query.Where("date", "<=", *q.DateTo)
 	}
 
-	orderField := q.OrderBy
-	if orderField == "" {
-		orderField = "date"
-	}
+	// Firestore requires ordering on the date-range-filtered field, so the
+	// stream is always date-ordered; Desc only picks the direction. Other sort
+	// orders (e.g. amount) are handled in memory by the caller.
 	dir := firestore.Asc
 	if q.Desc {
 		dir = firestore.Desc
 	}
-	query = query.OrderBy(orderField, dir)
+	query = query.OrderBy("date", dir)
 
 	if q.Cursor != nil {
 		docID, err := pagination.DecodeCursor(*q.Cursor)

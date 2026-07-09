@@ -391,6 +391,89 @@ func TestAIQueryMalformedFallsBackToTextReply(t *testing.T) {
 	}
 }
 
+func TestAIQueryRejectsOverRangeAndReflects(t *testing.T) {
+	vertex := &fakeVertexClient{
+		responses: []dto.VertexGenerateResponse{
+			{ToolCalls: []dto.VertexToolCall{{Name: "get_transactions", Args: map[string]any{
+				"dateFrom": "2020-01-01",
+				"dateTo":   "2026-01-01",
+			}}}},
+			{Text: "That range is too wide — showing this month instead."},
+		},
+	}
+	transactions := &fakeTransactionsLister{}
+	svc := NewAIService(vertex, &fakeAnalyticsClient{}, transactions, &fakeAIStore{}, 0)
+	svc.clockNow = func() time.Time {
+		return time.Date(2026, time.February, 15, 12, 0, 0, 0, time.UTC)
+	}
+
+	ctx := helpers.TestCtx()
+	resp, err := svc.Query(ctx, "user", dto.AIQueryRequest{SessionID: "s", Message: "biggest ever"})
+	if err != nil {
+		t.Fatalf("Query error: %v", err)
+	}
+	if transactions.calls != 0 {
+		t.Fatalf("ListTransactions should not run for an over-range request, got %d calls", transactions.calls)
+	}
+	if len(vertex.requests) != 2 {
+		t.Fatalf("expected the validation error to be reflected (2 requests), got %d", len(vertex.requests))
+	}
+	if resp.Answer != "That range is too wide — showing this month instead." {
+		t.Fatalf("unexpected answer: %q", resp.Answer)
+	}
+}
+
+func TestAIQueryDefaultsTransactionLimit(t *testing.T) {
+	vertex := &fakeVertexClient{
+		responses: []dto.VertexGenerateResponse{
+			{ToolCalls: []dto.VertexToolCall{{Name: "get_transactions", Args: map[string]any{}}}},
+			{Text: "Here you go."},
+		},
+	}
+	transactions := &fakeTransactionsLister{}
+	svc := NewAIService(vertex, &fakeAnalyticsClient{}, transactions, &fakeAIStore{}, 0)
+	svc.clockNow = func() time.Time {
+		return time.Date(2026, time.February, 15, 12, 0, 0, 0, time.UTC)
+	}
+
+	ctx := helpers.TestCtx()
+	if _, err := svc.Query(ctx, "user", dto.AIQueryRequest{SessionID: "s", Message: "list"}); err != nil {
+		t.Fatalf("Query error: %v", err)
+	}
+	if transactions.args.Limit != 25 {
+		t.Fatalf("expected default limit 25, got %d", transactions.args.Limit)
+	}
+}
+
+func TestGetTransactionsSurfacesHasMoreNotCursor(t *testing.T) {
+	cursor := "opaque"
+	transactions := &fakeTransactionsLister{
+		resp: dto.TransactionListResult{
+			Transactions: []models.Transaction{{TransactionID: "t1"}},
+			NextCursor:   &cursor,
+		},
+	}
+	svc := NewAIService(&fakeVertexClient{}, &fakeAnalyticsClient{}, transactions, &fakeAIStore{}, 0)
+	svc.clockNow = func() time.Time {
+		return time.Date(2026, time.February, 15, 12, 0, 0, 0, time.UTC)
+	}
+
+	ctx := helpers.TestCtx()
+	res, err := svc.executeTool(ctx, "user", dto.VertexToolCall{
+		Name: "get_transactions",
+		Args: map[string]any{"dateFrom": "2026-01-01", "dateTo": "2026-01-31"},
+	})
+	if err != nil {
+		t.Fatalf("executeTool error: %v", err)
+	}
+	if res.Response["hasMore"] != true {
+		t.Fatalf("expected hasMore=true, got %v", res.Response["hasMore"])
+	}
+	if _, ok := res.Response["nextCursor"]; ok {
+		t.Fatalf("nextCursor should be stripped from the model payload")
+	}
+}
+
 func TestAIQueryMultiToolLoop(t *testing.T) {
 	vertex := &fakeVertexClient{
 		responses: []dto.VertexGenerateResponse{
