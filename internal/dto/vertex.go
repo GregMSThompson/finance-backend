@@ -58,11 +58,11 @@ const (
 	FunctionCallingModeAuto FunctionCallingMode = "AUTO"
 	FunctionCallingModeAny  FunctionCallingMode = "ANY"
 	FunctionCallingModeNone FunctionCallingMode = "NONE"
+	// FunctionCallingModeValidated lets the model call a tool or answer in text,
+	// but constrains any call to a valid, well-formed structure.
+	FunctionCallingModeValidated FunctionCallingMode = "VALIDATED"
 )
 
 type VertexToolConfig struct {
 	Mode FunctionCallingMode
-	// AllowedFunctionNames scopes the callable tools when Mode is ANY. Only
-	// honoured by Vertex in ANY mode; ignored otherwise.
-	AllowedFunctionNames []string
 }

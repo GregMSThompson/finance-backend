@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/GregMSThompson/finance-backend/internal/dto"
@@ -94,7 +93,9 @@ func (s *aiService) Query(ctx context.Context, uid string, q dto.AIQueryRequest)
 			Contents: contents,
 			Tools:    toolSchemas(),
 			ToolConfig: &dto.VertexToolConfig{
-				Mode: dto.FunctionCallingModeAuto,
+				// VALIDATED constrains the call format (no Python/code emission)
+				// while still letting the model answer in natural language.
+				Mode: dto.FunctionCallingModeValidated,
 			},
 		}
 
@@ -167,16 +168,11 @@ func (s *aiService) Query(ctx context.Context, uid string, q dto.AIQueryRequest)
 	return s.finishQuery(ctx, uid, q, finalResp.Text, lastToolCall)
 }
 
-// generate performs a single logical model generation, recovering from
-// malformed function calls with an escalating retry ladder:
-//
-//	attempt 0: the caller's requested mode/temperature
-//	attempt 1: Mode ANY (scoped to the intended tool when we can identify it)
-//	           at temperature 0 — forces a cleanly decoded call
-//	attempt 2: Mode NONE at temperature 0 — stop calling, reply in natural
-//	           language
-//
-// Non-malformed errors propagate immediately.
+// generate performs a single logical model generation. The caller uses
+// VALIDATED mode, which constrains any tool call to a well-formed structure.
+// If the model still returns a malformed call (a tier that doesn't fully honor
+// the constraint), we stop trying to call and fall back to a natural-language
+// reply with Mode NONE. Non-malformed errors propagate immediately.
 func (s *aiService) generate(ctx context.Context, req dto.VertexGenerateRequest) (dto.VertexGenerateResponse, error) {
 	log := logger.FromContext(ctx)
 
@@ -186,53 +182,12 @@ func (s *aiService) generate(ctx context.Context, req dto.VertexGenerateRequest)
 		return resp, err
 	}
 
-	// attempt 1: force a scoped, deterministic call.
-	allowed := toolNamesFromMessages(malformed.FinishMessages)
-	log.Warn("malformed function call, retrying with forced call",
-		"finishMessages", malformed.FinishMessages,
-		"allowedFunctionNames", allowed,
-	)
-	anyReq := req
-	anyReq.Temperature = helpers.Ptr[float32](0)
-	anyReq.ToolConfig = &dto.VertexToolConfig{
-		Mode:                 dto.FunctionCallingModeAny,
-		AllowedFunctionNames: allowed,
-	}
-	resp, err = s.vertex.GenerateContent(ctx, anyReq)
-	if !errors.As(err, &malformed) {
-		return resp, err
-	}
-
-	// attempt 2: stop trying to call; reply in natural language.
-	log.Warn("malformed function call again, falling back to text reply",
+	log.Warn("malformed function call under VALIDATED, falling back to text reply",
 		"finishMessages", malformed.FinishMessages,
 	)
 	noneReq := req
-	noneReq.Temperature = helpers.Ptr[float32](0)
 	noneReq.ToolConfig = &dto.VertexToolConfig{Mode: dto.FunctionCallingModeNone}
 	return s.vertex.GenerateContent(ctx, noneReq)
-}
-
-// toolNamesFromMessages scans malformed finish messages for known tool names,
-// returning a single match to scope a forced retry. It returns nil when zero or
-// multiple distinct tools are referenced, so the caller falls back to an
-// unscoped ANY call rather than forcing the wrong tool.
-func toolNamesFromMessages(messages []string) []string {
-	matches := make(map[string]bool)
-	for _, msg := range messages {
-		for name := range toolNameSet {
-			if strings.Contains(msg, name) {
-				matches[name] = true
-			}
-		}
-	}
-	if len(matches) != 1 {
-		return nil
-	}
-	for name := range matches {
-		return []string{name}
-	}
-	return nil
 }
 
 func (s *aiService) finishQuery(ctx context.Context, uid string, q dto.AIQueryRequest, text string, lastToolCall *dto.VertexToolCall) (dto.AIQueryResponse, error) {

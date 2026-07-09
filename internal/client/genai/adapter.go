@@ -60,8 +60,7 @@ func (a *Adapter) GenerateContent(ctx context.Context, req dto.VertexGenerateReq
 	if req.ToolConfig != nil {
 		cfg.ToolConfig = &genai.ToolConfig{
 			FunctionCallingConfig: &genai.FunctionCallingConfig{
-				Mode:                 genai.FunctionCallingConfigMode(req.ToolConfig.Mode),
-				AllowedFunctionNames: req.ToolConfig.AllowedFunctionNames,
+				Mode: genai.FunctionCallingConfigMode(req.ToolConfig.Mode),
 			},
 		}
 	}
