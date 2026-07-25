@@ -38,7 +38,7 @@ type GoalUpdate struct {
 
 // GoalProgress is the consistency-safe progress view returned by the
 // get_goal_progress tool and the detail endpoint. It reflects the latest daily
-// snapshot (EvaluatedAt signals staleness) rather than re-deriving live, so it
+// snapshot (AsOf signals staleness) rather than re-deriving live, so it
 // always agrees with the number the notification quoted.
 type GoalProgress struct {
 	GoalID          string            `json:"goalId"`
@@ -48,7 +48,9 @@ type GoalProgress struct {
 	TargetValue     float64           `json:"targetValue"`
 	AmountRemaining float64           `json:"amountRemaining"`
 	PercentComplete float64           `json:"percentComplete"`
-	IsOnTrack       bool              `json:"isOnTrack"`
-	AIInsight       string            `json:"aiInsight,omitempty"`
-	EvaluatedAt     time.Time         `json:"evaluatedAt"`
+	IsOnTrack bool   `json:"isOnTrack"`
+	AIInsight string `json:"aiInsight,omitempty"`
+	// AsOf is the snapshot's CreatedAt — when this progress was last measured,
+	// surfaced to the client as the staleness signal ("as of last night").
+	AsOf time.Time `json:"asOf"`
 }

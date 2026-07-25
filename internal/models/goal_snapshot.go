@@ -10,7 +10,7 @@ import "time"
 type GoalSnapshot struct {
 	SnapshotID      string    `firestore:"snapshotId" json:"snapshotId"`
 	GoalID          string    `firestore:"goalId" json:"goalId"`
-	EvaluatedAt     time.Time `firestore:"evaluatedAt" json:"evaluatedAt"`
+	CreatedAt       time.Time `firestore:"createdAt" json:"createdAt"`
 	CurrentValue    float64   `firestore:"currentValue" json:"currentValue"`
 	TargetValue     float64   `firestore:"targetValue" json:"targetValue"`
 	PercentComplete float64   `firestore:"percentComplete" json:"percentComplete"`
