@@ -1,0 +1,83 @@
+package models
+
+import "time"
+
+// GoalType identifies the kind of target a goal tracks.
+type GoalType string
+
+const (
+	GoalTypeSpendingLimit GoalType = "spending_limit"
+	// Further types (savings_target, pay_down, reduction, ...) are added as
+	// their evaluation logic lands.
+)
+
+// GoalTimeWindow is the period a goal is measured over.
+type GoalTimeWindow string
+
+const (
+	GoalWindowWeekly  GoalTimeWindow = "weekly"
+	GoalWindowMonthly GoalTimeWindow = "monthly"
+	GoalWindowFixed   GoalTimeWindow = "fixed" // bounded by EndDate
+)
+
+// GoalRecurrence is whether a goal resets each period or runs once to an end date.
+type GoalRecurrence string
+
+const (
+	GoalRecurrenceRecurring GoalRecurrence = "recurring"
+	GoalRecurrenceOneOff    GoalRecurrence = "one_off"
+)
+
+// GoalStatus is the lifecycle state of a goal.
+type GoalStatus string
+
+const (
+	GoalStatusActive    GoalStatus = "active"
+	GoalStatusPaused    GoalStatus = "paused"
+	GoalStatusCompleted GoalStatus = "completed"
+	GoalStatusFailed    GoalStatus = "failed"
+)
+
+// Goal is a user's goal definition (the structured primitive) stored under
+// users/{uid}/goals. The owning uid is carried by the path, not a field.
+type Goal struct {
+	GoalID      string         `firestore:"goalId" json:"goalId"`
+	Type        GoalType       `firestore:"type" json:"type"`
+	Name        string         `firestore:"name" json:"name"`
+	TargetValue float64        `firestore:"targetValue" json:"targetValue"`
+	TimeWindow  GoalTimeWindow `firestore:"timeWindow" json:"timeWindow"`
+	// EndDate (YYYY-MM-DD) bounds a fixed window or a one-off goal. Empty for
+	// recurring weekly/monthly goals.
+	EndDate         string              `firestore:"endDate,omitempty" json:"endDate,omitempty"`
+	Recurrence      GoalRecurrence      `firestore:"recurrence" json:"recurrence"`
+	Filters         GoalFilters         `firestore:"filters" json:"filters"`
+	AlertThresholds GoalAlertThresholds `firestore:"alertThresholds" json:"alertThresholds"`
+	Status          GoalStatus          `firestore:"status" json:"status"`
+	// BaselineValue is computed at creation for types measured against a prior
+	// period (Reduction, Emergency Fund). Unused for Spending Limit.
+	BaselineValue *float64 `firestore:"baselineValue,omitempty" json:"baselineValue,omitempty"`
+	// ConversationID links the goal to the chat session that created it, for the
+	// "view original conversation" affordance.
+	ConversationID string    `firestore:"conversationId,omitempty" json:"conversationId,omitempty"`
+	CreatedAt      time.Time `firestore:"createdAt" json:"createdAt"`
+	UpdatedAt      time.Time `firestore:"updatedAt" json:"updatedAt"`
+}
+
+// GoalFilters scopes which transactions count toward a goal. All fields are
+// optional; an empty filter set counts all spending.
+type GoalFilters struct {
+	PFCPrimary string `firestore:"pfcPrimary,omitempty" json:"pfcPrimary,omitempty"`
+	Merchant   string `firestore:"merchant,omitempty" json:"merchant,omitempty"`
+	AccountID  string `firestore:"accountId,omitempty" json:"accountId,omitempty"`
+}
+
+// GoalAlertThresholds configures when the daily evaluator raises a notification.
+// A nil trigger is disabled.
+type GoalAlertThresholds struct {
+	// ProgressPercent fires when progress reaches this percentage of target
+	// (e.g. 80 → notify at 80% of budget used).
+	ProgressPercent *float64 `firestore:"progressPercent,omitempty" json:"progressPercent,omitempty"`
+	// SingleTransaction fires when a single transaction counting toward the goal
+	// exceeds this amount.
+	SingleTransaction *float64 `firestore:"singleTransaction,omitempty" json:"singleTransaction,omitempty"`
+}
