@@ -3,7 +3,6 @@ package config
 import (
 	"os"
 	"strconv"
-	"time"
 )
 
 type CommonConfig struct {
@@ -18,17 +17,6 @@ func newCommon() CommonConfig {
 		Region:    os.Getenv("REGION"),
 		LogLevel:  os.Getenv("LOGLEVEL"),
 	}
-}
-
-func parseDuration(value string) time.Duration {
-	if value == "" {
-		return 0
-	}
-	d, err := time.ParseDuration(value)
-	if err != nil {
-		return 0
-	}
-	return d
 }
 
 func parseBool(value string) bool {

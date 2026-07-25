@@ -9,5 +9,4 @@ type AIMessage struct {
 	ToolArgs   map[string]any `firestore:"toolArgs,omitempty" json:"toolArgs,omitempty"`
 	ToolResult map[string]any `firestore:"toolResult,omitempty" json:"toolResult,omitempty"`
 	CreatedAt  time.Time      `firestore:"createdAt" json:"createdAt"`
-	ExpiresAt  time.Time      `firestore:"expiresAt,omitempty" json:"expiresAt,omitempty"`
 }

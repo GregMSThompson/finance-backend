@@ -92,7 +92,6 @@ func (a *API) createService(ctx *pulumi.Context, img *pulumidocker.Image, apiSA 
 	apiURL := appCfg.Get("apiUrl")           // optional: public origin; derived webhook/oauth URLs come from this in the Go config
 	appleAppID := plaidCfg.Get("appleAppId") // optional: TEAMID.bundleid for Plaid OAuth universal link
 	vertexModel := vertexCfg.Require("model")
-	aiTTL := appCfg.Require("aiTtl")
 
 	envs := gcpcloudrun.ServiceTemplateSpecContainerEnvArray{
 		&gcpcloudrun.ServiceTemplateSpecContainerEnvArgs{
@@ -126,10 +125,6 @@ func (a *API) createService(ctx *pulumi.Context, img *pulumidocker.Image, apiSA 
 		&gcpcloudrun.ServiceTemplateSpecContainerEnvArgs{
 			Name:  pulumi.String("VERTEXMODEL"),
 			Value: pulumi.String(vertexModel),
-		},
-		&gcpcloudrun.ServiceTemplateSpecContainerEnvArgs{
-			Name:  pulumi.String("AITTL"),
-			Value: pulumi.String(aiTTL),
 		},
 		&gcpcloudrun.ServiceTemplateSpecContainerEnvArgs{
 			Name: pulumi.String("PLAIDCLIENTID"),

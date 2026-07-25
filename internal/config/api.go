@@ -2,7 +2,6 @@ package config
 
 import (
 	"os"
-	"time"
 
 	"github.com/GregMSThompson/finance-backend/internal/dto"
 )
@@ -14,7 +13,6 @@ type APIConfig struct {
 	PlaidEnvironment   dto.PlaidEnvironment
 	KMSKeyName         string
 	VertexModel        string
-	AITTL              time.Duration
 	CloudTasksJobQueue    string
 	WorkerAudience        string
 	WorkerURL             string
@@ -43,7 +41,6 @@ func NewAPI() *APIConfig {
 		PlaidEnvironment:      getPlaidEnvironment(os.Getenv("PLAIDENVIRONMENT")),
 		KMSKeyName:            os.Getenv("KMSKEYNAME"),
 		VertexModel:           os.Getenv("VERTEXMODEL"),
-		AITTL:                 parseDuration(os.Getenv("AITTL")),
 		CloudTasksJobQueue:    os.Getenv("CLOUDTASKSJOBQUEUE"),
 		WorkerAudience:        os.Getenv("WORKERAUDIENCE"),
 		WorkerURL:             os.Getenv("WORKERURL"),

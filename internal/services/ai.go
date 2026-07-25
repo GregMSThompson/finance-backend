@@ -60,17 +60,15 @@ type aiService struct {
 	analysis     analyticsClient
 	transactions aiTransactions
 	store        aiStore
-	ttl          time.Duration
 	clockNow     func() time.Time
 }
 
-func NewAIService(vertex vertexClient, analysis analyticsClient, transactions aiTransactions, store aiStore, ttl time.Duration) *aiService {
+func NewAIService(vertex vertexClient, analysis analyticsClient, transactions aiTransactions, store aiStore) *aiService {
 	return &aiService{
 		vertex:       vertex,
 		analysis:     analysis,
 		transactions: transactions,
 		store:        store,
-		ttl:          ttl,
 		clockNow:     time.Now,
 	}
 }
@@ -259,12 +257,8 @@ func convertMessagesToContents(history []models.AIMessage, currentMessage string
 }
 
 func (s *aiService) saveMessage(ctx context.Context, uid, sessionID string, msg models.AIMessage) error {
-	now := s.clockNow()
 	if msg.CreatedAt.IsZero() {
-		msg.CreatedAt = now
-	}
-	if s.ttl > 0 {
-		msg.ExpiresAt = now.Add(s.ttl)
+		msg.CreatedAt = s.clockNow()
 	}
 	return s.store.SaveMessage(ctx, uid, sessionID, msg)
 }

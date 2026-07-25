@@ -175,7 +175,7 @@ func TestAIQueryToolFlow(t *testing.T) {
 	}
 	store := &fakeAIStore{}
 	transactions := &fakeTransactionsLister{}
-	svc := NewAIService(vertex, analytics, transactions, store, 0)
+	svc := NewAIService(vertex, analytics, transactions, store)
 	svc.clockNow = func() time.Time {
 		return time.Date(2025, time.February, 15, 12, 0, 0, 0, time.UTC)
 	}
@@ -209,7 +209,7 @@ func TestAIQueryNoToolCall(t *testing.T) {
 	analytics := &fakeAnalyticsClient{}
 	store := &fakeAIStore{}
 	transactions := &fakeTransactionsLister{}
-	svc := NewAIService(vertex, analytics, transactions, store, 0)
+	svc := NewAIService(vertex, analytics, transactions, store)
 
 	ctx := helpers.TestCtx()
 	resp, err := svc.Query(ctx, "user", dto.AIQueryRequest{SessionID: "session", Message: "Hi"})
@@ -237,7 +237,7 @@ func TestAIQueryUnknownTool(t *testing.T) {
 	analytics := &fakeAnalyticsClient{}
 	store := &fakeAIStore{}
 	transactions := &fakeTransactionsLister{}
-	svc := NewAIService(vertex, analytics, transactions, store, 0)
+	svc := NewAIService(vertex, analytics, transactions, store)
 
 	ctx := helpers.TestCtx()
 	_, err := svc.Query(ctx, "user", dto.AIQueryRequest{SessionID: "session", Message: "What is this?"})
@@ -263,7 +263,7 @@ func TestAIQueryMultipleToolCallsUsesFirst(t *testing.T) {
 	}
 	store := &fakeAIStore{}
 	transactions := &fakeTransactionsLister{}
-	svc := NewAIService(vertex, analytics, transactions, store, 0)
+	svc := NewAIService(vertex, analytics, transactions, store)
 
 	ctx := helpers.TestCtx()
 	_, err := svc.Query(ctx, "user", dto.AIQueryRequest{SessionID: "session", Message: "Multi"})
@@ -293,7 +293,7 @@ func TestAIQueryAnalyticsErrorPropagates(t *testing.T) {
 	}
 	store := &fakeAIStore{}
 	transactions := &fakeTransactionsLister{}
-	svc := NewAIService(vertex, analytics, transactions, store, 0)
+	svc := NewAIService(vertex, analytics, transactions, store)
 
 	ctx := helpers.TestCtx()
 	_, err := svc.Query(ctx, "user", dto.AIQueryRequest{SessionID: "session", Message: "How much?"})
@@ -311,7 +311,7 @@ func TestAIQueryDoesNotRetryOnOtherErrors(t *testing.T) {
 	analytics := &fakeAnalyticsClient{}
 	store := &fakeAIStore{}
 	transactions := &fakeTransactionsLister{}
-	svc := NewAIService(vertex, analytics, transactions, store, 0)
+	svc := NewAIService(vertex, analytics, transactions, store)
 
 	ctx := helpers.TestCtx()
 	_, err := svc.Query(ctx, "user", dto.AIQueryRequest{SessionID: "session", Message: "Hi"})
@@ -327,7 +327,7 @@ func TestAIQueryPrimaryUsesValidatedMode(t *testing.T) {
 	vertex := &fakeVertexClient{
 		responses: []dto.VertexGenerateResponse{{Text: "Hi there."}},
 	}
-	svc := NewAIService(vertex, &fakeAnalyticsClient{}, &fakeTransactionsLister{}, &fakeAIStore{}, 0)
+	svc := NewAIService(vertex, &fakeAnalyticsClient{}, &fakeTransactionsLister{}, &fakeAIStore{})
 
 	ctx := helpers.TestCtx()
 	if _, err := svc.Query(ctx, "user", dto.AIQueryRequest{SessionID: "session", Message: "Hello"}); err != nil {
@@ -350,7 +350,7 @@ func TestAIQueryMalformedFallsBackToTextReply(t *testing.T) {
 			{Text: "I couldn't run that query — could you rephrase?"},
 		},
 	}
-	svc := NewAIService(vertex, &fakeAnalyticsClient{}, &fakeTransactionsLister{}, &fakeAIStore{}, 0)
+	svc := NewAIService(vertex, &fakeAnalyticsClient{}, &fakeTransactionsLister{}, &fakeAIStore{})
 
 	ctx := helpers.TestCtx()
 	resp, err := svc.Query(ctx, "user", dto.AIQueryRequest{SessionID: "session", Message: "Hello"})
@@ -379,7 +379,7 @@ func TestAIQueryRejectsOverRangeAndReflects(t *testing.T) {
 		},
 	}
 	transactions := &fakeTransactionsLister{}
-	svc := NewAIService(vertex, &fakeAnalyticsClient{}, transactions, &fakeAIStore{}, 0)
+	svc := NewAIService(vertex, &fakeAnalyticsClient{}, transactions, &fakeAIStore{})
 	svc.clockNow = func() time.Time {
 		return time.Date(2026, time.February, 15, 12, 0, 0, 0, time.UTC)
 	}
@@ -408,7 +408,7 @@ func TestAIQueryDefaultsTransactionLimit(t *testing.T) {
 		},
 	}
 	transactions := &fakeTransactionsLister{}
-	svc := NewAIService(vertex, &fakeAnalyticsClient{}, transactions, &fakeAIStore{}, 0)
+	svc := NewAIService(vertex, &fakeAnalyticsClient{}, transactions, &fakeAIStore{})
 	svc.clockNow = func() time.Time {
 		return time.Date(2026, time.February, 15, 12, 0, 0, 0, time.UTC)
 	}
@@ -430,7 +430,7 @@ func TestGetTransactionsSurfacesHasMoreNotCursor(t *testing.T) {
 			NextCursor:   &cursor,
 		},
 	}
-	svc := NewAIService(&fakeVertexClient{}, &fakeAnalyticsClient{}, transactions, &fakeAIStore{}, 0)
+	svc := NewAIService(&fakeVertexClient{}, &fakeAnalyticsClient{}, transactions, &fakeAIStore{})
 	svc.clockNow = func() time.Time {
 		return time.Date(2026, time.February, 15, 12, 0, 0, 0, time.UTC)
 	}
@@ -464,7 +464,7 @@ func TestAIQueryMultiToolLoop(t *testing.T) {
 		breakdownResp: dto.AnalyticsSpendBreakdownResult{},
 	}
 	store := &fakeAIStore{}
-	svc := NewAIService(vertex, analytics, &fakeTransactionsLister{}, store, 0)
+	svc := NewAIService(vertex, analytics, &fakeTransactionsLister{}, store)
 
 	ctx := helpers.TestCtx()
 	resp, err := svc.Query(ctx, "user", dto.AIQueryRequest{SessionID: "session", Message: "Full analysis?"})
@@ -495,7 +495,7 @@ func TestAIQueryToolLoopExhausted(t *testing.T) {
 		totalResp: dto.AnalyticsSpendTotalResult{Total: 5, Currency: "USD"},
 	}
 	store := &fakeAIStore{}
-	svc := NewAIService(vertex, analytics, &fakeTransactionsLister{}, store, 0)
+	svc := NewAIService(vertex, analytics, &fakeTransactionsLister{}, store)
 
 	ctx := helpers.TestCtx()
 	resp, err := svc.Query(ctx, "user", dto.AIQueryRequest{SessionID: "session", Message: "Spend?"})
@@ -525,7 +525,7 @@ func TestAIQueryToolMessagesNotSavedToHistory(t *testing.T) {
 	}
 	analytics := &fakeAnalyticsClient{totalResp: dto.AnalyticsSpendTotalResult{Total: 5, Currency: "USD"}}
 	store := &fakeAIStore{}
-	svc := NewAIService(vertex, analytics, &fakeTransactionsLister{}, store, 0)
+	svc := NewAIService(vertex, analytics, &fakeTransactionsLister{}, store)
 
 	ctx := helpers.TestCtx()
 	_, err := svc.Query(ctx, "user", dto.AIQueryRequest{SessionID: "session", Message: "How much?"})
