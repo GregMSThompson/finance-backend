@@ -36,6 +36,14 @@ type GoalUpdate struct {
 	Status          *models.GoalStatus          `json:"status,omitempty"`
 }
 
+// PatchGoalRequest is the REST body for direct (non-chat) goal edits — status
+// (pause/resume) and notification thresholds only. Substantive edits (target,
+// window, category, name) go through the chat update_goal tool.
+type PatchGoalRequest struct {
+	Status          *models.GoalStatus          `json:"status,omitempty"`
+	AlertThresholds *models.GoalAlertThresholds `json:"alertThresholds,omitempty"`
+}
+
 // GoalDeleteParams is the params payload for a JobTypeGoalDelete job.
 type GoalDeleteParams struct {
 	GoalID string `json:"goalId"`

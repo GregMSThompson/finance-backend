@@ -22,6 +22,7 @@ type Deps struct {
 	AISvc           aiService
 	DashboardSvc    dashboardService
 	AlertSvc        alertService
+	GoalSvc         goalService
 	JobSvc          jobService
 	TransactionsSvc transactionsService
 	AccountsSvc     accountsService

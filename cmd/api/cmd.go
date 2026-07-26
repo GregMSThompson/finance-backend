@@ -33,6 +33,8 @@ func main() {
 	astore := store.NewAIStore(bs.Firestore)
 	dstore := store.NewDashboardStore(bs.Firestore)
 	alstore := store.NewAlertStore(bs.Firestore)
+	gstore := store.NewGoalStore(bs.Firestore)
+	gsstore := store.NewGoalSnapshotStore(bs.Firestore)
 	nstore := store.NewNotificationStore(bs.Firestore)
 	jstore := store.NewJobStore(bs.Firestore)
 
@@ -47,6 +49,7 @@ func main() {
 	aiserv := services.NewAIService(bs.GenAIAdapter, anserv, txserv, astore)
 	dashsvc := services.NewDashboardService(dstore, anserv, txserv)
 	alertsvc := services.NewAlertService(alstore, nstore)
+	goalsvc := services.NewGoalService(gstore, gsstore, jobsvc)
 
 	// response handler
 	rh := response.New(bs.Log)
@@ -68,6 +71,7 @@ func main() {
 	deps.AISvc = aiserv
 	deps.DashboardSvc = dashsvc
 	deps.AlertSvc = alertsvc
+	deps.GoalSvc = goalsvc
 	deps.JobSvc = jobsvc
 	deps.TransactionsSvc = txserv
 	deps.AccountsSvc = accountsvc

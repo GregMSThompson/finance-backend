@@ -25,6 +25,7 @@ type goalStore interface {
 
 type goalSnapshotStore interface {
 	Latest(ctx context.Context, uid, goalID string) (*models.GoalSnapshot, error)
+	ListForGoal(ctx context.Context, uid, goalID string, limit int) ([]*models.GoalSnapshot, error)
 	DeleteForGoal(ctx context.Context, uid, goalID string) error
 }
 
@@ -69,6 +70,12 @@ func (s *goalService) Get(ctx context.Context, uid, goalID string) (*models.Goal
 
 func (s *goalService) List(ctx context.Context, uid string, statuses ...models.GoalStatus) ([]*models.Goal, error) {
 	return s.goals.List(ctx, uid, statuses...)
+}
+
+// ListSnapshots returns up to limit of a goal's progress snapshots, most recent
+// first — the progress-graph time series.
+func (s *goalService) ListSnapshots(ctx context.Context, uid, goalID string, limit int) ([]*models.GoalSnapshot, error) {
+	return s.snapshots.ListForGoal(ctx, uid, goalID, limit)
 }
 
 // Update applies a partial update, re-validating the merged goal. Status may

@@ -72,11 +72,18 @@ func (f *fakeGoalStore) Delete(_ context.Context, _, goalID string) error {
 type fakeGoalSnapshotStore struct {
 	latest         *models.GoalSnapshot
 	latestErr      error
+	forGoal        []*models.GoalSnapshot
+	lastListLimit  int
 	deletedForGoal []string
 }
 
 func (f *fakeGoalSnapshotStore) Latest(_ context.Context, _, _ string) (*models.GoalSnapshot, error) {
 	return f.latest, f.latestErr
+}
+
+func (f *fakeGoalSnapshotStore) ListForGoal(_ context.Context, _, _ string, limit int) ([]*models.GoalSnapshot, error) {
+	f.lastListLimit = limit
+	return f.forGoal, nil
 }
 
 func (f *fakeGoalSnapshotStore) DeleteForGoal(_ context.Context, _, goalID string) error {
