@@ -36,6 +36,16 @@ type GoalUpdate struct {
 	Status          *models.GoalStatus          `json:"status,omitempty"`
 }
 
+// GoalDeleteParams is the params payload for a JobTypeGoalDelete job.
+type GoalDeleteParams struct {
+	GoalID string `json:"goalId"`
+}
+
+// GoalDeleteResult summarises the outcome of a goal delete job.
+type GoalDeleteResult struct {
+	GoalID string `json:"goalId"`
+}
+
 // GoalProgress is the consistency-safe progress view returned by the
 // get_goal_progress tool and the detail endpoint. It reflects the latest daily
 // snapshot (AsOf signals staleness) rather than re-deriving live, so it

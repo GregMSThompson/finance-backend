@@ -58,6 +58,40 @@ func (s *goalSnapshotStore) Latest(ctx context.Context, uid, goalID string) (*mo
 	return &snap, nil
 }
 
+// DeleteForGoal removes all of a goal's snapshots in a batch. Idempotent, so a
+// retried delete job re-runs cleanly.
+func (s *goalSnapshotStore) DeleteForGoal(ctx context.Context, uid, goalID string) error {
+	iter := s.collection(uid).Where("goalId", "==", goalID).Documents(ctx)
+	bw := s.client.BulkWriter(ctx)
+	jobs := make([]*firestore.BulkWriterJob, 0)
+
+	for {
+		doc, err := iter.Next()
+		if err == iterator.Done {
+			break
+		}
+		if err != nil {
+			bw.End()
+			return errs.NewDatabaseError("delete", "failed to query goal snapshots for deletion", err)
+		}
+		job, err := bw.Delete(doc.Ref)
+		if err != nil {
+			bw.End()
+			return errs.NewDatabaseError("delete", "failed to delete goal snapshot", err)
+		}
+		jobs = append(jobs, job)
+	}
+
+	bw.End()
+	for _, job := range jobs {
+		if _, err := job.Results(); err != nil {
+			return errs.NewDatabaseError("delete", "failed to commit goal snapshot deletion batch", err)
+		}
+	}
+
+	return nil
+}
+
 // ListForGoal returns up to limit of a goal's snapshots, most recent first.
 func (s *goalSnapshotStore) ListForGoal(ctx context.Context, uid, goalID string, limit int) ([]*models.GoalSnapshot, error) {
 	q := s.collection(uid).
