@@ -21,8 +21,8 @@ type fakeAlertStore struct {
 	deleteErr error
 }
 
-type fakeAlertEventStore struct {
-	events        []*models.AlertEvent
+type fakeNotificationStore struct {
+	notifications []*models.Notification
 	listRecentErr error
 	lastLimit     int
 }
@@ -77,22 +77,22 @@ func (f *fakeAlertStore) Delete(_ context.Context, _, alertID string) error {
 	return nil
 }
 
-func (f *fakeAlertEventStore) ListRecent(_ context.Context, _ string, limit int) ([]*models.AlertEvent, error) {
+func (f *fakeNotificationStore) ListRecent(_ context.Context, _ string, limit int) ([]*models.Notification, error) {
 	f.lastLimit = limit
 	if f.listRecentErr != nil {
 		return nil, f.listRecentErr
 	}
-	return f.events, nil
+	return f.notifications, nil
 }
 
 // --- Helpers ---
 
 func newAlertSvc(store alertStore) *alertService {
-	return NewAlertService(store, &fakeAlertEventStore{})
+	return NewAlertService(store, &fakeNotificationStore{})
 }
 
-func newAlertSvcWithEventStore(store alertStore, events alertEventStore) *alertService {
-	return NewAlertService(store, events)
+func newAlertSvcWithEventStore(store alertStore, notifications alertNotificationStore) *alertService {
+	return NewAlertService(store, notifications)
 }
 
 func validSpendThresholdReq() dto.CreateAlertRequest {
@@ -283,8 +283,8 @@ func TestCreateAlert_IncomeReceived_Valid(t *testing.T) {
 }
 
 func TestGetAlertHistory_DefaultLimit(t *testing.T) {
-	store := &fakeAlertEventStore{
-		events: []*models.AlertEvent{{EventID: "e1"}},
+	store := &fakeNotificationStore{
+		notifications: []*models.Notification{{NotificationID: "n1"}},
 	}
 	svc := newAlertSvcWithEventStore(newFakeAlertStore(), store)
 
@@ -301,7 +301,7 @@ func TestGetAlertHistory_DefaultLimit(t *testing.T) {
 }
 
 func TestGetAlertHistory_MaxLimit(t *testing.T) {
-	store := &fakeAlertEventStore{}
+	store := &fakeNotificationStore{}
 	svc := newAlertSvcWithEventStore(newFakeAlertStore(), store)
 
 	_, err := svc.GetAlertHistory(context.Background(), "uid1", maxAlertHistoryLimit+50)
@@ -314,7 +314,7 @@ func TestGetAlertHistory_MaxLimit(t *testing.T) {
 }
 
 func TestGetAlertHistory_StoreError(t *testing.T) {
-	store := &fakeAlertEventStore{listRecentErr: errors.New("db failure")}
+	store := &fakeNotificationStore{listRecentErr: errors.New("db failure")}
 	svc := newAlertSvcWithEventStore(newFakeAlertStore(), store)
 
 	_, err := svc.GetAlertHistory(context.Background(), "uid1", 10)

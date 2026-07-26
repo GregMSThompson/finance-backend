@@ -22,12 +22,12 @@ func NewWorkerRouter(deps *taskhandlers.Deps) chi.Router {
 	r.Use(chimiddleware.Recoverer)
 
 	// handlers
-	alh := taskhandlers.NewAlertTaskHandlers(deps)
+	nh := taskhandlers.NewNotificationTaskHandlers(deps)
 	pth := taskhandlers.NewPlaidTaskHandlers(deps)
 	bth := taskhandlers.NewBankTaskHandlers(deps)
 	ath := taskhandlers.NewAccountsTaskHandlers(deps)
 
-	r.Post("/tasks/alert-deliver", alh.DeliverAlert)
+	r.Post("/tasks/notification-deliver", nh.Deliver)
 	r.Post("/tasks/plaid/sync", pth.Sync)
 	r.Post("/tasks/bank/delete", bth.Delete)
 	r.Post("/tasks/account/sync", ath.Sync)

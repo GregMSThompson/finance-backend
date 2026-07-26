@@ -19,13 +19,13 @@ type alertStore interface {
 	Delete(ctx context.Context, uid, alertID string) error
 }
 
-type alertEventStore interface {
-	ListRecent(ctx context.Context, uid string, limit int) ([]*models.AlertEvent, error)
+type alertNotificationStore interface {
+	ListRecent(ctx context.Context, uid string, limit int) ([]*models.Notification, error)
 }
 
 type alertService struct {
-	store       alertStore
-	alertEvents alertEventStore
+	store         alertStore
+	notifications alertNotificationStore
 }
 
 const (
@@ -33,10 +33,10 @@ const (
 	maxAlertHistoryLimit     = 100
 )
 
-func NewAlertService(store alertStore, alertEvents alertEventStore) *alertService {
+func NewAlertService(store alertStore, notifications alertNotificationStore) *alertService {
 	return &alertService{
-		store:       store,
-		alertEvents: alertEvents,
+		store:         store,
+		notifications: notifications,
 	}
 }
 
@@ -67,9 +67,9 @@ func (s *alertService) GetAlerts(ctx context.Context, uid string) ([]*models.Ale
 	return s.store.List(ctx, uid, false)
 }
 
-func (s *alertService) GetAlertHistory(ctx context.Context, uid string, limit int) ([]*models.AlertEvent, error) {
+func (s *alertService) GetAlertHistory(ctx context.Context, uid string, limit int) ([]*models.Notification, error) {
 	limit = normalizeAlertHistoryLimit(limit)
-	return s.alertEvents.ListRecent(ctx, uid, limit)
+	return s.notifications.ListRecent(ctx, uid, limit)
 }
 
 func (s *alertService) UpdateAlert(ctx context.Context, uid, alertID string, req dto.UpdateAlertRequest) (*models.Alert, error) {

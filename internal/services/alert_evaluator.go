@@ -29,8 +29,8 @@ type evaluatorAlertStore interface {
 	List(ctx context.Context, uid string, activeOnly bool) ([]*models.Alert, error)
 }
 
-type evaluatorAlertEventStore interface {
-	Create(ctx context.Context, uid string, e *models.AlertEvent) error
+type evaluatorNotificationStore interface {
+	Create(ctx context.Context, uid string, n *models.Notification) error
 }
 
 type evaluatorAnalytics interface {
@@ -44,36 +44,36 @@ type evaluatorTransactions interface {
 }
 
 type evaluatorTasksClient interface {
-	EnqueueAlertDelivery(ctx context.Context, req dto.DeliverAlertRequest) error
+	EnqueueNotificationDelivery(ctx context.Context, req dto.DeliverNotificationRequest) error
 }
 
 type alertEvaluatorService struct {
-	users        evaluatorUserStore
-	alerts       evaluatorAlertStore
-	alertEvents  evaluatorAlertEventStore
-	analytics    evaluatorAnalytics
-	transactions evaluatorTransactions
-	tasks        evaluatorTasksClient
-	clockNow     func() time.Time
-	period       evalPeriod
+	users         evaluatorUserStore
+	alerts        evaluatorAlertStore
+	notifications evaluatorNotificationStore
+	analytics     evaluatorAnalytics
+	transactions  evaluatorTransactions
+	tasks         evaluatorTasksClient
+	clockNow      func() time.Time
+	period        evalPeriod
 }
 
 func NewAlertEvaluatorService(
 	users evaluatorUserStore,
 	alerts evaluatorAlertStore,
-	alertEvents evaluatorAlertEventStore,
+	notifications evaluatorNotificationStore,
 	analytics evaluatorAnalytics,
 	transactions evaluatorTransactions,
 	tasks evaluatorTasksClient,
 ) *alertEvaluatorService {
 	return &alertEvaluatorService{
-		users:        users,
-		alerts:       alerts,
-		alertEvents:  alertEvents,
-		analytics:    analytics,
-		transactions: transactions,
-		tasks:        tasks,
-		clockNow:     time.Now,
+		users:         users,
+		alerts:        alerts,
+		notifications: notifications,
+		analytics:     analytics,
+		transactions:  transactions,
+		tasks:         tasks,
+		clockNow:      time.Now,
 	}
 }
 
@@ -261,27 +261,30 @@ func (s *alertEvaluatorService) evaluateSubscriptionIncrease(ctx context.Context
 
 func (s *alertEvaluatorService) dispatchAlert(ctx context.Context, user *models.User, alert *models.Alert, title, body string) error {
 	for _, delivery := range alert.Delivery {
-		event := &models.AlertEvent{
-			EventID:     uuid.New().String(),
-			AlertID:     alert.AlertID,
-			UserID:      user.UID,
-			Type:        alert.Type,
-			Delivery:    delivery,
-			Title:       title,
-			Body:        body,
-			TriggeredAt: s.period.now,
+		notification := &models.Notification{
+			NotificationID: uuid.New().String(),
+			Source:         models.NotificationSourceAlert,
+			SourceID:       alert.AlertID,
+			Title:          title,
+			Body:           body,
+			Data: map[string]string{
+				"source":   string(models.NotificationSourceAlert),
+				"sourceId": alert.AlertID,
+			},
+			Delivery:  delivery,
+			CreatedAt: s.period.now,
 		}
 
-		if err := s.alertEvents.Create(ctx, user.UID, event); err != nil {
-			return fmt.Errorf("create alert event: %w", err)
+		if err := s.notifications.Create(ctx, user.UID, notification); err != nil {
+			return fmt.Errorf("create notification: %w", err)
 		}
 
-		if err := s.tasks.EnqueueAlertDelivery(ctx, dto.DeliverAlertRequest{
-			AlertEventID: event.EventID,
-			UserID:       user.UID,
-			Delivery:     delivery,
+		if err := s.tasks.EnqueueNotificationDelivery(ctx, dto.DeliverNotificationRequest{
+			NotificationID: notification.NotificationID,
+			UserID:         user.UID,
+			Delivery:       delivery,
 		}); err != nil {
-			return fmt.Errorf("enqueue alert delivery: %w", err)
+			return fmt.Errorf("enqueue notification delivery: %w", err)
 		}
 	}
 

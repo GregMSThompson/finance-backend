@@ -13,7 +13,7 @@ import (
 	"github.com/GregMSThompson/finance-backend/internal/models"
 )
 
-const alertDeliverPath = "/tasks/alert-deliver"
+const notificationDeliverPath = "/tasks/notification-deliver"
 
 // Adapter enqueues tasks on a Cloud Tasks queue targeting the worker service.
 type Adapter struct {
@@ -48,13 +48,14 @@ func (a *Adapter) Close() {
 	a.client.Close()
 }
 
-// EnqueueAlertDelivery creates an HTTP task targeting the worker's alert delivery endpoint.
-func (a *Adapter) EnqueueAlertDelivery(ctx context.Context, req dto.DeliverAlertRequest) error {
+// EnqueueNotificationDelivery creates an HTTP task targeting the worker's
+// notification delivery endpoint.
+func (a *Adapter) EnqueueNotificationDelivery(ctx context.Context, req dto.DeliverNotificationRequest) error {
 	body, err := json.Marshal(req)
 	if err != nil {
-		return fmt.Errorf("marshal alert delivery request: %w", err)
+		return fmt.Errorf("marshal notification delivery request: %w", err)
 	}
-	return a.createTask(ctx, alertDeliverPath, body)
+	return a.createTask(ctx, notificationDeliverPath, body)
 }
 
 // EnqueueJob creates an HTTP task targeting the worker route for the given job type.

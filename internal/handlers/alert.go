@@ -18,7 +18,7 @@ import (
 type alertService interface {
 	CreateAlert(ctx context.Context, uid string, req dto.CreateAlertRequest) (*models.Alert, error)
 	GetAlerts(ctx context.Context, uid string) ([]*models.Alert, error)
-	GetAlertHistory(ctx context.Context, uid string, limit int) ([]*models.AlertEvent, error)
+	GetAlertHistory(ctx context.Context, uid string, limit int) ([]*models.Notification, error)
 	UpdateAlert(ctx context.Context, uid, alertID string, req dto.UpdateAlertRequest) (*models.Alert, error)
 	DeleteAlert(ctx context.Context, uid, alertID string) error
 }

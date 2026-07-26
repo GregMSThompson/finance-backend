@@ -33,7 +33,7 @@ func main() {
 	astore := store.NewAIStore(bs.Firestore)
 	dstore := store.NewDashboardStore(bs.Firestore)
 	alstore := store.NewAlertStore(bs.Firestore)
-	aestore := store.NewAlertEventStore(bs.Firestore)
+	nstore := store.NewNotificationStore(bs.Firestore)
 	jstore := store.NewJobStore(bs.Firestore)
 
 	// services
@@ -46,7 +46,7 @@ func main() {
 	txserv := services.NewTransactionsService(tstore)
 	aiserv := services.NewAIService(bs.GenAIAdapter, anserv, txserv, astore)
 	dashsvc := services.NewDashboardService(dstore, anserv, txserv)
-	alertsvc := services.NewAlertService(alstore, aestore)
+	alertsvc := services.NewAlertService(alstore, nstore)
 
 	// response handler
 	rh := response.New(bs.Log)

@@ -18,7 +18,7 @@ import (
 type stubAlertService struct {
 	getAlertsResp    []*models.Alert
 	getAlertsErr     error
-	historyResp      []*models.AlertEvent
+	historyResp      []*models.Notification
 	historyErr       error
 	createResp       *models.Alert
 	createErr        error
@@ -36,7 +36,7 @@ func (s *stubAlertService) GetAlerts(_ context.Context, _ string) ([]*models.Ale
 	return s.getAlertsResp, s.getAlertsErr
 }
 
-func (s *stubAlertService) GetAlertHistory(_ context.Context, _ string, limit int) ([]*models.AlertEvent, error) {
+func (s *stubAlertService) GetAlertHistory(_ context.Context, _ string, limit int) ([]*models.Notification, error) {
 	s.lastHistoryLimit = limit
 	return s.historyResp, s.historyErr
 }
@@ -95,8 +95,8 @@ func TestGetAlerts_ServiceError(t *testing.T) {
 
 func TestGetAlertHistory_OK(t *testing.T) {
 	svc := &stubAlertService{
-		historyResp: []*models.AlertEvent{
-			{EventID: "e1", AlertID: "a1", Type: models.AlertTypeSpendThreshold},
+		historyResp: []*models.Notification{
+			{NotificationID: "n1", Source: models.NotificationSourceAlert, SourceID: "a1"},
 		},
 	}
 	resp := &stubResponseHandler{}
