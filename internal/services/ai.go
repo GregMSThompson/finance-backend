@@ -646,7 +646,7 @@ func toolSchemas() []dto.VertexTool {
 }
 
 func systemPrompt(now time.Time) string {
-	today := now.Format("2006-01-02")
+	today := helpers.FormatDate(now)
 	weekday := now.Weekday().String()
 	return "You are a finance analytics assistant. Use tools for deterministic queries. " +
 		"You may make up to 3 tool calls per turn to gather the data you need. " +
@@ -681,10 +681,8 @@ func (s *aiService) applyDefaults(pending **bool, dateFrom **string, dateTo **st
 	if (dateFrom == nil || *dateFrom == nil || **dateFrom == "") && (dateTo == nil || *dateTo == nil || **dateTo == "") {
 		now := s.clockNow()
 		start := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, now.Location())
-		startStr := start.Format("2006-01-02")
-		endStr := now.Format("2006-01-02")
-		*dateFrom = helpers.Ptr(startStr)
-		*dateTo = helpers.Ptr(endStr)
+		*dateFrom = helpers.Ptr(helpers.FormatDate(start))
+		*dateTo = helpers.Ptr(helpers.FormatDate(now))
 	}
 
 	return nil
@@ -714,11 +712,9 @@ const maxTransactionDateRange = 366 * 24 * time.Hour
 // maxTransactionDateRange. A missing dateTo is treated as today; a missing
 // dateFrom is rejected outright, since an open-ended past is unbounded.
 func (s *aiService) validateMaxDateRange(dateFrom, dateTo *string) error {
-	const layout = "2006-01-02"
-
 	toTime := s.clockNow()
 	if dateTo != nil && *dateTo != "" {
-		t, err := time.Parse(layout, *dateTo)
+		t, err := helpers.ParseDate(*dateTo)
 		if err != nil {
 			return errs.NewValidationError(fmt.Sprintf("invalid dateTo: %s", *dateTo))
 		}
@@ -728,7 +724,7 @@ func (s *aiService) validateMaxDateRange(dateFrom, dateTo *string) error {
 	if dateFrom == nil || *dateFrom == "" {
 		return errs.NewValidationError("a dateFrom within one year of dateTo is required")
 	}
-	fromTime, err := time.Parse(layout, *dateFrom)
+	fromTime, err := helpers.ParseDate(*dateFrom)
 	if err != nil {
 		return errs.NewValidationError(fmt.Sprintf("invalid dateFrom: %s", *dateFrom))
 	}

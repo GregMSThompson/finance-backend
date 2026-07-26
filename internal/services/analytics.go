@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"sort"
 	"sync"
-	"time"
 
 	"github.com/GregMSThompson/finance-backend/internal/dto"
 	"github.com/GregMSThompson/finance-backend/internal/errs"
@@ -333,11 +332,11 @@ func (s *analyticsService) GetRecurringTransactions(ctx context.Context, uid str
 func computeGaps(sortedDates []string) ([]int, error) {
 	gaps := make([]int, 0, len(sortedDates)-1)
 	for i := 1; i < len(sortedDates); i++ {
-		prev, err := time.Parse("2006-01-02", sortedDates[i-1])
+		prev, err := helpers.ParseDate(sortedDates[i-1])
 		if err != nil {
 			return nil, err
 		}
-		curr, err := time.Parse("2006-01-02", sortedDates[i])
+		curr, err := helpers.ParseDate(sortedDates[i])
 		if err != nil {
 			return nil, err
 		}
@@ -552,11 +551,11 @@ func (s *analyticsService) GetMovingAverage(ctx context.Context, uid string, arg
 		return result, err
 	}
 
-	from, err := time.Parse("2006-01-02", args.DateFrom)
+	from, err := helpers.ParseDate(args.DateFrom)
 	if err != nil {
 		return result, errs.NewValidationError("invalid dateFrom: " + args.DateFrom)
 	}
-	to, err := time.Parse("2006-01-02", args.DateTo)
+	to, err := helpers.ParseDate(args.DateTo)
 	if err != nil {
 		return result, errs.NewValidationError("invalid dateTo: " + args.DateTo)
 	}
@@ -694,7 +693,7 @@ func maPeriodKey(date, granularity string) (string, error) {
 		}
 		return date[:7], nil
 	case "week":
-		t, err := time.Parse("2006-01-02", date)
+		t, err := helpers.ParseDate(date)
 		if err != nil {
 			return "", err
 		}

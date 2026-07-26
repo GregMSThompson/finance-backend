@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/google/uuid"
 
@@ -13,9 +12,8 @@ import (
 	"github.com/GregMSThompson/finance-backend/internal/errs"
 	"github.com/GregMSThompson/finance-backend/internal/models"
 	"github.com/GregMSThompson/finance-backend/internal/taxonomy"
+	"github.com/GregMSThompson/finance-backend/pkg/helpers"
 )
-
-const goalEndDateLayout = "2006-01-02"
 
 type goalStore interface {
 	Create(ctx context.Context, uid string, g *models.Goal) error
@@ -223,7 +221,7 @@ func validateGoal(g *models.Goal) error {
 		if g.EndDate == "" {
 			return errs.NewValidationError("a fixed window requires an endDate")
 		}
-		if _, err := time.Parse(goalEndDateLayout, g.EndDate); err != nil {
+		if !helpers.IsValidDate(g.EndDate) {
 			return errs.NewValidationError(fmt.Sprintf("invalid endDate: %s", g.EndDate))
 		}
 	case models.GoalWindowWeekly, models.GoalWindowMonthly:

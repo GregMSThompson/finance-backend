@@ -13,8 +13,6 @@ import (
 	"github.com/GregMSThompson/finance-backend/pkg/helpers"
 )
 
-const dashDateLayout = "2006-01-02"
-
 type dashboardStore interface {
 	Create(ctx context.Context, uid string, w *models.Widget) error
 	Get(ctx context.Context, uid, widgetID string) (*models.Widget, error)
@@ -286,8 +284,8 @@ func (s *dashboardService) fetchRecurringSubscriptions(ctx context.Context, uid 
 		}
 	} else {
 		now := s.clockNow()
-		from = now.AddDate(0, -6, 0).Format(dashDateLayout)
-		to = now.Format(dashDateLayout)
+		from = helpers.FormatDate(now.AddDate(0, -6, 0))
+		to = helpers.FormatDate(now)
 	}
 	result, err := s.analytics.GetRecurringTransactions(ctx, uid, dto.AnalyticsRecurringArgs{
 		AccountID: helpers.OptString(cfg.AccountID),
@@ -464,11 +462,11 @@ func validateExplicitDateRange(r models.ExplicitDateRange) error {
 	if r.StartDate == "" || r.EndDate == "" {
 		return errs.NewValidationError("startDate and endDate are required")
 	}
-	start, err := time.Parse(dashDateLayout, r.StartDate)
+	start, err := helpers.ParseDate(r.StartDate)
 	if err != nil {
 		return errs.NewValidationError("startDate must be in YYYY-MM-DD format")
 	}
-	end, err := time.Parse(dashDateLayout, r.EndDate)
+	end, err := helpers.ParseDate(r.EndDate)
 	if err != nil {
 		return errs.NewValidationError("endDate must be in YYYY-MM-DD format")
 	}
@@ -489,70 +487,70 @@ func resolveDateRange(dr models.DateRangeConfig, now time.Time) (from, to string
 }
 
 func resolvePreset(preset string, now time.Time) (from, to string, err error) {
-	today := now.Format(dashDateLayout)
+	today := helpers.FormatDate(now)
 	switch preset {
 	case dto.DateRangeThisMonth:
-		return time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, now.Location()).Format(dashDateLayout), today, nil
+		return helpers.FormatDate(time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, now.Location())), today, nil
 	case dto.DateRangeLastMonth:
 		firstOfMonth := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, now.Location())
 		lastOfPrev := firstOfMonth.AddDate(0, 0, -1)
 		firstOfPrev := time.Date(lastOfPrev.Year(), lastOfPrev.Month(), 1, 0, 0, 0, 0, now.Location())
-		return firstOfPrev.Format(dashDateLayout), lastOfPrev.Format(dashDateLayout), nil
+		return helpers.FormatDate(firstOfPrev), helpers.FormatDate(lastOfPrev), nil
 	case dto.DateRangeThisQuarter:
-		return firstOfQuarter(now).Format(dashDateLayout), today, nil
+		return helpers.FormatDate(firstOfQuarter(now)), today, nil
 	case dto.DateRangeLastQuarter:
 		f, l := prevQuarter(now)
-		return f.Format(dashDateLayout), l.Format(dashDateLayout), nil
+		return helpers.FormatDate(f), helpers.FormatDate(l), nil
 	case dto.DateRangeThisYear:
-		return time.Date(now.Year(), 1, 1, 0, 0, 0, 0, now.Location()).Format(dashDateLayout), today, nil
+		return helpers.FormatDate(time.Date(now.Year(), 1, 1, 0, 0, 0, 0, now.Location())), today, nil
 	case dto.DateRangeLastYear:
-		return time.Date(now.Year()-1, 1, 1, 0, 0, 0, 0, now.Location()).Format(dashDateLayout),
-			time.Date(now.Year()-1, 12, 31, 0, 0, 0, 0, now.Location()).Format(dashDateLayout), nil
+		return helpers.FormatDate(time.Date(now.Year()-1, 1, 1, 0, 0, 0, 0, now.Location())),
+			helpers.FormatDate(time.Date(now.Year()-1, 12, 31, 0, 0, 0, 0, now.Location())), nil
 	}
 	return "", "", errs.NewValidationError("unknown date range preset: " + preset)
 }
 
 func resolveWindow(window string, now time.Time) (from, to string, err error) {
-	today := now.Format(dashDateLayout)
+	today := helpers.FormatDate(now)
 	switch window {
 	case dto.Window7Day:
-		return now.AddDate(0, 0, -7).Format(dashDateLayout), today, nil
+		return helpers.FormatDate(now.AddDate(0, 0, -7)), today, nil
 	case dto.Window30Day:
-		return now.AddDate(0, 0, -30).Format(dashDateLayout), today, nil
+		return helpers.FormatDate(now.AddDate(0, 0, -30)), today, nil
 	case dto.Window60Day:
-		return now.AddDate(0, 0, -60).Format(dashDateLayout), today, nil
+		return helpers.FormatDate(now.AddDate(0, 0, -60)), today, nil
 	case dto.Window90Day:
-		return now.AddDate(0, 0, -90).Format(dashDateLayout), today, nil
+		return helpers.FormatDate(now.AddDate(0, 0, -90)), today, nil
 	}
 	return "", "", errs.NewValidationError("unknown window: " + window)
 }
 
 func resolvePeriodPreset(preset string, now time.Time) (currFrom, currTo, prevFrom, prevTo string, err error) {
-	today := now.Format(dashDateLayout)
+	today := helpers.FormatDate(now)
 	switch preset {
 	case dto.PeriodMonthOverMonth:
 		firstOfMonth := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, now.Location())
 		lastOfPrev := firstOfMonth.AddDate(0, 0, -1)
 		firstOfPrev := time.Date(lastOfPrev.Year(), lastOfPrev.Month(), 1, 0, 0, 0, 0, now.Location())
-		return firstOfMonth.Format(dashDateLayout), today,
-			firstOfPrev.Format(dashDateLayout), lastOfPrev.Format(dashDateLayout), nil
+		return helpers.FormatDate(firstOfMonth), today,
+			helpers.FormatDate(firstOfPrev), helpers.FormatDate(lastOfPrev), nil
 	case dto.PeriodWeekOverWeek:
 		thisMonday := mondayOfWeek(now)
 		prevMonday := thisMonday.AddDate(0, 0, -7)
 		prevSunday := thisMonday.AddDate(0, 0, -1)
-		return thisMonday.Format(dashDateLayout), today,
-			prevMonday.Format(dashDateLayout), prevSunday.Format(dashDateLayout), nil
+		return helpers.FormatDate(thisMonday), today,
+			helpers.FormatDate(prevMonday), helpers.FormatDate(prevSunday), nil
 	case dto.PeriodQuarterOverQuarter:
 		f := firstOfQuarter(now)
 		prevF, prevL := prevQuarter(now)
-		return f.Format(dashDateLayout), today,
-			prevF.Format(dashDateLayout), prevL.Format(dashDateLayout), nil
+		return helpers.FormatDate(f), today,
+			helpers.FormatDate(prevF), helpers.FormatDate(prevL), nil
 	case dto.PeriodYearOverYear:
 		thisJan1 := time.Date(now.Year(), 1, 1, 0, 0, 0, 0, now.Location())
 		prevJan1 := time.Date(now.Year()-1, 1, 1, 0, 0, 0, 0, now.Location())
 		prevSameDay := now.AddDate(-1, 0, 0)
-		return thisJan1.Format(dashDateLayout), today,
-			prevJan1.Format(dashDateLayout), prevSameDay.Format(dashDateLayout), nil
+		return helpers.FormatDate(thisJan1), today,
+			helpers.FormatDate(prevJan1), helpers.FormatDate(prevSameDay), nil
 	}
 	return "", "", "", "", errs.NewValidationError("unknown period preset: " + preset)
 }

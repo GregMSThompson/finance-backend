@@ -13,8 +13,6 @@ import (
 	"github.com/GregMSThompson/finance-backend/pkg/logger"
 )
 
-const evalDateLayout = "2006-01-02"
-
 type evalPeriod struct {
 	now       time.Time
 	today     string
@@ -83,8 +81,8 @@ func (s *alertEvaluatorService) Run(ctx context.Context) error {
 	now := s.clockNow()
 	s.period = evalPeriod{
 		now:       now,
-		today:     now.Format(evalDateLayout),
-		yesterday: now.AddDate(0, 0, -1).Format(evalDateLayout),
+		today:     helpers.FormatDate(now),
+		yesterday: helpers.FormatDate(now.AddDate(0, 0, -1)),
 	}
 
 	users, err := s.users.List(ctx)
@@ -230,7 +228,7 @@ func (s *alertEvaluatorService) evaluateIncomeReceived(ctx context.Context, uid 
 }
 
 func (s *alertEvaluatorService) evaluateSubscriptionIncrease(ctx context.Context, uid string) (bool, string, string, error) {
-	from := s.period.now.AddDate(0, 0, -90).Format(evalDateLayout)
+	from := helpers.FormatDate(s.period.now.AddDate(0, 0, -90))
 
 	result, err := s.analytics.GetRecurringTransactions(ctx, uid, dto.AnalyticsRecurringArgs{
 		DateFrom: from,
@@ -294,15 +292,15 @@ func (s *alertEvaluatorService) dispatchAlert(ctx context.Context, user *models.
 func evalWindowFrom(window string, now time.Time) string {
 	switch window {
 	case "7day":
-		return now.AddDate(0, 0, -7).Format(evalDateLayout)
+		return helpers.FormatDate(now.AddDate(0, 0, -7))
 	case "30day":
-		return now.AddDate(0, 0, -30).Format(evalDateLayout)
+		return helpers.FormatDate(now.AddDate(0, 0, -30))
 	case "60day":
-		return now.AddDate(0, 0, -60).Format(evalDateLayout)
+		return helpers.FormatDate(now.AddDate(0, 0, -60))
 	case "90day":
-		return now.AddDate(0, 0, -90).Format(evalDateLayout)
+		return helpers.FormatDate(now.AddDate(0, 0, -90))
 	default:
-		return now.AddDate(0, 0, -1).Format(evalDateLayout)
+		return helpers.FormatDate(now.AddDate(0, 0, -1))
 	}
 }
 
