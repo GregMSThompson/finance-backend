@@ -15,6 +15,16 @@ import (
 	"github.com/GregMSThompson/finance-backend/pkg/logger"
 )
 
+// defaultTransactionLimit bounds how many rows get_transactions returns to the
+// model when it doesn't specify a limit, keeping the tool result out of
+// context-blowing territory.
+const defaultTransactionLimit = 25
+
+// maxTransactionDateRange caps the window get_transactions may scan. It bounds
+// how many docs the read pulls back (the amount sort reads the whole window)
+// without a per-doc cap. 366 days accommodates a full leap year.
+const maxTransactionDateRange = 366 * 24 * time.Hour
+
 var toolNameSet = buildToolNameSet()
 
 type vertexClient interface {
@@ -33,6 +43,41 @@ type analyticsClient interface {
 
 type aiTransactions interface {
 	ListTransactions(ctx context.Context, uid string, args dto.TransactionListArgs) (dto.TransactionListResult, error)
+}
+
+// aiGoals is the narrow slice of the goal service the chat tools drive. Creation
+// links the goal to the originating chat session; every method surfaces
+// errs.ValidationError so the tool loop can reflect it back to the model.
+type aiGoals interface {
+	Create(ctx context.Context, uid, sessionID string, def dto.GoalDefinition) (*models.Goal, error)
+	Update(ctx context.Context, uid, goalID string, upd dto.GoalUpdate) (*models.Goal, error)
+	List(ctx context.Context, uid string, statuses ...models.GoalStatus) ([]*models.Goal, error)
+	GetProgress(ctx context.Context, uid, goalID string) (dto.GoalProgress, error)
+}
+
+// aiUpdateGoalArgs decodes the update_goal tool call. goalId identifies the
+// target; the embedded GoalUpdate carries the partial change set (nil fields
+// left untouched).
+type aiUpdateGoalArgs struct {
+	GoalID string `json:"goalId"`
+	dto.GoalUpdate
+}
+
+// aiListGoalsArgs decodes the list_goals tool call. An empty Statuses defaults
+// to active and paused — the goals a user usually means by "my goals".
+type aiListGoalsArgs struct {
+	Statuses []models.GoalStatus `json:"status,omitempty"`
+}
+
+// aiGoalIDArgs decodes tool calls that address a single goal by id.
+type aiGoalIDArgs struct {
+	GoalID string `json:"goalId"`
+}
+
+// goalListPayload wraps a goal slice so the list_goals result is a JSON object,
+// which the tool-response transport requires.
+type goalListPayload struct {
+	Goals []*models.Goal `json:"goals"`
 }
 
 // aiGetTransactionsArgs decodes Vertex's get_transactions tool call. Vertex
@@ -59,15 +104,17 @@ type aiService struct {
 	vertex       vertexClient
 	analysis     analyticsClient
 	transactions aiTransactions
+	goals        aiGoals
 	store        aiStore
 	clockNow     func() time.Time
 }
 
-func NewAIService(vertex vertexClient, analysis analyticsClient, transactions aiTransactions, store aiStore) *aiService {
+func NewAIService(vertex vertexClient, analysis analyticsClient, transactions aiTransactions, goals aiGoals, store aiStore) *aiService {
 	return &aiService{
 		vertex:       vertex,
 		analysis:     analysis,
 		transactions: transactions,
+		goals:        goals,
 		store:        store,
 		clockNow:     time.Now,
 	}
@@ -118,7 +165,7 @@ func (s *aiService) Query(ctx context.Context, uid string, q dto.AIQueryRequest)
 
 		log.Info("executing tool", "tool", toolCall.Name, "call", i+1)
 
-		toolResult, err := s.executeTool(ctx, uid, toolCall)
+		toolResult, err := s.executeTool(ctx, uid, q.SessionID, toolCall)
 		if err != nil {
 			var validationErr *errs.ValidationError
 			switch {
@@ -263,7 +310,7 @@ func (s *aiService) saveMessage(ctx context.Context, uid, sessionID string, msg 
 	return s.store.SaveMessage(ctx, uid, sessionID, msg)
 }
 
-func (s *aiService) executeTool(ctx context.Context, uid string, call dto.VertexToolCall) (dto.VertexToolResult, error) {
+func (s *aiService) executeTool(ctx context.Context, uid, sessionID string, call dto.VertexToolCall) (dto.VertexToolResult, error) {
 	switch call.Name {
 	case "get_spend_total":
 		return executeAnalyticsTool(
@@ -438,6 +485,75 @@ func (s *aiService) executeTool(ctx context.Context, uid string, call dto.Vertex
 			return dto.VertexToolResult{}, err
 		}
 		payload, err := toMap(result)
+		if err != nil {
+			return dto.VertexToolResult{}, err
+		}
+		return dto.VertexToolResult{Name: call.Name, Response: payload}, nil
+	case "create_goal":
+		def, err := decodeArgs[dto.GoalDefinition](call.Args)
+		if err != nil {
+			return dto.VertexToolResult{}, err
+		}
+		if def.Type == "" {
+			def.Type = models.GoalTypeSpendingLimit
+		}
+		goal, err := s.goals.Create(ctx, uid, sessionID, def)
+		if err != nil {
+			return dto.VertexToolResult{}, err
+		}
+		payload, err := toMap(goal)
+		if err != nil {
+			return dto.VertexToolResult{}, err
+		}
+		return dto.VertexToolResult{Name: call.Name, Response: payload}, nil
+	case "update_goal":
+		args, err := decodeArgs[aiUpdateGoalArgs](call.Args)
+		if err != nil {
+			return dto.VertexToolResult{}, err
+		}
+		if args.GoalID == "" {
+			return dto.VertexToolResult{}, errs.NewValidationError("goalId is required; call list_goals to find it")
+		}
+		goal, err := s.goals.Update(ctx, uid, args.GoalID, args.GoalUpdate)
+		if err != nil {
+			return dto.VertexToolResult{}, err
+		}
+		payload, err := toMap(goal)
+		if err != nil {
+			return dto.VertexToolResult{}, err
+		}
+		return dto.VertexToolResult{Name: call.Name, Response: payload}, nil
+	case "list_goals":
+		args, err := decodeArgs[aiListGoalsArgs](call.Args)
+		if err != nil {
+			return dto.VertexToolResult{}, err
+		}
+		statuses := args.Statuses
+		if len(statuses) == 0 {
+			statuses = []models.GoalStatus{models.GoalStatusActive, models.GoalStatusPaused}
+		}
+		goals, err := s.goals.List(ctx, uid, statuses...)
+		if err != nil {
+			return dto.VertexToolResult{}, err
+		}
+		payload, err := toMap(goalListPayload{Goals: goals})
+		if err != nil {
+			return dto.VertexToolResult{}, err
+		}
+		return dto.VertexToolResult{Name: call.Name, Response: payload}, nil
+	case "get_goal_progress":
+		args, err := decodeArgs[aiGoalIDArgs](call.Args)
+		if err != nil {
+			return dto.VertexToolResult{}, err
+		}
+		if args.GoalID == "" {
+			return dto.VertexToolResult{}, errs.NewValidationError("goalId is required; call list_goals to find it")
+		}
+		progress, err := s.goals.GetProgress(ctx, uid, args.GoalID)
+		if err != nil {
+			return dto.VertexToolResult{}, err
+		}
+		payload, err := toMap(progress)
 		if err != nil {
 			return dto.VertexToolResult{}, err
 		}
@@ -642,6 +758,107 @@ func toolSchemas() []dto.VertexTool {
 				Required: []string{"currentFrom", "currentTo", "previousFrom", "previousTo"},
 			},
 		},
+		{
+			Name: "create_goal",
+			Description: "Create a spending-limit goal after the user has confirmed the details. " +
+				"Summarise the goal (limit, period, category, alerts) and get explicit confirmation before calling this. " +
+				"A recurring goal resets each period and must use a weekly or monthly window (no endDate). " +
+				"A one_off goal runs once; a fixed window requires an endDate (YYYY-MM-DD). " +
+				"If the call is rejected, explain what needs to change and try again.",
+			Parameters: &dto.VertexSchema{
+				Type: "object",
+				Properties: map[string]*dto.VertexSchema{
+					"name":        {Type: "string", Description: "Short user-facing name, e.g. 'Dining out budget'. Required."},
+					"targetValue": {Type: "number", Description: "The spending limit for the period, in dollars. Required, must be greater than 0."},
+					"timeWindow":  {Type: "string", Enum: []string{"weekly", "monthly", "fixed"}, Description: "Period the limit is measured over. Required."},
+					"recurrence":  {Type: "string", Enum: []string{"recurring", "one_off"}, Description: "recurring resets each period; one_off runs once. Required."},
+					"endDate":     {Type: "string", Description: "YYYY-MM-DD end date. Required when timeWindow is fixed; omit for weekly/monthly."},
+					"type":        {Type: "string", Enum: []string{string(models.GoalTypeSpendingLimit)}, Description: "Defaults to spending_limit."},
+					"filters": {
+						Type:        "object",
+						Description: "Optional scope. Omit to count all spending toward the limit.",
+						Properties: map[string]*dto.VertexSchema{
+							"pfcPrimary": {Type: "string", Enum: taxonomy.PFCPrimaryList, Description: "Only count this category."},
+							"merchant":   {Type: "string", Description: "Only count this merchant (partial, case-insensitive)."},
+							"accountId":  {Type: "string", Description: "Only count this account."},
+						},
+					},
+					"alertThresholds": {
+						Type:        "object",
+						Description: "Optional notification triggers.",
+						Properties: map[string]*dto.VertexSchema{
+							"progressPercent":   {Type: "number", Description: "Notify when spending reaches this percent (0-100) of the limit."},
+							"singleTransaction": {Type: "number", Description: "Notify when a single counted transaction exceeds this dollar amount."},
+						},
+					},
+				},
+				Required: []string{"name", "targetValue", "timeWindow", "recurrence"},
+			},
+		},
+		{
+			Name: "update_goal",
+			Description: "Change an existing goal. Call list_goals first to get the goalId. " +
+				"Only the fields you provide change; omit the rest. " +
+				"Providing filters or alertThresholds replaces the whole object, so include every value you want to keep. " +
+				"Summarise substantive changes and confirm with the user before calling.",
+			Parameters: &dto.VertexSchema{
+				Type: "object",
+				Properties: map[string]*dto.VertexSchema{
+					"goalId":      {Type: "string", Description: "Id of the goal to change. Required."},
+					"name":        {Type: "string", Description: "New name."},
+					"targetValue": {Type: "number", Description: "New spending limit, must be greater than 0."},
+					"timeWindow":  {Type: "string", Enum: []string{"weekly", "monthly", "fixed"}, Description: "New period."},
+					"recurrence":  {Type: "string", Enum: []string{"recurring", "one_off"}, Description: "New recurrence."},
+					"endDate":     {Type: "string", Description: "YYYY-MM-DD end date for a fixed window."},
+					"status":      {Type: "string", Enum: []string{"active", "paused"}, Description: "Pause or resume the goal. completed and failed are set by evaluation, not here."},
+					"filters": {
+						Type:        "object",
+						Description: "Replaces the goal's scope. Include every value you want to keep.",
+						Properties: map[string]*dto.VertexSchema{
+							"pfcPrimary": {Type: "string", Enum: taxonomy.PFCPrimaryList, Description: "Only count this category."},
+							"merchant":   {Type: "string", Description: "Only count this merchant (partial, case-insensitive)."},
+							"accountId":  {Type: "string", Description: "Only count this account."},
+						},
+					},
+					"alertThresholds": {
+						Type:        "object",
+						Description: "Replaces the goal's notification triggers.",
+						Properties: map[string]*dto.VertexSchema{
+							"progressPercent":   {Type: "number", Description: "Notify when spending reaches this percent (0-100) of the limit."},
+							"singleTransaction": {Type: "number", Description: "Notify when a single counted transaction exceeds this dollar amount."},
+						},
+					},
+				},
+				Required: []string{"goalId"},
+			},
+		},
+		{
+			Name: "list_goals",
+			Description: "List the user's goals, including their ids. Call this to answer 'what are my goals' " +
+				"and to resolve a goalId before update_goal or get_goal_progress. Defaults to active and paused goals.",
+			Parameters: &dto.VertexSchema{
+				Type: "object",
+				Properties: map[string]*dto.VertexSchema{
+					"status": {
+						Type:        "array",
+						Description: "Filter by lifecycle status. Defaults to active and paused when omitted.",
+						Items:       &dto.VertexSchema{Type: "string", Enum: []string{"active", "paused", "completed", "failed"}},
+					},
+				},
+			},
+		},
+		{
+			Name: "get_goal_progress",
+			Description: "Get a goal's latest measured progress (spent so far, remaining, percent, on-track). " +
+				"Call list_goals first to get the goalId. Progress reflects the most recent nightly evaluation.",
+			Parameters: &dto.VertexSchema{
+				Type: "object",
+				Properties: map[string]*dto.VertexSchema{
+					"goalId": {Type: "string", Description: "Id of the goal to report on. Required."},
+				},
+				Required: []string{"goalId"},
+			},
+		},
 	}
 }
 
@@ -655,6 +872,9 @@ func systemPrompt(now time.Time) string {
 		"If a query is ambiguous (e.g., which category?), ask for clarification. " +
 		"If a tool returns empty results, automatically retry with a wider date range before responding. Always tell the user what period you searched. " +
 		"Defaults: pending=false. Tools with a default date range will apply it automatically when you omit the dates — do not ask the user for a date range you can default. " +
+		"For goals: before calling create_goal or making substantive changes with update_goal, summarise the goal (limit, period, category, alerts) back to the user and get explicit confirmation. " +
+		"update_goal and get_goal_progress need a goalId — call list_goals first to resolve it. " +
+		"If a goal tool returns an error, explain what needs to change and adjust the call rather than giving up. " +
 		"Today is " + today + " (" + weekday + ", US)."
 }
 
@@ -697,16 +917,6 @@ func validatePrimary(primary *string) error {
 	}
 	return errs.NewValidationError(fmt.Sprintf("invalid pfcPrimary: %s", *primary))
 }
-
-// defaultTransactionLimit bounds how many rows get_transactions returns to the
-// model when it doesn't specify a limit, keeping the tool result out of
-// context-blowing territory.
-const defaultTransactionLimit = 25
-
-// maxTransactionDateRange caps the window get_transactions may scan. It bounds
-// how many docs the read pulls back (the amount sort reads the whole window)
-// without a per-doc cap. 366 days accommodates a full leap year.
-const maxTransactionDateRange = 366 * 24 * time.Hour
 
 // validateMaxDateRange rejects get_transactions windows wider than
 // maxTransactionDateRange. A missing dateTo is treated as today; a missing

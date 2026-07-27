@@ -46,10 +46,10 @@ func main() {
 	plserv := services.NewPlaidService(bs.PlaidAdapter, bstore, tstore, jobsvc, bserv, accountsvc)
 	anserv := services.NewAnalyticsService(tstore)
 	txserv := services.NewTransactionsService(tstore)
-	aiserv := services.NewAIService(bs.GenAIAdapter, anserv, txserv, astore)
-	dashsvc := services.NewDashboardService(dstore, anserv, txserv)
 	alertsvc := services.NewAlertService(alstore, nstore)
 	goalsvc := services.NewGoalService(gstore, gsstore, jobsvc)
+	aiserv := services.NewAIService(bs.GenAIAdapter, anserv, txserv, goalsvc, astore)
+	dashsvc := services.NewDashboardService(dstore, anserv, txserv)
 
 	// response handler
 	rh := response.New(bs.Log)
