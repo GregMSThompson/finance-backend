@@ -9,6 +9,7 @@ import (
 	"github.com/GregMSThompson/finance-backend/internal/dto"
 	"github.com/GregMSThompson/finance-backend/internal/errs"
 	"github.com/GregMSThompson/finance-backend/internal/models"
+	"github.com/GregMSThompson/finance-backend/internal/taxonomy"
 	"github.com/GregMSThompson/finance-backend/pkg/helpers"
 )
 
@@ -35,11 +36,17 @@ func (s *analyticsService) GetSpendTotal(ctx context.Context, uid string, args d
 	if err := s.txs.Query(ctx, uid, dto.TransactionQuery{
 		Pending:      args.Pending,
 		PFCPrimaries: helpers.PrimarySlice(args.PFCPrimary),
-		AccountID:       args.AccountID,
+		AccountID:    args.AccountID,
 		Merchant:     args.Merchant,
 		DateFrom:     args.DateFrom,
 		DateTo:       args.DateTo,
 	}, func(tx *models.Transaction) error {
+		// Income and transfers aren't spending, so they're left out of the total.
+		// A caller that explicitly filtered to one of those categories (non-nil
+		// PFCPrimary) gets exactly what they asked for.
+		if args.PFCPrimary == nil && taxonomy.IsNonSpendCategory(tx.PFCPrimary) {
+			return nil
+		}
 		total += tx.Amount
 		if currency == "" && tx.Currency != "" {
 			currency = tx.Currency
@@ -67,7 +74,7 @@ func (s *analyticsService) GetSpendBreakdown(ctx context.Context, uid string, ar
 	data, err := collectPeriod(ctx, s.txs, uid, dto.TransactionQuery{
 		Pending:      args.Pending,
 		PFCPrimaries: helpers.PrimarySlice(args.PFCPrimary),
-		AccountID:       args.AccountID,
+		AccountID:    args.AccountID,
 		DateFrom:     args.DateFrom,
 		DateTo:       args.DateTo,
 	}, args.GroupBy)
@@ -94,7 +101,7 @@ func (s *analyticsService) GetPeriodComparison(ctx context.Context, uid string, 
 	currentQuery := dto.TransactionQuery{
 		Pending:      args.Pending,
 		PFCPrimaries: helpers.PrimarySlice(args.PFCPrimary),
-		AccountID:       args.AccountID,
+		AccountID:    args.AccountID,
 		Merchant:     args.Merchant,
 		DateFrom:     &args.CurrentFrom,
 		DateTo:       &args.CurrentTo,
@@ -102,7 +109,7 @@ func (s *analyticsService) GetPeriodComparison(ctx context.Context, uid string, 
 	previousQuery := dto.TransactionQuery{
 		Pending:      args.Pending,
 		PFCPrimaries: helpers.PrimarySlice(args.PFCPrimary),
-		AccountID:       args.AccountID,
+		AccountID:    args.AccountID,
 		Merchant:     args.Merchant,
 		DateFrom:     &args.PreviousFrom,
 		DateTo:       &args.PreviousTo,
@@ -256,10 +263,10 @@ func (s *analyticsService) GetRecurringTransactions(ctx context.Context, uid str
 	groups := map[string]*merchantGroup{}
 
 	if err := s.txs.Query(ctx, uid, dto.TransactionQuery{
-		Pending:  &pending,
-		AccountID:   args.AccountID,
-		DateFrom: &args.DateFrom,
-		DateTo:   &args.DateTo,
+		Pending:   &pending,
+		AccountID: args.AccountID,
+		DateFrom:  &args.DateFrom,
+		DateTo:    &args.DateTo,
 	}, func(tx *models.Transaction) error {
 		g, ok := groups[tx.Name]
 		if !ok {
@@ -419,10 +426,10 @@ func (s *analyticsService) GetIncomeVsExpenses(ctx context.Context, uid string, 
 	var currency string
 
 	if err := s.txs.Query(ctx, uid, dto.TransactionQuery{
-		Pending:  &pending,
-		AccountID:   args.AccountID,
-		DateFrom: &args.DateFrom,
-		DateTo:   &args.DateTo,
+		Pending:   &pending,
+		AccountID: args.AccountID,
+		DateFrom:  &args.DateFrom,
+		DateTo:    &args.DateTo,
 	}, func(tx *models.Transaction) error {
 		total += tx.Amount
 		if tx.PFCPrimary == "INCOME" {
@@ -461,7 +468,7 @@ func (s *analyticsService) GetTopN(ctx context.Context, uid string, args dto.Ana
 	data, err := collectPeriod(ctx, s.txs, uid, dto.TransactionQuery{
 		Pending:      &pending,
 		PFCPrimaries: helpers.PrimarySlice(args.PFCPrimary),
-		AccountID:       args.AccountID,
+		AccountID:    args.AccountID,
 		DateFrom:     &args.DateFrom,
 		DateTo:       &args.DateTo,
 	}, groupBy)
@@ -579,7 +586,7 @@ func (s *analyticsService) GetMovingAverage(ctx context.Context, uid string, arg
 	if err := s.txs.Query(ctx, uid, dto.TransactionQuery{
 		Pending:      &pending,
 		PFCPrimaries: helpers.PrimarySlice(args.PFCPrimary),
-		AccountID:       args.AccountID,
+		AccountID:    args.AccountID,
 		Merchant:     args.Merchant,
 		DateFrom:     &args.DateFrom,
 		DateTo:       &args.DateTo,

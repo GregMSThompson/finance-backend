@@ -12,9 +12,9 @@ import (
 )
 
 type fakeAnalyticsStore struct {
-	txs      []*models.Transaction
-	err      error
-	lastUID  string
+	txs       []*models.Transaction
+	err       error
+	lastUID   string
 	lastQuery dto.TransactionQuery
 }
 
@@ -48,6 +48,46 @@ func TestAnalyticsSpendTotal(t *testing.T) {
 	}
 	if got.Currency != "USD" {
 		t.Fatalf("currency mismatch: got %q", got.Currency)
+	}
+}
+
+func TestAnalyticsSpendTotalExcludesIncomeAndTransfers(t *testing.T) {
+	store := &fakeAnalyticsStore{
+		txs: []*models.Transaction{
+			{Amount: 40, Currency: "USD", PFCPrimary: "FOOD_AND_DRINK"},
+			{Amount: 5000, Currency: "USD", PFCPrimary: "INCOME"},
+			{Amount: 300, Currency: "USD", PFCPrimary: "TRANSFER_IN"},
+			{Amount: 200, Currency: "USD", PFCPrimary: "TRANSFER_OUT"},
+			{Amount: 10, Currency: "USD", PFCPrimary: "ENTERTAINMENT"},
+		},
+	}
+	svc := NewAnalyticsService(store)
+
+	got, err := svc.GetSpendTotal(context.Background(), "user", dto.AnalyticsSpendTotalArgs{})
+	if err != nil {
+		t.Fatalf("GetSpendTotal error: %v", err)
+	}
+	if got.Total != 50 {
+		t.Fatalf("expected only spend categories summed (50), got %v", got.Total)
+	}
+}
+
+func TestAnalyticsSpendTotalHonorsExplicitIncomeFilter(t *testing.T) {
+	store := &fakeAnalyticsStore{
+		txs: []*models.Transaction{
+			{Amount: 5000, Currency: "USD", PFCPrimary: "INCOME"},
+		},
+	}
+	svc := NewAnalyticsService(store)
+
+	got, err := svc.GetSpendTotal(context.Background(), "user", dto.AnalyticsSpendTotalArgs{
+		PFCPrimary: helpers.Ptr("INCOME"),
+	})
+	if err != nil {
+		t.Fatalf("GetSpendTotal error: %v", err)
+	}
+	if got.Total != 5000 {
+		t.Fatalf("explicit INCOME filter should return income (5000), got %v", got.Total)
 	}
 }
 
