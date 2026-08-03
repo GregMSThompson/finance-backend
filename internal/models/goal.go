@@ -1,6 +1,11 @@
 package models
 
-import "time"
+import (
+	"fmt"
+	"time"
+
+	"github.com/GregMSThompson/finance-backend/pkg/helpers"
+)
 
 // GoalType identifies the kind of target a goal tracks.
 type GoalType string
@@ -80,4 +85,39 @@ type GoalAlertThresholds struct {
 	// SingleTransaction fires when a single transaction counting toward the goal
 	// exceeds this amount.
 	SingleTransaction *float64 `firestore:"singleTransaction,omitempty" json:"singleTransaction,omitempty"`
+}
+
+// ResolveWindow returns the [start, end] calendar period the goal is measured
+// over — both at date granularity (midnight UTC), end inclusive. Recurring
+// goals track the live period containing now; one-off goals stay pinned to the
+// period they were created in. A fixed window always runs from creation to its
+// EndDate.
+//
+// The window is computed in UTC regardless of now's location. Callers cap the
+// spend query at min(now, end) and derive pace from where now sits between
+// start and end.
+func (g *Goal) ResolveWindow(now time.Time) (start, end time.Time, err error) {
+	// Recurring goals track the live calendar period; one-offs stay anchored to
+	// the period they were created in.
+	anchor := g.CreatedAt
+	if g.Recurrence == GoalRecurrenceRecurring {
+		anchor = now
+	}
+
+	switch g.TimeWindow {
+	case GoalWindowMonthly:
+		start = helpers.FirstOfMonth(anchor)
+		return start, start.AddDate(0, 1, -1), nil // last day of the month
+	case GoalWindowWeekly:
+		start = helpers.MondayOf(anchor)
+		return start, start.AddDate(0, 0, 6), nil // Sunday
+	case GoalWindowFixed:
+		end, err = helpers.ParseDate(g.EndDate)
+		if err != nil {
+			return time.Time{}, time.Time{}, fmt.Errorf("goal %s: invalid endDate %q: %w", g.GoalID, g.EndDate, err)
+		}
+		return helpers.DateOf(g.CreatedAt), end, nil
+	default:
+		return time.Time{}, time.Time{}, fmt.Errorf("goal %s: cannot resolve window for timeWindow %q", g.GoalID, g.TimeWindow)
+	}
 }
