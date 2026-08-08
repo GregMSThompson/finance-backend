@@ -75,6 +75,16 @@ type fakeGoalSnapshotStore struct {
 	forGoal        []*models.GoalSnapshot
 	lastListLimit  int
 	deletedForGoal []string
+	created        []*models.GoalSnapshot
+	createErr      error
+}
+
+func (f *fakeGoalSnapshotStore) Create(_ context.Context, _ string, snap *models.GoalSnapshot) error {
+	if f.createErr != nil {
+		return f.createErr
+	}
+	f.created = append(f.created, snap)
+	return nil
 }
 
 func (f *fakeGoalSnapshotStore) Latest(_ context.Context, _, _ string) (*models.GoalSnapshot, error) {
