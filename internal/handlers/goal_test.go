@@ -20,6 +20,9 @@ type stubGoalService struct {
 	progressResp       dto.GoalProgress
 	snapshotsResp      []*models.GoalSnapshot
 	lastSnapshotsLimit int
+	txResp             dto.TransactionListResult
+	lastTxCursor       *string
+	lastTxLimit        int
 	updateResp         *models.Goal
 	lastUpdate         dto.GoalUpdate
 	deleteJobID        string
@@ -42,6 +45,12 @@ func (s *stubGoalService) GetProgress(_ context.Context, _, _ string) (dto.GoalP
 func (s *stubGoalService) ListSnapshots(_ context.Context, _, _ string, limit int) ([]*models.GoalSnapshot, error) {
 	s.lastSnapshotsLimit = limit
 	return s.snapshotsResp, nil
+}
+
+func (s *stubGoalService) ListGoalTransactions(_ context.Context, _, _ string, cursor *string, limit int) (dto.TransactionListResult, error) {
+	s.lastTxCursor = cursor
+	s.lastTxLimit = limit
+	return s.txResp, nil
 }
 
 func (s *stubGoalService) Update(_ context.Context, _, _ string, upd dto.GoalUpdate) (*models.Goal, error) {
@@ -166,5 +175,53 @@ func TestDeleteGoal_Returns202WithJob(t *testing.T) {
 	job, ok := resp.writeSuccessData.(dto.SubmitJobResponse)
 	if !ok || job.JobID != "job-xyz" {
 		t.Fatalf("expected SubmitJobResponse with jobId job-xyz, got %+v", resp.writeSuccessData)
+	}
+}
+
+func TestGetGoalTransactions_DefaultLimitAndCursor(t *testing.T) {
+	svc := &stubGoalService{txResp: dto.TransactionListResult{
+		Transactions: []models.Transaction{{TransactionID: "t1"}},
+	}}
+	resp := &stubResponseHandler{}
+	h := newGoalHandlers(svc, resp)
+
+	req := withUID(withChiParam(httptest.NewRequest(http.MethodGet, "/goals/g1/transactions?cursor=abc", nil), "goalId", "g1"), "uid1")
+	h.GetGoalTransactions(httptest.NewRecorder(), req)
+
+	if !resp.writeSuccessCalled || resp.writeSuccessStatus != http.StatusOK {
+		t.Fatalf("expected 200, got called=%v status=%d", resp.writeSuccessCalled, resp.writeSuccessStatus)
+	}
+	if svc.lastTxLimit != listTransactionsDefaultLimit {
+		t.Fatalf("expected default limit %d, got %d", listTransactionsDefaultLimit, svc.lastTxLimit)
+	}
+	if svc.lastTxCursor == nil || *svc.lastTxCursor != "abc" {
+		t.Fatalf("expected cursor abc forwarded, got %v", svc.lastTxCursor)
+	}
+}
+
+func TestGetGoalTransactions_LimitOverride(t *testing.T) {
+	svc := &stubGoalService{}
+	h := newGoalHandlers(svc, &stubResponseHandler{})
+
+	req := withUID(withChiParam(httptest.NewRequest(http.MethodGet, "/goals/g1/transactions?limit=10", nil), "goalId", "g1"), "uid1")
+	h.GetGoalTransactions(httptest.NewRecorder(), req)
+
+	if svc.lastTxLimit != 10 {
+		t.Fatalf("expected limit 10, got %d", svc.lastTxLimit)
+	}
+	if svc.lastTxCursor != nil {
+		t.Fatalf("expected nil cursor when omitted, got %v", *svc.lastTxCursor)
+	}
+}
+
+func TestGetGoalTransactions_InvalidLimit(t *testing.T) {
+	resp := &stubResponseHandler{}
+	h := newGoalHandlers(&stubGoalService{}, resp)
+
+	req := withUID(withChiParam(httptest.NewRequest(http.MethodGet, "/goals/g1/transactions?limit=0", nil), "goalId", "g1"), "uid1")
+	h.GetGoalTransactions(httptest.NewRecorder(), req)
+
+	if !resp.handleErrorCalled {
+		t.Fatal("expected error for invalid limit")
 	}
 }

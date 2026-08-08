@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -29,14 +30,26 @@ type goalSnapshotStore interface {
 	DeleteForGoal(ctx context.Context, uid, goalID string) error
 }
 
-type goalService struct {
-	goals     goalStore
-	snapshots goalSnapshotStore
-	jobs      jobSubmitter
+type goalTransactionLister interface {
+	ListTransactions(ctx context.Context, uid string, args dto.TransactionListArgs) (dto.TransactionListResult, error)
 }
 
-func NewGoalService(goals goalStore, snapshots goalSnapshotStore, jobs jobSubmitter) *goalService {
-	return &goalService{goals: goals, snapshots: snapshots, jobs: jobs}
+type goalService struct {
+	goals        goalStore
+	snapshots    goalSnapshotStore
+	jobs         jobSubmitter
+	transactions goalTransactionLister
+	clockNow     func() time.Time
+}
+
+func NewGoalService(goals goalStore, snapshots goalSnapshotStore, jobs jobSubmitter, transactions goalTransactionLister) *goalService {
+	return &goalService{
+		goals:        goals,
+		snapshots:    snapshots,
+		jobs:         jobs,
+		transactions: transactions,
+		clockNow:     time.Now,
+	}
 }
 
 // Create validates the primitive and persists a new active goal, linking it to
@@ -158,6 +171,52 @@ func (s *goalService) GetProgress(ctx context.Context, uid, goalID string) (dto.
 	prog.AIInsight = snap.AIInsight
 	prog.AsOf = snap.CreatedAt
 	return prog, nil
+}
+
+// ListGoalTransactions returns the transactions counting toward a goal in its
+// current measurement window, paginated with the same cursor+limit contract as
+// GET /transactions. The window and the category/merchant/account scope are
+// derived from the goal server-side, so the list can't drift from the goal's
+// definition. The window is computed at request time (up to today), so this is
+// a live view — it may run slightly ahead of the last nightly snapshot.
+func (s *goalService) ListGoalTransactions(ctx context.Context, uid, goalID string, cursor *string, limit int) (dto.TransactionListResult, error) {
+	g, err := s.goals.Get(ctx, uid, goalID)
+	if err != nil {
+		return dto.TransactionListResult{}, err
+	}
+
+	now := s.clockNow()
+	start, end, err := g.ResolveWindow(now)
+	if err != nil {
+		return dto.TransactionListResult{}, err
+	}
+	// Cap at the earlier of today and the window end — a fixed window can close
+	// before today.
+	queryTo := helpers.DateOf(now)
+	if queryTo.After(end) {
+		queryTo = end
+	}
+
+	args := dto.TransactionListArgs{
+		Pending:  helpers.Ptr(false),
+		DateFrom: helpers.Ptr(helpers.FormatDate(start)),
+		DateTo:   helpers.Ptr(helpers.FormatDate(queryTo)),
+		OrderBy:  "date",
+		Desc:     true,
+		Cursor:   cursor,
+		Limit:    limit,
+	}
+	if g.Filters.PFCPrimary != "" {
+		args.PFCPrimaries = []string{g.Filters.PFCPrimary}
+	}
+	if g.Filters.Merchant != "" {
+		args.Merchant = helpers.Ptr(g.Filters.Merchant)
+	}
+	if g.Filters.AccountID != "" {
+		args.AccountID = helpers.Ptr(g.Filters.AccountID)
+	}
+
+	return s.transactions.ListTransactions(ctx, uid, args)
 }
 
 func applyGoalUpdate(g *models.Goal, upd dto.GoalUpdate) {

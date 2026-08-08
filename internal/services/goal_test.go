@@ -132,7 +132,7 @@ func seedGoal(store *fakeGoalStore) *models.Goal {
 
 func TestGoalCreate_Valid(t *testing.T) {
 	goals := newFakeGoalStore()
-	svc := NewGoalService(goals, &fakeGoalSnapshotStore{}, &fakeJobs{})
+	svc := NewGoalService(goals, &fakeGoalSnapshotStore{}, &fakeJobs{}, &fakeTransactionsLister{})
 
 	g, err := svc.Create(context.Background(), "uid1", "session-1", validGoalDef())
 	if err != nil {
@@ -150,7 +150,7 @@ func TestGoalCreate_Valid(t *testing.T) {
 }
 
 func TestGoalCreate_ZeroTarget(t *testing.T) {
-	svc := NewGoalService(newFakeGoalStore(), &fakeGoalSnapshotStore{}, &fakeJobs{})
+	svc := NewGoalService(newFakeGoalStore(), &fakeGoalSnapshotStore{}, &fakeJobs{}, &fakeTransactionsLister{})
 	def := validGoalDef()
 	def.TargetValue = 0
 	_, err := svc.Create(context.Background(), "uid1", "s", def)
@@ -160,7 +160,7 @@ func TestGoalCreate_ZeroTarget(t *testing.T) {
 }
 
 func TestGoalCreate_RecurringFixedRejected(t *testing.T) {
-	svc := NewGoalService(newFakeGoalStore(), &fakeGoalSnapshotStore{}, &fakeJobs{})
+	svc := NewGoalService(newFakeGoalStore(), &fakeGoalSnapshotStore{}, &fakeJobs{}, &fakeTransactionsLister{})
 	def := validGoalDef()
 	def.TimeWindow = models.GoalWindowFixed
 	def.EndDate = "2026-12-31"
@@ -172,7 +172,7 @@ func TestGoalCreate_RecurringFixedRejected(t *testing.T) {
 }
 
 func TestGoalCreate_FixedRequiresEndDate(t *testing.T) {
-	svc := NewGoalService(newFakeGoalStore(), &fakeGoalSnapshotStore{}, &fakeJobs{})
+	svc := NewGoalService(newFakeGoalStore(), &fakeGoalSnapshotStore{}, &fakeJobs{}, &fakeTransactionsLister{})
 	def := validGoalDef()
 	def.TimeWindow = models.GoalWindowFixed
 	def.Recurrence = models.GoalRecurrenceOneOff
@@ -184,7 +184,7 @@ func TestGoalCreate_FixedRequiresEndDate(t *testing.T) {
 }
 
 func TestGoalCreate_InvalidCategory(t *testing.T) {
-	svc := NewGoalService(newFakeGoalStore(), &fakeGoalSnapshotStore{}, &fakeJobs{})
+	svc := NewGoalService(newFakeGoalStore(), &fakeGoalSnapshotStore{}, &fakeJobs{}, &fakeTransactionsLister{})
 	def := validGoalDef()
 	def.Filters.PFCPrimary = "NOT_A_CATEGORY"
 	_, err := svc.Create(context.Background(), "uid1", "s", def)
@@ -198,7 +198,7 @@ func TestGoalCreate_InvalidCategory(t *testing.T) {
 func TestGoalUpdate_PartialMerge(t *testing.T) {
 	goals := newFakeGoalStore()
 	seedGoal(goals)
-	svc := NewGoalService(goals, &fakeGoalSnapshotStore{}, &fakeJobs{})
+	svc := NewGoalService(goals, &fakeGoalSnapshotStore{}, &fakeJobs{}, &fakeTransactionsLister{})
 
 	updated, err := svc.Update(context.Background(), "uid1", "g1", dto.GoalUpdate{
 		TargetValue: helpers.Ptr(300.0),
@@ -217,7 +217,7 @@ func TestGoalUpdate_PartialMerge(t *testing.T) {
 func TestGoalUpdate_RevalidatesMergedGoal(t *testing.T) {
 	goals := newFakeGoalStore()
 	seedGoal(goals)
-	svc := NewGoalService(goals, &fakeGoalSnapshotStore{}, &fakeJobs{})
+	svc := NewGoalService(goals, &fakeGoalSnapshotStore{}, &fakeJobs{}, &fakeTransactionsLister{})
 
 	_, err := svc.Update(context.Background(), "uid1", "g1", dto.GoalUpdate{
 		TargetValue: helpers.Ptr(-5.0),
@@ -230,7 +230,7 @@ func TestGoalUpdate_RevalidatesMergedGoal(t *testing.T) {
 func TestGoalUpdate_PauseOK(t *testing.T) {
 	goals := newFakeGoalStore()
 	seedGoal(goals)
-	svc := NewGoalService(goals, &fakeGoalSnapshotStore{}, &fakeJobs{})
+	svc := NewGoalService(goals, &fakeGoalSnapshotStore{}, &fakeJobs{}, &fakeTransactionsLister{})
 
 	updated, err := svc.Update(context.Background(), "uid1", "g1", dto.GoalUpdate{
 		Status: helpers.Ptr(models.GoalStatusPaused),
@@ -246,7 +246,7 @@ func TestGoalUpdate_PauseOK(t *testing.T) {
 func TestGoalUpdate_CompletedRejected(t *testing.T) {
 	goals := newFakeGoalStore()
 	seedGoal(goals)
-	svc := NewGoalService(goals, &fakeGoalSnapshotStore{}, &fakeJobs{})
+	svc := NewGoalService(goals, &fakeGoalSnapshotStore{}, &fakeJobs{}, &fakeTransactionsLister{})
 
 	_, err := svc.Update(context.Background(), "uid1", "g1", dto.GoalUpdate{
 		Status: helpers.Ptr(models.GoalStatusCompleted),
@@ -260,7 +260,7 @@ func TestGoalUpdate_CompletedRejected(t *testing.T) {
 
 func TestGoalDelete_SubmitsJob(t *testing.T) {
 	jobs := &fakeJobs{jobID: "job-xyz"}
-	svc := NewGoalService(newFakeGoalStore(), &fakeGoalSnapshotStore{}, jobs)
+	svc := NewGoalService(newFakeGoalStore(), &fakeGoalSnapshotStore{}, jobs, &fakeTransactionsLister{})
 
 	got, err := svc.Delete(context.Background(), "uid1", "g1")
 	if err != nil {
@@ -285,7 +285,7 @@ func TestGoalRunDelete_Cascades(t *testing.T) {
 	goals := newFakeGoalStore()
 	seedGoal(goals)
 	snaps := &fakeGoalSnapshotStore{}
-	svc := NewGoalService(goals, snaps, &fakeJobs{})
+	svc := NewGoalService(goals, snaps, &fakeJobs{}, &fakeTransactionsLister{})
 
 	_, err := svc.RunDelete(context.Background(), "uid1", dto.GoalDeleteParams{GoalID: "g1"})
 	if err != nil {
@@ -304,7 +304,7 @@ func TestGoalRunDelete_Cascades(t *testing.T) {
 func TestGoalGetProgress_NoSnapshot(t *testing.T) {
 	goals := newFakeGoalStore()
 	seedGoal(goals)
-	svc := NewGoalService(goals, &fakeGoalSnapshotStore{latest: nil}, &fakeJobs{})
+	svc := NewGoalService(goals, &fakeGoalSnapshotStore{latest: nil}, &fakeJobs{}, &fakeTransactionsLister{})
 
 	prog, err := svc.GetProgress(context.Background(), "uid1", "g1")
 	if err != nil {
@@ -332,7 +332,7 @@ func TestGoalGetProgress_WithSnapshot(t *testing.T) {
 		AIInsight:       "You're on track.",
 		CreatedAt:       at,
 	}}
-	svc := NewGoalService(goals, snaps, &fakeJobs{})
+	svc := NewGoalService(goals, snaps, &fakeJobs{}, &fakeTransactionsLister{})
 
 	prog, err := svc.GetProgress(context.Background(), "uid1", "g1")
 	if err != nil {
@@ -346,5 +346,77 @@ func TestGoalGetProgress_WithSnapshot(t *testing.T) {
 	}
 	if !prog.AsOf.Equal(at) {
 		t.Fatalf("expected AsOf=%v, got %v", at, prog.AsOf)
+	}
+}
+
+func TestListGoalTransactions_ScopesToWindowAndFilters(t *testing.T) {
+	g := &models.Goal{
+		GoalID:      "g1",
+		Type:        models.GoalTypeSpendingLimit,
+		TargetValue: 300,
+		TimeWindow:  models.GoalWindowMonthly,
+		Recurrence:  models.GoalRecurrenceRecurring,
+		Status:      models.GoalStatusActive,
+		Filters:     models.GoalFilters{PFCPrimary: "FOOD_AND_DRINK", Merchant: "cafe", AccountID: "acc1"},
+	}
+	goals := &fakeGoalStore{goals: map[string]*models.Goal{"g1": g}}
+	tx := &fakeTransactionsLister{resp: dto.TransactionListResult{
+		Transactions: []models.Transaction{{TransactionID: "t1"}},
+	}}
+	svc := NewGoalService(goals, &fakeGoalSnapshotStore{}, &fakeJobs{}, tx)
+	svc.clockNow = func() time.Time { return time.Date(2026, time.August, 15, 12, 0, 0, 0, time.UTC) }
+
+	cursor := "cur"
+	res, err := svc.ListGoalTransactions(context.Background(), "uid1", "g1", &cursor, 25)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(res.Transactions) != 1 || res.Transactions[0].TransactionID != "t1" {
+		t.Fatalf("expected the lister's result to pass through, got %+v", res)
+	}
+
+	args := tx.args
+	if helpers.Value(args.DateFrom) != "2026-08-01" || helpers.Value(args.DateTo) != "2026-08-15" {
+		t.Fatalf("window mismatch: from=%q to=%q", helpers.Value(args.DateFrom), helpers.Value(args.DateTo))
+	}
+	if len(args.PFCPrimaries) != 1 || args.PFCPrimaries[0] != "FOOD_AND_DRINK" {
+		t.Fatalf("category filter not mapped: %v", args.PFCPrimaries)
+	}
+	if helpers.Value(args.Merchant) != "cafe" || helpers.Value(args.AccountID) != "acc1" {
+		t.Fatalf("merchant/account filters not mapped: %+v", args)
+	}
+	if args.OrderBy != "date" || !args.Desc {
+		t.Fatalf("expected order by date desc, got orderBy=%q desc=%v", args.OrderBy, args.Desc)
+	}
+	if helpers.Value(args.Pending) != false {
+		t.Fatalf("expected pending=false")
+	}
+	if args.Cursor != &cursor || args.Limit != 25 {
+		t.Fatalf("pagination not forwarded: cursor=%v limit=%d", args.Cursor, args.Limit)
+	}
+}
+
+func TestListGoalTransactions_CapsAtWindowEnd(t *testing.T) {
+	// A fixed window that closed in the past: DateTo must be the endDate, not today.
+	g := &models.Goal{
+		GoalID:      "g1",
+		Type:        models.GoalTypeSpendingLimit,
+		TargetValue: 2000,
+		TimeWindow:  models.GoalWindowFixed,
+		Recurrence:  models.GoalRecurrenceOneOff,
+		Status:      models.GoalStatusActive,
+		CreatedAt:   time.Date(2026, time.June, 1, 0, 0, 0, 0, time.UTC),
+		EndDate:     "2026-06-30",
+	}
+	goals := &fakeGoalStore{goals: map[string]*models.Goal{"g1": g}}
+	tx := &fakeTransactionsLister{}
+	svc := NewGoalService(goals, &fakeGoalSnapshotStore{}, &fakeJobs{}, tx)
+	svc.clockNow = func() time.Time { return time.Date(2026, time.August, 15, 12, 0, 0, 0, time.UTC) }
+
+	if _, err := svc.ListGoalTransactions(context.Background(), "uid1", "g1", nil, 50); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if helpers.Value(tx.args.DateFrom) != "2026-06-01" || helpers.Value(tx.args.DateTo) != "2026-06-30" {
+		t.Fatalf("expected window capped at endDate, got from=%q to=%q", helpers.Value(tx.args.DateFrom), helpers.Value(tx.args.DateTo))
 	}
 }

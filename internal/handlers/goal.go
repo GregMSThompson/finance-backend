@@ -14,6 +14,7 @@ import (
 	"github.com/GregMSThompson/finance-backend/internal/middleware"
 	"github.com/GregMSThompson/finance-backend/internal/models"
 	"github.com/GregMSThompson/finance-backend/internal/response"
+	"github.com/GregMSThompson/finance-backend/pkg/helpers"
 )
 
 const (
@@ -26,6 +27,7 @@ type goalService interface {
 	Get(ctx context.Context, uid, goalID string) (*models.Goal, error)
 	GetProgress(ctx context.Context, uid, goalID string) (dto.GoalProgress, error)
 	ListSnapshots(ctx context.Context, uid, goalID string, limit int) ([]*models.GoalSnapshot, error)
+	ListGoalTransactions(ctx context.Context, uid, goalID string, cursor *string, limit int) (dto.TransactionListResult, error)
 	Update(ctx context.Context, uid, goalID string, upd dto.GoalUpdate) (*models.Goal, error)
 	Delete(ctx context.Context, uid, goalID string) (string, error)
 }
@@ -48,6 +50,7 @@ func (h *goalHandlers) GoalRoutes() chi.Router {
 	r.Get("/{goalId}", h.GetGoal)
 	r.Get("/{goalId}/progress", h.GetGoalProgress)
 	r.Get("/{goalId}/snapshots", h.GetGoalSnapshots)
+	r.Get("/{goalId}/transactions", h.GetGoalTransactions)
 	r.Patch("/{goalId}", h.PatchGoal)
 	r.Delete("/{goalId}", h.DeleteGoal)
 	return r
@@ -103,6 +106,22 @@ func (h *goalHandlers) GetGoalSnapshots(w http.ResponseWriter, r *http.Request) 
 	h.ResponseHandler.WriteSuccess(w, r, http.StatusOK, snapshots)
 }
 
+func (h *goalHandlers) GetGoalTransactions(w http.ResponseWriter, r *http.Request) {
+	limit, err := parseGoalTransactionsLimit(r)
+	if err != nil {
+		h.ResponseHandler.HandleError(w, r, err)
+		return
+	}
+	cursor := helpers.OptString(r.URL.Query().Get("cursor"))
+	uid := middleware.UID(r.Context())
+	result, err := h.GoalSvc.ListGoalTransactions(r.Context(), uid, chi.URLParam(r, "goalId"), cursor, limit)
+	if err != nil {
+		h.ResponseHandler.HandleError(w, r, err)
+		return
+	}
+	h.ResponseHandler.WriteSuccess(w, r, http.StatusOK, result)
+}
+
 func (h *goalHandlers) PatchGoal(w http.ResponseWriter, r *http.Request) {
 	var req dto.PatchGoalRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -152,6 +171,23 @@ func parseGoalStatuses(r *http.Request) ([]models.GoalStatus, error) {
 		}
 	}
 	return statuses, nil
+}
+
+// parseGoalTransactionsLimit reuses the GET /transactions paging bounds so a
+// goal's transaction list behaves identically to the main list.
+func parseGoalTransactionsLimit(r *http.Request) (int, error) {
+	raw := r.URL.Query().Get("limit")
+	if raw == "" {
+		return listTransactionsDefaultLimit, nil
+	}
+	n, err := strconv.Atoi(raw)
+	if err != nil || n < 1 {
+		return 0, errs.NewValidationError("limit must be a positive integer")
+	}
+	if n > listTransactionsMaxLimit {
+		n = listTransactionsMaxLimit
+	}
+	return n, nil
 }
 
 func parseGoalSnapshotsLimit(r *http.Request) (int, error) {
