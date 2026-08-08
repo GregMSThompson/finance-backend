@@ -787,8 +787,7 @@ func toolSchemas() []dto.VertexTool {
 						Type:        "object",
 						Description: "Optional notification triggers.",
 						Properties: map[string]*dto.VertexSchema{
-							"progressPercent":   {Type: "number", Description: "Notify when spending reaches this percent (0-100) of the limit."},
-							"singleTransaction": {Type: "number", Description: "Notify when a single counted transaction exceeds this dollar amount."},
+							"progressPercent": {Type: "number", Description: "Notify when spending reaches this percent (0-100) of the limit."},
 						},
 					},
 				},
@@ -824,8 +823,7 @@ func toolSchemas() []dto.VertexTool {
 						Type:        "object",
 						Description: "Replaces the goal's notification triggers.",
 						Properties: map[string]*dto.VertexSchema{
-							"progressPercent":   {Type: "number", Description: "Notify when spending reaches this percent (0-100) of the limit."},
-							"singleTransaction": {Type: "number", Description: "Notify when a single counted transaction exceeds this dollar amount."},
+							"progressPercent": {Type: "number", Description: "Notify when spending reaches this percent (0-100) of the limit."},
 						},
 					},
 				},

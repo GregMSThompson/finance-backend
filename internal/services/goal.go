@@ -305,9 +305,6 @@ func validateGoal(g *models.Goal) error {
 	if p := g.AlertThresholds.ProgressPercent; p != nil && (*p <= 0 || *p > 100) {
 		return errs.NewValidationError("progressPercent must be between 0 and 100")
 	}
-	if st := g.AlertThresholds.SingleTransaction; st != nil && *st <= 0 {
-		return errs.NewValidationError("singleTransaction must be greater than 0")
-	}
 
 	return nil
 }

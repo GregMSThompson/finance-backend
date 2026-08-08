@@ -25,6 +25,26 @@ type fakeNotificationStore struct {
 	notifications []*models.Notification
 	listRecentErr error
 	lastLimit     int
+	created       []*models.Notification
+	createErr     error
+}
+
+func (f *fakeNotificationStore) Create(_ context.Context, _ string, n *models.Notification) error {
+	if f.createErr != nil {
+		return f.createErr
+	}
+	f.created = append(f.created, n)
+	return nil
+}
+
+type fakeTasksClient struct {
+	enqueued []dto.DeliverNotificationRequest
+	err      error
+}
+
+func (f *fakeTasksClient) EnqueueNotificationDelivery(_ context.Context, req dto.DeliverNotificationRequest) error {
+	f.enqueued = append(f.enqueued, req)
+	return f.err
 }
 
 func newFakeAlertStore() *fakeAlertStore {

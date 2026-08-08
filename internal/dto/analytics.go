@@ -3,7 +3,7 @@ package dto
 type AnalyticsSpendTotalArgs struct {
 	Pending    *bool
 	PFCPrimary *string
-	AccountID     *string
+	AccountID  *string
 	Merchant   *string
 	DateFrom   *string
 	DateTo     *string
@@ -19,7 +19,7 @@ type AnalyticsSpendTotalResult struct {
 type AnalyticsSpendBreakdownArgs struct {
 	Pending    *bool
 	PFCPrimary *string
-	AccountID     *string
+	AccountID  *string
 	DateFrom   *string
 	DateTo     *string
 	GroupBy    string
@@ -42,7 +42,7 @@ type AnalyticsSpendBreakdownResult struct {
 type AnalyticsPeriodComparisonArgs struct {
 	Pending      *bool
 	PFCPrimary   *string
-	AccountID       *string
+	AccountID    *string
 	Merchant     *string
 	CurrentFrom  string
 	CurrentTo    string
@@ -68,9 +68,9 @@ type BreakdownItemChange struct {
 }
 
 type PeriodChange struct {
-	AbsoluteChange   float64              `json:"absoluteChange"`
-	PercentageChange *float64             `json:"percentageChange,omitempty"`
-	CountChange      int                  `json:"countChange"`
+	AbsoluteChange   float64               `json:"absoluteChange"`
+	PercentageChange *float64              `json:"percentageChange,omitempty"`
+	CountChange      int                   `json:"countChange"`
 	Items            []BreakdownItemChange `json:"items,omitempty"`
 }
 
@@ -82,9 +82,9 @@ type AnalyticsPeriodComparisonResult struct {
 }
 
 type AnalyticsRecurringArgs struct {
-	AccountID   *string
-	DateFrom string
-	DateTo   string
+	AccountID *string
+	DateFrom  string
+	DateTo    string
 }
 
 type RecurringItem struct {
@@ -112,7 +112,7 @@ type AnalyticsMovingAverageArgs struct {
 	Scope       string
 	PFCPrimary  *string
 	Merchant    *string
-	AccountID      *string
+	AccountID   *string
 	DateFrom    string
 	DateTo      string
 }
@@ -136,7 +136,7 @@ type AnalyticsTopNArgs struct {
 	Limit      int
 	MinCount   int
 	PFCPrimary *string
-	AccountID     *string
+	AccountID  *string
 	DateFrom   string
 	DateTo     string
 }
@@ -159,9 +159,9 @@ type AnalyticsTopNResult struct {
 }
 
 type AnalyticsIncomeVsExpensesArgs struct {
-	AccountID   *string
-	DateFrom string
-	DateTo   string
+	AccountID *string
+	DateFrom  string
+	DateTo    string
 }
 
 type IncomeVsExpensesResult struct {

@@ -92,6 +92,30 @@ func (s *goalSnapshotStore) DeleteForGoal(ctx context.Context, uid, goalID strin
 	return nil
 }
 
+// ListForGoalSince returns a goal's snapshots created on or after since, most
+// recent first. The evaluator uses it to dedup notifications within the current
+// measurement period. The (goalId ==, createdAt) query reuses the same index as
+// Latest/ListForGoal.
+func (s *goalSnapshotStore) ListForGoalSince(ctx context.Context, uid, goalID string, since time.Time) ([]*models.GoalSnapshot, error) {
+	docs, err := s.collection(uid).
+		Where("goalId", "==", goalID).
+		Where("createdAt", ">=", since).
+		OrderBy("createdAt", firestore.Desc).
+		Documents(ctx).GetAll()
+	if err != nil {
+		return nil, errs.NewDatabaseError("read", "failed to list goal snapshots since date", err)
+	}
+	snaps := make([]*models.GoalSnapshot, 0, len(docs))
+	for _, d := range docs {
+		var snap models.GoalSnapshot
+		if err := d.DataTo(&snap); err != nil {
+			return nil, errs.NewDatabaseError("read", "failed to parse goal snapshot data", err)
+		}
+		snaps = append(snaps, &snap)
+	}
+	return snaps, nil
+}
+
 // ListForGoal returns up to limit of a goal's snapshots, most recent first.
 func (s *goalSnapshotStore) ListForGoal(ctx context.Context, uid, goalID string, limit int) ([]*models.GoalSnapshot, error) {
 	q := s.collection(uid).

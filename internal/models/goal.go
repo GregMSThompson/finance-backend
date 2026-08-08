@@ -77,14 +77,13 @@ type GoalFilters struct {
 }
 
 // GoalAlertThresholds configures when the daily evaluator raises a notification.
-// A nil trigger is disabled.
+// A nil trigger is disabled. Point-event triggers (e.g. a single large
+// transaction) belong to the alert subsystem, not goals — a goal tracks
+// aggregate progress toward a target.
 type GoalAlertThresholds struct {
 	// ProgressPercent fires when progress reaches this percentage of target
 	// (e.g. 80 → notify at 80% of budget used).
 	ProgressPercent *float64 `firestore:"progressPercent,omitempty" json:"progressPercent,omitempty"`
-	// SingleTransaction fires when a single transaction counting toward the goal
-	// exceeds this amount.
-	SingleTransaction *float64 `firestore:"singleTransaction,omitempty" json:"singleTransaction,omitempty"`
 }
 
 // ResolveWindow returns the [start, end] calendar period the goal is measured

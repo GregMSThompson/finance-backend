@@ -77,6 +77,8 @@ type fakeGoalSnapshotStore struct {
 	deletedForGoal []string
 	created        []*models.GoalSnapshot
 	createErr      error
+	sinceSnapshots []*models.GoalSnapshot
+	sinceErr       error
 }
 
 func (f *fakeGoalSnapshotStore) Create(_ context.Context, _ string, snap *models.GoalSnapshot) error {
@@ -85,6 +87,10 @@ func (f *fakeGoalSnapshotStore) Create(_ context.Context, _ string, snap *models
 	}
 	f.created = append(f.created, snap)
 	return nil
+}
+
+func (f *fakeGoalSnapshotStore) ListForGoalSince(_ context.Context, _, _ string, _ time.Time) ([]*models.GoalSnapshot, error) {
+	return f.sinceSnapshots, f.sinceErr
 }
 
 func (f *fakeGoalSnapshotStore) Latest(_ context.Context, _, _ string) (*models.GoalSnapshot, error) {
