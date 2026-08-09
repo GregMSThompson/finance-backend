@@ -19,6 +19,7 @@ type goalEvaluatorUserStore interface {
 
 type goalEvaluatorGoalStore interface {
 	List(ctx context.Context, uid string, statuses ...models.GoalStatus) ([]*models.Goal, error)
+	Update(ctx context.Context, uid string, g *models.Goal) error
 }
 
 type goalEvaluatorSnapshotStore interface {
@@ -41,6 +42,15 @@ type goalEvaluatorService struct {
 	notifications evaluatorNotificationStore
 	tasks         evaluatorTasksClient
 	clockNow      func() time.Time
+}
+
+// goalEvaluation is the outcome of evaluating one goal on one run: the snapshot
+// to persist, an optional notification to dispatch, and an optional terminal
+// status change (completed/failed) to apply.
+type goalEvaluation struct {
+	snapshot     *models.GoalSnapshot
+	notification *models.Notification
+	newStatus    models.GoalStatus
 }
 
 func NewGoalEvaluatorService(
@@ -94,7 +104,7 @@ func (s *goalEvaluatorService) evaluateUser(ctx context.Context, uid string, now
 	}
 
 	for _, goal := range goals {
-		snap, notification, err := s.evaluateGoal(ctx, uid, goal, now)
+		eval, err := s.evaluateGoal(ctx, uid, goal, now)
 		if err != nil {
 			log.Error("failed to evaluate goal", "uid", uid, "goalId", goal.GoalID, "error", err)
 			continue
@@ -102,12 +112,23 @@ func (s *goalEvaluatorService) evaluateUser(ctx context.Context, uid string, now
 		// Persist the snapshot before dispatching: its PercentComplete is what
 		// arms the period-scoped dedup, so a delivered notification without a
 		// recorded snapshot could double-fire next run.
-		if err := s.snapshots.Create(ctx, uid, snap); err != nil {
+		if err := s.snapshots.Create(ctx, uid, eval.snapshot); err != nil {
 			log.Error("failed to write goal snapshot", "uid", uid, "goalId", goal.GoalID, "error", err)
 			continue
 		}
-		if notification != nil {
-			if err := s.dispatch(ctx, uid, notification); err != nil {
+		// A terminal transition flips status before dispatch: that flip removes
+		// the goal from the active set, so it's what makes the terminal
+		// notification fire exactly once. If it fails, skip dispatch and let the
+		// next run retry rather than risk a duplicate.
+		if eval.newStatus != "" {
+			goal.Status = eval.newStatus
+			if err := s.goals.Update(ctx, uid, goal); err != nil {
+				log.Error("failed to update goal status", "uid", uid, "goalId", goal.GoalID, "status", eval.newStatus, "error", err)
+				continue
+			}
+		}
+		if eval.notification != nil {
+			if err := s.dispatch(ctx, uid, eval.notification); err != nil {
 				log.Error("failed to dispatch goal notification", "uid", uid, "goalId", goal.GoalID, "error", err)
 			}
 		}
@@ -132,10 +153,10 @@ func (s *goalEvaluatorService) dispatch(ctx context.Context, uid string, n *mode
 	return nil
 }
 
-func (s *goalEvaluatorService) evaluateGoal(ctx context.Context, uid string, goal *models.Goal, now time.Time) (*models.GoalSnapshot, *models.Notification, error) {
+func (s *goalEvaluatorService) evaluateGoal(ctx context.Context, uid string, goal *models.Goal, now time.Time) (*goalEvaluation, error) {
 	start, end, err := goal.ResolveWindow(now)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
 	// Cap the spend query and the pace clock at the earlier of today and the
@@ -162,7 +183,7 @@ func (s *goalEvaluatorService) evaluateGoal(ctx context.Context, uid string, goa
 
 	result, err := s.analytics.GetSpendTotal(ctx, uid, args)
 	if err != nil {
-		return nil, nil, fmt.Errorf("spend total: %w", err)
+		return nil, fmt.Errorf("spend total: %w", err)
 	}
 
 	current := result.Total
@@ -181,11 +202,31 @@ func (s *goalEvaluatorService) evaluateGoal(ctx context.Context, uid string, goa
 		IsOnTrack: current <= goal.TargetValue*elapsed,
 	}
 
+	eval := &goalEvaluation{snapshot: snap}
+
+	// Terminal transition: a one-off whose window has closed resolves for good.
+	// Recurring goals reset each period and never terminate here. The final
+	// value is stable (queryTo is capped at the window end), so the outcome is
+	// the same regardless of which run past the end date observes it.
+	if goal.Recurrence == models.GoalRecurrenceOneOff && helpers.DateOf(now).After(end) {
+		eval.newStatus = models.GoalStatusFailed
+		if current <= goal.TargetValue {
+			eval.newStatus = models.GoalStatusCompleted
+		}
+		body := goalTerminalText(goal, snap, result.Currency, eval.newStatus)
+		snap.AIInsight = body
+		snap.NotificationSent = true
+		eval.notification = buildGoalNotification(goal, body, now)
+		return eval, nil
+	}
+
+	// Otherwise, the progress-threshold notification (terminal supersedes it).
 	notification, err := s.maybeNotify(ctx, uid, goal, snap, result.Currency, start)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
-	return snap, notification, nil
+	eval.notification = notification
+	return eval, nil
 }
 
 // maybeNotify fires the progress-threshold notification when it's newly reached
@@ -214,19 +255,43 @@ func (s *goalEvaluatorService) maybeNotify(ctx context.Context, uid string, goal
 	snap.AIInsight = insight
 	snap.NotificationSent = true
 
+	return buildGoalNotification(goal, insight, snap.CreatedAt), nil
+}
+
+// buildGoalNotification assembles the push notification shared by the progress
+// and terminal triggers: a goal-sourced message deep-linking to the goal.
+func buildGoalNotification(goal *models.Goal, body string, now time.Time) *models.Notification {
 	return &models.Notification{
 		NotificationID: uuid.NewString(),
 		Source:         models.NotificationSourceGoal,
 		SourceID:       goal.GoalID,
 		Title:          goal.Name,
-		Body:           insight,
+		Body:           body,
 		Data: map[string]string{
 			"source":   string(models.NotificationSourceGoal),
 			"sourceId": goal.GoalID,
 		},
 		Delivery:  models.DeliveryPush,
-		CreatedAt: snap.CreatedAt,
-	}, nil
+		CreatedAt: now,
+	}
+}
+
+// goalTerminalText renders the body for a one-off goal's completed/failed
+// outcome. Deterministic, same as the progress placeholder — see the
+// TODO(goals) note on goalInsightText for the richer AI insight to come.
+func goalTerminalText(goal *models.Goal, snap *models.GoalSnapshot, currency string, status models.GoalStatus) string {
+	if status == models.GoalStatusCompleted {
+		return fmt.Sprintf("You completed your %s goal — spent %s, within your %s limit.",
+			goal.Name,
+			helpers.FormatCurrency(snap.CurrentValue, currency),
+			helpers.FormatCurrency(snap.TargetValue, currency),
+		)
+	}
+	return fmt.Sprintf("Your %s goal ended over budget — spent %s of your %s limit.",
+		goal.Name,
+		helpers.FormatCurrency(snap.CurrentValue, currency),
+		helpers.FormatCurrency(snap.TargetValue, currency),
+	)
 }
 
 // goalInsightText renders the notification body.

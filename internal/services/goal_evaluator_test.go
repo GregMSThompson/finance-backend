@@ -269,3 +269,87 @@ func TestGoalEvaluator_NoNotificationBelowThreshold(t *testing.T) {
 		t.Fatalf("expected no notification below threshold, got %d", len(notifs.created))
 	}
 }
+
+// oneOffFixedGoal builds a one-off fixed-window spending-limit goal.
+func oneOffFixedGoal(id string, target float64, created, endDate string) *models.Goal {
+	return &models.Goal{
+		GoalID:      id,
+		Type:        models.GoalTypeSpendingLimit,
+		Name:        "Reno",
+		TargetValue: target,
+		TimeWindow:  models.GoalWindowFixed,
+		Recurrence:  models.GoalRecurrenceOneOff,
+		Status:      models.GoalStatusActive,
+		CreatedAt:   time.Date(2026, time.July, 1, 0, 0, 0, 0, time.UTC),
+		EndDate:     endDate,
+	}
+}
+
+func TestGoalEvaluator_OneOffUnderBudgetCompletes(t *testing.T) {
+	// EndDate is before the run clock (2026-08-15), so the window has closed.
+	goals := &fakeGoalStore{goals: map[string]*models.Goal{"g1": oneOffFixedGoal("g1", 300, "2026-07-01", "2026-07-31")}}
+	snaps := &fakeGoalSnapshotStore{}
+	analytics := &fakeEvalAnalytics{result: dto.AnalyticsSpendTotalResult{Total: 250, Currency: "USD"}} // under 300
+	notifs := &fakeNotificationStore{}
+	tasks := &fakeTasksClient{}
+
+	if err := newNotifyEvaluator(goals, snaps, analytics, notifs, tasks).Run(helpers.TestCtx()); err != nil {
+		t.Fatalf("Run error: %v", err)
+	}
+
+	if goals.goals["g1"].Status != models.GoalStatusCompleted {
+		t.Fatalf("expected status completed, got %s", goals.goals["g1"].Status)
+	}
+	if len(notifs.created) != 1 || notifs.created[0].Body != "You completed your Reno goal — spent USD 250.00, within your USD 300.00 limit." {
+		t.Fatalf("wrong terminal notification: %+v", notifs.created)
+	}
+	if len(tasks.enqueued) != 1 {
+		t.Fatalf("expected delivery enqueued, got %d", len(tasks.enqueued))
+	}
+	// The final spend query is capped at the window end, not today.
+	if helpers.Value(analytics.calls[0].DateTo) != "2026-07-31" {
+		t.Fatalf("expected final query capped at endDate, got %q", helpers.Value(analytics.calls[0].DateTo))
+	}
+}
+
+func TestGoalEvaluator_OneOffOverBudgetFails(t *testing.T) {
+	goals := &fakeGoalStore{goals: map[string]*models.Goal{"g1": oneOffFixedGoal("g1", 300, "2026-07-01", "2026-07-31")}}
+	snaps := &fakeGoalSnapshotStore{}
+	analytics := &fakeEvalAnalytics{result: dto.AnalyticsSpendTotalResult{Total: 350, Currency: "USD"}} // over 300
+	notifs := &fakeNotificationStore{}
+	tasks := &fakeTasksClient{}
+
+	if err := newNotifyEvaluator(goals, snaps, analytics, notifs, tasks).Run(helpers.TestCtx()); err != nil {
+		t.Fatalf("Run error: %v", err)
+	}
+
+	if goals.goals["g1"].Status != models.GoalStatusFailed {
+		t.Fatalf("expected status failed, got %s", goals.goals["g1"].Status)
+	}
+	if len(notifs.created) != 1 || notifs.created[0].Body != "Your Reno goal ended over budget — spent USD 350.00 of your USD 300.00 limit." {
+		t.Fatalf("wrong terminal notification: %+v", notifs.created)
+	}
+}
+
+func TestGoalEvaluator_OneOffNotYetEndedDoesNotTerminate(t *testing.T) {
+	// EndDate is in the future, so the goal stays active — no terminal transition.
+	goals := &fakeGoalStore{goals: map[string]*models.Goal{"g1": oneOffFixedGoal("g1", 300, "2026-07-01", "2026-12-31")}}
+	snaps := &fakeGoalSnapshotStore{}
+	analytics := &fakeEvalAnalytics{result: dto.AnalyticsSpendTotalResult{Total: 350, Currency: "USD"}} // over, but window still open
+	notifs := &fakeNotificationStore{}
+	tasks := &fakeTasksClient{}
+
+	if err := newNotifyEvaluator(goals, snaps, analytics, notifs, tasks).Run(helpers.TestCtx()); err != nil {
+		t.Fatalf("Run error: %v", err)
+	}
+
+	if goals.goals["g1"].Status != models.GoalStatusActive {
+		t.Fatalf("expected status to remain active, got %s", goals.goals["g1"].Status)
+	}
+	if len(notifs.created) != 0 {
+		t.Fatalf("expected no terminal notification while the window is open, got %d", len(notifs.created))
+	}
+	if len(snaps.created) != 1 {
+		t.Fatalf("expected a snapshot to still be written, got %d", len(snaps.created))
+	}
+}
