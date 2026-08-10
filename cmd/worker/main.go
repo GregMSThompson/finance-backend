@@ -29,6 +29,8 @@ func main() {
 	bankStore := store.NewBankStore(bs.Firestore, kmsHelper)
 	transactionStore := store.NewTransactionStore(bs.Firestore)
 	accountStore := store.NewAccountStore(bs.Firestore)
+	goalStore := store.NewGoalStore(bs.Firestore)
+	goalSnapshotStore := store.NewGoalSnapshotStore(bs.Firestore)
 	jobStore := store.NewJobStore(bs.Firestore)
 
 	notificationSvc := services.NewNotificationService(userStore, notificationStore, bs.Messaging)
@@ -37,6 +39,8 @@ func main() {
 	bankSvc := services.NewBankService(bankStore, transactionStore, accountStore, jobSvc)
 	accountsSvc := services.NewAccountsService(bs.PlaidAdapter, bankStore, accountStore, jobSvc)
 	plaidSvc := services.NewPlaidService(bs.PlaidAdapter, bankStore, transactionStore, jobSvc, bankSvc, accountsSvc)
+	txSvc := services.NewTransactionsService(transactionStore)
+	goalSvc := services.NewGoalService(goalStore, goalSnapshotStore, jobSvc, txSvc)
 
 	deps := &taskhandlers.Deps{
 		Log:               bs.Log,
@@ -49,6 +53,7 @@ func main() {
 		JobSvc:            jobSvc,
 		PlaidSvc:          plaidSvc,
 		BankSvc:           bankSvc,
+		GoalSvc:           goalSvc,
 		AccountsSvc:       accountsSvc,
 	}
 

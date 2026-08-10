@@ -18,5 +18,6 @@ type Deps struct {
 	JobSvc            jobRunner
 	PlaidSvc          plaidRunner
 	BankSvc           bankRunner
+	GoalSvc           goalRunner
 	AccountsSvc       accountsRunner
 }

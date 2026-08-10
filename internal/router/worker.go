@@ -25,11 +25,13 @@ func NewWorkerRouter(deps *taskhandlers.Deps) chi.Router {
 	nh := taskhandlers.NewNotificationTaskHandlers(deps)
 	pth := taskhandlers.NewPlaidTaskHandlers(deps)
 	bth := taskhandlers.NewBankTaskHandlers(deps)
+	gth := taskhandlers.NewGoalTaskHandlers(deps)
 	ath := taskhandlers.NewAccountsTaskHandlers(deps)
 
 	r.Post("/tasks/notification-deliver", nh.Deliver)
 	r.Post("/tasks/plaid/sync", pth.Sync)
 	r.Post("/tasks/bank/delete", bth.Delete)
+	r.Post("/tasks/goal/delete", gth.Delete)
 	r.Post("/tasks/account/sync", ath.Sync)
 
 	return r
