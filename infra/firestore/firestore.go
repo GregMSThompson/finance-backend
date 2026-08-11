@@ -76,7 +76,7 @@ func setupGoalSnapshotIndexes(ctx *pulumi.Context, prov *gcp.Provider, db *fires
 		Database:   db.Name,
 		Collection: pulumi.String("goalSnapshots"),
 		QueryScope: pulumi.String("COLLECTION"),
-		Fields:     indexFields("goalId", "ASCENDING", "createdAt", "DESCENDING"),
+		Fields:     indexFieldsWithNameOrder("DESCENDING", "goalId", "ASCENDING", "createdAt", "DESCENDING"),
 	},
 		pulumi.Provider(prov),
 		pulumi.DependsOn(res),
