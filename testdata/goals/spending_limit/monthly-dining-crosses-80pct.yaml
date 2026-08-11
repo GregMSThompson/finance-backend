@@ -30,17 +30,19 @@ steps:
       - { name: Restaurant, amount: 130, pfcPrimary: FOOD_AND_DRINK }
     expect: { currentValue: 250, percentComplete: 83.33, notified: true }
 
-  # A refund drops spend back under the threshold.
+  # A refund drops spend back under the threshold — a downward transition, so it
+  # notifies ("you're back under").
   - date: 2026-08-20
     add:
       - { name: Restaurant refund, amount: -30, pfcPrimary: FOOD_AND_DRINK }
-    expect: { currentValue: 220, percentComplete: 73.33, notified: false }
+    expect: { currentValue: 220, percentComplete: 73.33, notified: true }
 
-  # Re-crosses 80% within the same period: period-scoped dedup suppresses it.
+  # Re-crosses 80% within the same period — an upward transition, so it notifies
+  # again ("you're over"). Transitions fire in both directions.
   - date: 2026-08-25
     add:
       - { name: Dinner, amount: 70, pfcPrimary: FOOD_AND_DRINK }
-    expect: { currentValue: 290, percentComplete: 96.67, notified: false }
+    expect: { currentValue: 290, percentComplete: 96.67, notified: true }
 
 # Recurring goals never terminate — they reset next period.
 finalExpect:

@@ -243,29 +243,35 @@ func (s *goalEvaluatorService) evaluateGoal(ctx context.Context, uid string, goa
 	return eval, nil
 }
 
-// maybeNotify fires the progress-threshold notification when it's newly reached
-// this period. It records the insight and NotificationSent on snap and returns
-// the Notification to dispatch, or nil when nothing is due.
+// maybeNotify fires a progress-threshold notification on a state transition —
+// crossing over the threshold or dropping back under it — but stays silent while
+// the state is unchanged. It records the insight and NotificationSent on snap
+// and returns the Notification to dispatch, or nil when nothing is due.
+//
+// The previous state is the most recent snapshot this period; a fresh period has
+// none, so it baselines to "under" (spend has reset) and a period rollover is
+// silent. Comparing to the previous snapshot rather than a fixed rule keeps this
+// independent of how often the evaluator runs.
 func (s *goalEvaluatorService) maybeNotify(ctx context.Context, uid string, goal *models.Goal, snap *models.GoalSnapshot, currency string, periodStart time.Time) (*models.Notification, error) {
 	threshold := goal.AlertThresholds.ProgressPercent
-	if threshold == nil || snap.PercentComplete < *threshold {
+	if threshold == nil {
 		return nil, nil
 	}
 
-	// Period-scoped dedup: notify only if no snapshot earlier this period already
-	// reached the threshold. This makes the "one alert per period" guarantee
-	// independent of how often the evaluator runs.
 	prior, err := s.snapshots.ListForGoalSince(ctx, uid, goal.GoalID, periodStart)
 	if err != nil {
 		return nil, fmt.Errorf("list snapshots since period start: %w", err)
 	}
-	for _, p := range prior {
-		if p.PercentComplete >= *threshold {
-			return nil, nil
-		}
+
+	over := snap.PercentComplete >= *threshold
+	// prior is ordered most-recent first; the current snapshot isn't written yet,
+	// so prior[0] is the previous state this period. No prior ⇒ baseline "under".
+	wasOver := len(prior) > 0 && prior[0].PercentComplete >= *threshold
+	if over == wasOver {
+		return nil, nil
 	}
 
-	insight := goalInsightText(goal, snap, currency)
+	insight := goalProgressText(goal, snap, currency, over)
 	snap.AIInsight = insight
 	snap.NotificationSent = true
 
@@ -308,7 +314,9 @@ func goalTerminalText(goal *models.Goal, snap *models.GoalSnapshot, currency str
 	)
 }
 
-// goalInsightText renders the notification body.
+// goalProgressText renders the notification body for a threshold transition —
+// over is true when spending has just crossed the threshold, false when it has
+// dropped back under.
 //
 // TODO(goals): this is a deterministic placeholder that only restates the
 // numbers. The real feature is a personalized AI insight that pulls richer
@@ -317,10 +325,19 @@ func goalTerminalText(goal *models.Goal, snap *models.GoalSnapshot, currency str
 // something specific and actionable. That deserves its own piece (deciding
 // which analytics to pull, prompt design, cost/latency); when we build it,
 // reintroduce a genai dependency on the evaluator and swap this call out.
-func goalInsightText(goal *models.Goal, snap *models.GoalSnapshot, currency string) string {
-	return fmt.Sprintf("You've used %s of your %s budget — %s of %s, %s remaining.",
-		helpers.FormatPercent(snap.PercentComplete),
+func goalProgressText(goal *models.Goal, snap *models.GoalSnapshot, currency string, over bool) string {
+	if over {
+		return fmt.Sprintf("You've used %s of your %s budget — %s of %s, %s remaining.",
+			helpers.FormatPercent(snap.PercentComplete),
+			goal.Name,
+			helpers.FormatCurrency(snap.CurrentValue, currency),
+			helpers.FormatCurrency(snap.TargetValue, currency),
+			helpers.FormatCurrency(snap.TargetValue-snap.CurrentValue, currency),
+		)
+	}
+	return fmt.Sprintf("Your %s spending is back down to %s — %s of %s, %s remaining.",
 		goal.Name,
+		helpers.FormatPercent(snap.PercentComplete),
 		helpers.FormatCurrency(snap.CurrentValue, currency),
 		helpers.FormatCurrency(snap.TargetValue, currency),
 		helpers.FormatCurrency(snap.TargetValue-snap.CurrentValue, currency),

@@ -232,14 +232,14 @@ func TestGoalEvaluator_FiresThresholdNotification(t *testing.T) {
 	}
 }
 
-func TestGoalEvaluator_SuppressesReCrossWithinPeriod(t *testing.T) {
-	// A prior snapshot this period already reached 80%; a refund dip then re-cross
-	// must not notify again.
+func TestGoalEvaluator_NoNotificationWhileStayingOver(t *testing.T) {
+	// Previous snapshot this period was already over the threshold and we're still
+	// over: no state change, so no repeat notification.
 	goals := &fakeGoalStore{goals: map[string]*models.Goal{"g1": goalWithThreshold("g1", 300, 80)}}
 	snaps := &fakeGoalSnapshotStore{sinceSnapshots: []*models.GoalSnapshot{
 		{GoalID: "g1", PercentComplete: 82},
 	}}
-	analytics := &fakeEvalAnalytics{result: dto.AnalyticsSpendTotalResult{Total: 246, Currency: "USD"}} // 82% again
+	analytics := &fakeEvalAnalytics{result: dto.AnalyticsSpendTotalResult{Total: 246, Currency: "USD"}} // 82%, still over
 	notifs := &fakeNotificationStore{}
 	tasks := &fakeTasksClient{}
 
@@ -247,11 +247,35 @@ func TestGoalEvaluator_SuppressesReCrossWithinPeriod(t *testing.T) {
 		t.Fatalf("Run error: %v", err)
 	}
 	if len(notifs.created) != 0 || len(tasks.enqueued) != 0 {
-		t.Fatalf("expected no re-notification within the period, got %d notif / %d enqueued", len(notifs.created), len(tasks.enqueued))
+		t.Fatalf("expected no repeat notification while staying over, got %d notif / %d enqueued", len(notifs.created), len(tasks.enqueued))
 	}
-	// Snapshot still written, just without a notification.
 	if len(snaps.created) != 1 || snaps.created[0].NotificationSent {
 		t.Fatalf("expected a snapshot with NotificationSent=false, got %+v", snaps.created)
+	}
+}
+
+func TestGoalEvaluator_NotifiesOnDroppingBackUnder(t *testing.T) {
+	// Previous snapshot this period was over the threshold; a refund drops us back
+	// under. That downward transition notifies (the "you recovered" signal).
+	goals := &fakeGoalStore{goals: map[string]*models.Goal{"g1": goalWithThreshold("g1", 300, 80)}}
+	snaps := &fakeGoalSnapshotStore{sinceSnapshots: []*models.GoalSnapshot{
+		{GoalID: "g1", PercentComplete: 83},
+	}}
+	analytics := &fakeEvalAnalytics{result: dto.AnalyticsSpendTotalResult{Total: 210, Currency: "USD"}} // 70%, back under
+	notifs := &fakeNotificationStore{}
+	tasks := &fakeTasksClient{}
+
+	if err := newNotifyEvaluator(goals, snaps, analytics, notifs, tasks).Run(helpers.TestCtx()); err != nil {
+		t.Fatalf("Run error: %v", err)
+	}
+	if len(notifs.created) != 1 || len(tasks.enqueued) != 1 {
+		t.Fatalf("expected a recovery notification, got %d notif / %d enqueued", len(notifs.created), len(tasks.enqueued))
+	}
+	if notifs.created[0].Body != "Your Dining spending is back down to 70.0% — USD 210.00 of USD 300.00, USD 90.00 remaining." {
+		t.Fatalf("unexpected recovery body: %q", notifs.created[0].Body)
+	}
+	if len(snaps.created) != 1 || !snaps.created[0].NotificationSent {
+		t.Fatalf("expected a snapshot with NotificationSent=true, got %+v", snaps.created)
 	}
 }
 
