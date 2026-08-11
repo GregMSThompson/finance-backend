@@ -14,6 +14,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"log"
@@ -63,8 +64,20 @@ func main() {
 	defer client.Close()
 
 	if err := run(ctx, client, &sc); err != nil {
-		log.Fatalf("scenario failed: %v", err)
+		fatalWithCause(err)
 	}
+}
+
+// fatalWithCause prints the error and every wrapped cause, then exits non-zero.
+// The errs.* types return only their message from Error(), so the underlying
+// Firestore error — e.g. a FAILED_PRECONDITION carrying a create-index URL —
+// is otherwise swallowed. Walking Unwrap surfaces it.
+func fatalWithCause(err error) {
+	log.Printf("scenario failed: %v", err)
+	for e := errors.Unwrap(err); e != nil; e = errors.Unwrap(e) {
+		log.Printf("  caused by: %v", e)
+	}
+	os.Exit(1)
 }
 
 func run(ctx context.Context, client *firestore.Client, sc *scenario) error {
