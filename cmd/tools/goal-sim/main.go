@@ -18,6 +18,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"log/slog"
 	"os"
 	"time"
 
@@ -30,6 +31,7 @@ import (
 	"github.com/GregMSThompson/finance-backend/internal/models"
 	"github.com/GregMSThompson/finance-backend/internal/services"
 	"github.com/GregMSThompson/finance-backend/internal/store"
+	"github.com/GregMSThompson/finance-backend/pkg/logger"
 )
 
 const dateLayout = "2006-01-02"
@@ -56,7 +58,9 @@ func main() {
 		log.Fatalf("parse scenario: %v", err)
 	}
 
-	ctx := context.Background()
+	// Attach an error-only logger so the evaluator's info logging doesn't clutter
+	// the simulation's day-by-day output; only real problems surface.
+	ctx := logger.ToContext(context.Background(), errorLogger())
 	client, err := firestore.NewClient(ctx, *project)
 	if err != nil {
 		log.Fatalf("firestore client: %v", err)
@@ -66,6 +70,13 @@ func main() {
 	if err := run(ctx, client, &sc); err != nil {
 		fatalWithCause(err)
 	}
+}
+
+// errorLogger builds a text logger that only emits at error level.
+func errorLogger() *slog.Logger {
+	return logger.New("error", func(level slog.Level) slog.Handler {
+		return slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: level})
+	})
 }
 
 // fatalWithCause prints the error and every wrapped cause, then exits non-zero.
