@@ -56,7 +56,32 @@ func setupIndexes(ctx *pulumi.Context, prov *gcp.Provider, db *firestore.Databas
 		return err
 	}
 
+	if err := setupGoalSnapshotIndexes(ctx, prov, db, res...); err != nil {
+		return err
+	}
+
 	return nil
+}
+
+// setupGoalSnapshotIndexes provisions the composite index the goal evaluator and
+// progress endpoints rely on. A single (goalId ==, createdAt) index serves all
+// three snapshot queries — Latest, ListForGoal, and ListForGoalSince (the
+// createdAt range is on the same field as the order).
+func setupGoalSnapshotIndexes(ctx *pulumi.Context, prov *gcp.Provider, db *firestore.Database, res ...pulumi.Resource) error {
+	gcpCfg := config.New(ctx, "gcp")
+	projectID := gcpCfg.Require("project")
+
+	_, err := firestore.NewIndex(ctx, "goalSnapshotGoalIdCreatedAtDesc", &firestore.IndexArgs{
+		Project:    pulumi.String(projectID),
+		Database:   db.Name,
+		Collection: pulumi.String("goalSnapshots"),
+		QueryScope: pulumi.String("COLLECTION"),
+		Fields:     indexFields("goalId", "ASCENDING", "createdAt", "DESCENDING"),
+	},
+		pulumi.Provider(prov),
+		pulumi.DependsOn(res),
+	)
+	return err
 }
 
 func setupTransactionIndexes(ctx *pulumi.Context, prov *gcp.Provider, db *firestore.Database, res ...pulumi.Resource) error {

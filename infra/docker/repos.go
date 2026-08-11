@@ -42,6 +42,10 @@ func (m *Manager) CreateAlertEvaluatorRepo(ctx *pulumi.Context, res ...pulumi.Re
 	return m.createRepo(ctx, "alertEvaluatorRepository", "alert-evaluator", "Docker repository for alert evaluator images", res...)
 }
 
+func (m *Manager) CreateGoalEvaluatorRepo(ctx *pulumi.Context, res ...pulumi.Resource) (*artifactregistry.Repository, error) {
+	return m.createRepo(ctx, "goalEvaluatorRepository", "goal-evaluator", "Docker repository for goal evaluator images", res...)
+}
+
 // BuildImage builds a Docker image for a binary under cmd/.
 // cmdName may be a simple name ("api", "worker") or a subpath ("jobs/alert-evaluator").
 // The image name and Pulumi resource name are derived from the last path segment.

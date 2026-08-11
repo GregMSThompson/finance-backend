@@ -5,3 +5,5 @@ config:
   job:logLevel: debug
   job:alertEvaluatorSchedule: "0 9 * * *"
   job:alertEvaluatorTimeZone: America/New_York
+  job:goalEvaluatorSchedule: "0 10 * * *"
+  job:goalEvaluatorTimeZone: America/New_York

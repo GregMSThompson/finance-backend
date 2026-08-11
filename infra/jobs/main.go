@@ -4,6 +4,7 @@ import (
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi/config"
 
+	infracloudtasks "github.com/GregMSThompson/finance-backend/infra/cloudtasks"
 	"github.com/GregMSThompson/finance-backend/infra/docker"
 	"github.com/GregMSThompson/finance-backend/infra/job"
 	"github.com/GregMSThompson/finance-backend/infra/provider"
@@ -18,6 +19,7 @@ func main() {
 
 		dockerManager := docker.New(prov)
 		alertEvaluator := job.NewAlertEvaluator(prov, dockerManager)
+		goalEvaluator := job.NewGoalEvaluator(prov, dockerManager)
 
 		workerCfg := config.New(ctx, "worker")
 		workerRef, err := pulumi.NewStackReference(ctx, "worker", &pulumi.StackReferenceArgs{
@@ -46,11 +48,28 @@ func main() {
 			return v.(string)
 		}).(pulumi.StringOutput)
 
-		repo, err := dockerManager.CreateAlertEvaluatorRepo(ctx)
+		alertRepo, err := dockerManager.CreateAlertEvaluatorRepo(ctx)
 		if err != nil {
 			return err
 		}
 
-		return alertEvaluator.Deploy(ctx, workerURL, workerAudience, workerServiceName, repo)
+		goalRepo, err := dockerManager.CreateGoalEvaluatorRepo(ctx)
+		if err != nil {
+			return err
+		}
+
+		// The alert and goal evaluators share one notification-delivery queue,
+		// created once here and passed into both deployments.
+		queue, err := infracloudtasks.CreateQueue(ctx, prov, "notificationDeliveryQueue", infracloudtasks.NotificationDeliveryQueueName)
+		if err != nil {
+			return err
+		}
+		ctx.Export("notificationDeliveryQueueName", queue.Name)
+
+		if err := alertEvaluator.Deploy(ctx, queue, workerURL, workerAudience, workerServiceName, alertRepo); err != nil {
+			return err
+		}
+
+		return goalEvaluator.Deploy(ctx, queue, workerURL, workerAudience, workerServiceName, goalRepo)
 	})
 }

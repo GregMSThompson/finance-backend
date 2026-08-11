@@ -11,8 +11,9 @@ import (
 const (
 	// JobsQueueName is the Cloud Tasks queue used by the API to dispatch worker jobs.
 	JobsQueueName = "jobs"
-	// AlertDeliveryQueueName is the Cloud Tasks queue used by the alert evaluator to dispatch deliveries.
-	AlertDeliveryQueueName = "alert-delivery"
+	// NotificationDeliveryQueueName is the Cloud Tasks queue the evaluators (alert
+	// and goal) share to dispatch notification deliveries to the worker.
+	NotificationDeliveryQueueName = "notification-delivery"
 )
 
 // SetupCloudTasks enables the Cloud Tasks API for the current project.
