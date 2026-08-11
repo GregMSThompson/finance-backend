@@ -1,0 +1,46 @@
+name: oneoff-reno-completes
+userId: sim-reno-user
+goal:
+  goalId: g-reno
+  name: Kitchen reno
+  type: spending_limit
+  targetValue: 2000
+  timeWindow: fixed
+  recurrence: one_off
+  createdAt: 2026-07-01
+  endDate: 2026-07-31
+  filters:
+    pfcPrimary: HOME_IMPROVEMENT
+
+# Replay past the end date so the terminal transition fires.
+replay:
+  from: 2026-07-01
+  to: 2026-08-02
+
+steps:
+  - date: 2026-07-10
+    add:
+      - { name: Lumber, amount: 800, pfcPrimary: HOME_IMPROVEMENT }
+    expect: { currentValue: 800, percentComplete: 40 }
+
+  - date: 2026-07-20
+    add:
+      - { name: Cabinets, amount: 700, pfcPrimary: HOME_IMPROVEMENT }
+    expect: { currentValue: 1500, percentComplete: 75 }
+
+  - date: 2026-07-31
+    add:
+      - { name: Paint, amount: 400, pfcPrimary: HOME_IMPROVEMENT }
+    # Still active on the final day of the window; final spend is 1900, under 2000.
+    expect: { currentValue: 1900, percentComplete: 95, status: active }
+
+  # First run past the end date: resolves to completed (under budget) and notifies once.
+  - date: 2026-08-01
+    expect: { currentValue: 1900, notified: true, status: completed }
+
+  # Now terminal, so it's no longer evaluated — no new snapshot this day.
+  - date: 2026-08-02
+    expect: { status: completed }
+
+finalExpect:
+  status: completed

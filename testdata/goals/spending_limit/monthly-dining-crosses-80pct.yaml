@@ -1,0 +1,47 @@
+name: monthly-dining-crosses-80pct
+userId: sim-dining-user
+goal:
+  goalId: g-dining
+  name: Dining
+  type: spending_limit
+  targetValue: 300
+  timeWindow: monthly
+  recurrence: recurring
+  createdAt: 2026-08-01
+  filters:
+    pfcPrimary: FOOD_AND_DRINK
+  alertThresholds:
+    progressPercent: 80
+
+replay:
+  from: 2026-08-01
+  to: 2026-08-31
+
+steps:
+  # Early over-pace spend: under the limit but ahead of the pace line.
+  - date: 2026-08-05
+    add:
+      - { name: Cafe, amount: 120, pfcPrimary: FOOD_AND_DRINK }
+    expect: { currentValue: 120, percentComplete: 40, isOnTrack: false, notified: false }
+
+  # Cumulative 250 → 83.3%, crosses the 80% threshold: one notification.
+  - date: 2026-08-12
+    add:
+      - { name: Restaurant, amount: 130, pfcPrimary: FOOD_AND_DRINK }
+    expect: { currentValue: 250, percentComplete: 83.33, notified: true }
+
+  # A refund drops spend back under the threshold.
+  - date: 2026-08-20
+    add:
+      - { name: Restaurant refund, amount: -30, pfcPrimary: FOOD_AND_DRINK }
+    expect: { currentValue: 220, percentComplete: 73.33, notified: false }
+
+  # Re-crosses 80% within the same period: period-scoped dedup suppresses it.
+  - date: 2026-08-25
+    add:
+      - { name: Dinner, amount: 70, pfcPrimary: FOOD_AND_DRINK }
+    expect: { currentValue: 290, percentComplete: 96.67, notified: false }
+
+# Recurring goals never terminate — they reset next period.
+finalExpect:
+  status: active

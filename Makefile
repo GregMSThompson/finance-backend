@@ -17,6 +17,10 @@ sync-data:
 	@if [ -z "$(data)" ]; then echo "data is required. Usage: make syncdata data=<fixture-name>"; exit 1; fi
 	GOWORK=off go run ./cmd/tools/seed-sync-data --project="$(PROJECT)" --file="testdata/sync-data/$(data).yaml"
 
+goal-sim:
+	@if [ -z "$(type)" ] || [ -z "$(scenario)" ]; then echo "type and scenario are required. Usage: make goal-sim type=<goal-type> scenario=<scenario-name>"; exit 1; fi
+	GOWORK=off go run ./cmd/tools/goal-sim --project="$(PROJECT)" --file="testdata/goals/$(type)/$(scenario).yaml"
+
 run-alert-evaluator:
 	gcloud run jobs execute alert-evaluator --region=us-central1 --project="$(PROJECT)"
 

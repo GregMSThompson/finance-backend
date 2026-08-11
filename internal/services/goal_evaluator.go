@@ -53,6 +53,15 @@ type goalEvaluation struct {
 	newStatus    models.GoalStatus
 }
 
+// EvaluatorOption customizes a goalEvaluatorService at construction.
+type EvaluatorOption func(*goalEvaluatorService)
+
+// WithClock overrides the run clock. Production uses the default time.Now; the
+// goal-sim tool injects a virtual clock to replay evaluation across many days.
+func WithClock(now func() time.Time) EvaluatorOption {
+	return func(s *goalEvaluatorService) { s.clockNow = now }
+}
+
 func NewGoalEvaluatorService(
 	users goalEvaluatorUserStore,
 	goals goalEvaluatorGoalStore,
@@ -60,8 +69,9 @@ func NewGoalEvaluatorService(
 	analytics goalEvaluatorAnalytics,
 	notifications evaluatorNotificationStore,
 	tasks evaluatorTasksClient,
+	opts ...EvaluatorOption,
 ) *goalEvaluatorService {
-	return &goalEvaluatorService{
+	s := &goalEvaluatorService{
 		users:         users,
 		goals:         goals,
 		snapshots:     snapshots,
@@ -70,6 +80,10 @@ func NewGoalEvaluatorService(
 		tasks:         tasks,
 		clockNow:      time.Now,
 	}
+	for _, opt := range opts {
+		opt(s)
+	}
+	return s
 }
 
 // Run evaluates every user's active goals against a single run clock. A failure
