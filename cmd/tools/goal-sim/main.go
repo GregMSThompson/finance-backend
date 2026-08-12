@@ -152,10 +152,13 @@ func run(ctx context.Context, client *firestore.Client, sc *scenario) error {
 		if err != nil {
 			return fmt.Errorf("read snapshot on %s: %w", key, err)
 		}
-		printDay(key, snap)
+		// A completed/paused goal isn't evaluated, so Latest returns a stale prior
+		// snapshot. Detect that by comparing its date to today.
+		evaluated := snap != nil && snap.CreatedAt.Format(dateLayout) == key
+		printDay(key, snap, evaluated)
 
 		if step, ok := steps[key]; ok && step.Expect != nil {
-			failures += assertStep(ctx, goalStore, sc.UserID, goal.GoalID, key, snap, step.Expect)
+			failures += assertStep(ctx, goalStore, sc.UserID, goal.GoalID, key, snap, evaluated, step.Expect)
 		}
 	}
 
@@ -179,9 +182,9 @@ func run(ctx context.Context, client *firestore.Client, sc *scenario) error {
 	return nil
 }
 
-func printDay(date string, snap *models.GoalSnapshot) {
-	if snap == nil {
-		fmt.Printf("%-12s %10s %8s %8s %8s\n", date, "-", "-", "-", "-")
+func printDay(date string, snap *models.GoalSnapshot, evaluated bool) {
+	if !evaluated {
+		fmt.Printf("%-12s %10s %8s %8s %8s  (not evaluated)\n", date, "—", "—", "—", "—")
 		return
 	}
 	fmt.Printf("%-12s %10.2f %7.1f%% %8v %8v\n", date, snap.CurrentValue, snap.PercentComplete, snap.IsOnTrack, snap.NotificationSent)
@@ -189,29 +192,36 @@ func printDay(date string, snap *models.GoalSnapshot) {
 
 // assertStep checks a step's expectations against the day's snapshot and (for
 // status) the goal doc, returning the number of failed assertions.
-func assertStep(ctx context.Context, goals goalGetter, uid, goalID, date string, snap *models.GoalSnapshot, exp *stepExpect) int {
+func assertStep(ctx context.Context, goals goalGetter, uid, goalID, date string, snap *models.GoalSnapshot, evaluated bool, exp *stepExpect) int {
 	failures := 0
 	fail := func(format string, args ...any) {
 		failures++
 		fmt.Printf("  FAIL %s: %s\n", date, fmt.Sprintf(format, args...))
 	}
 
-	if snap == nil {
-		fail("expected a snapshot but the goal was not evaluated (already terminal?)")
-		return failures
+	// Snapshot-field assertions require the goal to have been evaluated today; a
+	// stale prior snapshot would assert the wrong day's values. Status comes from
+	// the goal doc, so it's checked regardless (e.g. asserting a terminal status
+	// on a day the goal is no longer evaluated).
+	wantsSnapshotFields := exp.CurrentValue != nil || exp.PercentComplete != nil || exp.IsOnTrack != nil || exp.Notified != nil
+	switch {
+	case wantsSnapshotFields && !evaluated:
+		fail("expected snapshot fields but the goal was not evaluated this day (terminal or paused?)")
+	case evaluated:
+		if exp.CurrentValue != nil && !approxEqual(snap.CurrentValue, *exp.CurrentValue) {
+			fail("currentValue = %.2f, want %.2f", snap.CurrentValue, *exp.CurrentValue)
+		}
+		if exp.PercentComplete != nil && !approxEqual(snap.PercentComplete, *exp.PercentComplete) {
+			fail("percentComplete = %.2f, want %.2f", snap.PercentComplete, *exp.PercentComplete)
+		}
+		if exp.IsOnTrack != nil && snap.IsOnTrack != *exp.IsOnTrack {
+			fail("isOnTrack = %v, want %v", snap.IsOnTrack, *exp.IsOnTrack)
+		}
+		if exp.Notified != nil && snap.NotificationSent != *exp.Notified {
+			fail("notified = %v, want %v", snap.NotificationSent, *exp.Notified)
+		}
 	}
-	if exp.CurrentValue != nil && !approxEqual(snap.CurrentValue, *exp.CurrentValue) {
-		fail("currentValue = %.2f, want %.2f", snap.CurrentValue, *exp.CurrentValue)
-	}
-	if exp.PercentComplete != nil && !approxEqual(snap.PercentComplete, *exp.PercentComplete) {
-		fail("percentComplete = %.2f, want %.2f", snap.PercentComplete, *exp.PercentComplete)
-	}
-	if exp.IsOnTrack != nil && snap.IsOnTrack != *exp.IsOnTrack {
-		fail("isOnTrack = %v, want %v", snap.IsOnTrack, *exp.IsOnTrack)
-	}
-	if exp.Notified != nil && snap.NotificationSent != *exp.Notified {
-		fail("notified = %v, want %v", snap.NotificationSent, *exp.Notified)
-	}
+
 	if exp.Status != nil {
 		g, err := goals.Get(ctx, uid, goalID)
 		if err != nil {
