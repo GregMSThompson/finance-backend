@@ -765,3 +765,35 @@ func TestGetGoalProgressTool(t *testing.T) {
 		t.Fatalf("expected currentValue 120 in response, got %v", res.Response["currentValue"])
 	}
 }
+
+func TestGetConversation(t *testing.T) {
+	store := &fakeAIStore{messages: []models.AIMessage{
+		{Role: "user", Content: "hi"},
+		{Role: "assistant", Content: "hello"},
+	}}
+	svc := NewAIService(&fakeVertexClient{}, &fakeAnalyticsClient{}, &fakeTransactionsLister{}, &fakeGoalsService{}, store)
+
+	res, err := svc.GetConversation(helpers.TestCtx(), "user", "session", 100)
+	if err != nil {
+		t.Fatalf("GetConversation error: %v", err)
+	}
+	if res.SessionID != "session" {
+		t.Fatalf("expected sessionId session, got %q", res.SessionID)
+	}
+	if len(res.Messages) != 2 || res.Messages[0].Role != "user" || res.Messages[1].Content != "hello" {
+		t.Fatalf("unexpected messages: %+v", res.Messages)
+	}
+}
+
+func TestGetConversationEmptyIsNonNilSlice(t *testing.T) {
+	svc := NewAIService(&fakeVertexClient{}, &fakeAnalyticsClient{}, &fakeTransactionsLister{}, &fakeGoalsService{}, &fakeAIStore{})
+
+	res, err := svc.GetConversation(helpers.TestCtx(), "user", "unknown", 100)
+	if err != nil {
+		t.Fatalf("GetConversation error: %v", err)
+	}
+	// Non-nil so it serializes as [] rather than null.
+	if res.Messages == nil || len(res.Messages) != 0 {
+		t.Fatalf("expected empty non-nil messages, got %#v", res.Messages)
+	}
+}

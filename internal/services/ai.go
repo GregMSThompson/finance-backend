@@ -213,6 +213,28 @@ func (s *aiService) Query(ctx context.Context, uid string, q dto.AIQueryRequest)
 	return s.finishQuery(ctx, uid, q, finalResp.Text, lastToolCall)
 }
 
+// GetConversation returns a stored session's messages in chronological order,
+// up to limit (most recent when capped), for replaying a previous conversation.
+func (s *aiService) GetConversation(ctx context.Context, uid, sessionID string, limit int) (dto.AIConversationResponse, error) {
+	msgs, err := s.store.ListMessages(ctx, uid, sessionID, limit)
+	if err != nil {
+		return dto.AIConversationResponse{}, err
+	}
+
+	out := dto.AIConversationResponse{
+		SessionID: sessionID,
+		Messages:  make([]dto.AIMessageView, 0, len(msgs)),
+	}
+	for _, m := range msgs {
+		out.Messages = append(out.Messages, dto.AIMessageView{
+			Role:      m.Role,
+			Content:   m.Content,
+			CreatedAt: m.CreatedAt,
+		})
+	}
+	return out, nil
+}
+
 // generate performs a single logical model generation. The caller uses
 // VALIDATED mode, which constrains any tool call to a well-formed structure.
 // If the model still returns a malformed call (a tier that doesn't fully honor
