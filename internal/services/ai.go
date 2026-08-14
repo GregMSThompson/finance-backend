@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/GregMSThompson/finance-backend/internal/dto"
@@ -24,6 +25,10 @@ const defaultTransactionLimit = 25
 // how many docs the read pulls back (the amount sort reads the whole window)
 // without a per-doc cap. 366 days accommodates a full leap year.
 const maxTransactionDateRange = 366 * 24 * time.Hour
+
+// sessionTitleMaxLen bounds the deterministic session title derived from the
+// first user message.
+const sessionTitleMaxLen = 40
 
 var toolNameSet = buildToolNameSet()
 
@@ -98,6 +103,8 @@ type aiGetTransactionsArgs struct {
 type aiStore interface {
 	SaveMessage(ctx context.Context, uid, sessionID string, msg models.AIMessage) error
 	ListMessages(ctx context.Context, uid, sessionID string, limit int) ([]models.AIMessage, error)
+	CreateSession(ctx context.Context, uid, sessionID, title string, now time.Time) error
+	TouchSession(ctx context.Context, uid, sessionID string, now time.Time) error
 }
 
 type aiService struct {
@@ -128,6 +135,10 @@ func (s *aiService) Query(ctx context.Context, uid string, q dto.AIQueryRequest)
 		return dto.AIQueryResponse{}, err
 	}
 
+	// No prior messages means this turn starts the session — the point at which
+	// we create its metadata document (title from this first message).
+	isNewSession := len(history) == 0
+
 	now := s.clockNow()
 	contents := convertMessagesToContents(history, q.Message)
 	var lastToolCall *dto.VertexToolCall
@@ -150,7 +161,7 @@ func (s *aiService) Query(ctx context.Context, uid string, q dto.AIQueryRequest)
 		}
 
 		if len(resp.ToolCalls) == 0 {
-			return s.finishQuery(ctx, uid, q, resp.Text, lastToolCall)
+			return s.finishQuery(ctx, uid, q, resp.Text, lastToolCall, isNewSession)
 		}
 
 		if len(resp.ToolCalls) > 1 {
@@ -210,7 +221,7 @@ func (s *aiService) Query(ctx context.Context, uid string, q dto.AIQueryRequest)
 		return dto.AIQueryResponse{}, err
 	}
 
-	return s.finishQuery(ctx, uid, q, finalResp.Text, lastToolCall)
+	return s.finishQuery(ctx, uid, q, finalResp.Text, lastToolCall, isNewSession)
 }
 
 // GetConversation returns a stored session's messages in chronological order,
@@ -257,7 +268,7 @@ func (s *aiService) generate(ctx context.Context, req dto.VertexGenerateRequest)
 	return s.vertex.GenerateContent(ctx, noneReq)
 }
 
-func (s *aiService) finishQuery(ctx context.Context, uid string, q dto.AIQueryRequest, text string, lastToolCall *dto.VertexToolCall) (dto.AIQueryResponse, error) {
+func (s *aiService) finishQuery(ctx context.Context, uid string, q dto.AIQueryRequest, text string, lastToolCall *dto.VertexToolCall, isNewSession bool) (dto.AIQueryResponse, error) {
 	log := logger.FromContext(ctx)
 
 	if err := s.saveMessage(ctx, uid, q.SessionID, models.AIMessage{
@@ -276,6 +287,18 @@ func (s *aiService) finishQuery(ctx context.Context, uid string, q dto.AIQueryRe
 		}
 	}
 
+	// Session metadata is best-effort: the answer is already produced, so a
+	// metadata failure is logged, not surfaced. The timestamp comes from the
+	// service clock, matching how messages are stamped.
+	now := s.clockNow()
+	if isNewSession {
+		if err := s.store.CreateSession(ctx, uid, q.SessionID, sessionTitle(q.Message), now); err != nil {
+			log.Warn("failed to create AI session metadata", "session_id", q.SessionID, "error", err)
+		}
+	} else if err := s.store.TouchSession(ctx, uid, q.SessionID, now); err != nil {
+		log.Warn("failed to update AI session metadata", "session_id", q.SessionID, "error", err)
+	}
+
 	out := dto.AIQueryResponse{Answer: text}
 	if lastToolCall != nil {
 		log.Info("ai query completed", "session_id", q.SessionID, "tool", lastToolCall.Name)
@@ -288,6 +311,25 @@ func (s *aiService) finishQuery(ctx context.Context, uid string, q dto.AIQueryRe
 	}
 
 	return out, nil
+}
+
+// sessionTitle derives a readable, distinguishable title from the first user
+// message: trimmed, truncated at a word boundary near sessionTitleMaxLen, with
+// an ellipsis when shortened. Distinguishability is the point — a generic
+// placeholder would make every conversation look identical in a list.
+func sessionTitle(firstMessage string) string {
+	t := strings.TrimSpace(firstMessage)
+	runes := []rune(t)
+	if len(runes) <= sessionTitleMaxLen {
+		return t
+	}
+
+	trunc := strings.TrimRight(string(runes[:sessionTitleMaxLen]), " ")
+	// Cut back to the last word boundary so we don't slice mid-word.
+	if i := strings.LastIndex(trunc, " "); i > 0 {
+		trunc = trunc[:i]
+	}
+	return trunc + "…"
 }
 
 func convertMessagesToContents(history []models.AIMessage, currentMessage string) []dto.VertexContent {

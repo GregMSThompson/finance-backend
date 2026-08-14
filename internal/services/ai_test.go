@@ -204,10 +204,27 @@ func (f *fakeGoalsService) GetProgress(ctx context.Context, uid, goalID string) 
 
 type fakeAIStore struct {
 	messages []models.AIMessage
+
+	createSessionCalls  int
+	createdSessionTitle string
+	createdSessionTime  time.Time
+	touchSessionCalls   int
 }
 
 func (f *fakeAIStore) SaveMessage(ctx context.Context, uid, sessionID string, msg models.AIMessage) error {
 	f.messages = append(f.messages, msg)
+	return nil
+}
+
+func (f *fakeAIStore) CreateSession(ctx context.Context, uid, sessionID, title string, now time.Time) error {
+	f.createSessionCalls++
+	f.createdSessionTitle = title
+	f.createdSessionTime = now
+	return nil
+}
+
+func (f *fakeAIStore) TouchSession(ctx context.Context, uid, sessionID string, now time.Time) error {
+	f.touchSessionCalls++
 	return nil
 }
 
@@ -795,5 +812,61 @@ func TestGetConversationEmptyIsNonNilSlice(t *testing.T) {
 	// Non-nil so it serializes as [] rather than null.
 	if res.Messages == nil || len(res.Messages) != 0 {
 		t.Fatalf("expected empty non-nil messages, got %#v", res.Messages)
+	}
+}
+
+func TestAIQuery_FirstMessageCreatesSession(t *testing.T) {
+	vertex := &fakeVertexClient{responses: []dto.VertexGenerateResponse{{Text: "You spent $5."}}}
+	store := &fakeAIStore{} // no prior messages → first message
+	svc := NewAIService(vertex, &fakeAnalyticsClient{}, &fakeTransactionsLister{}, &fakeGoalsService{}, store)
+	fixed := time.Date(2026, time.February, 15, 12, 0, 0, 0, time.UTC)
+	svc.clockNow = func() time.Time { return fixed }
+
+	_, err := svc.Query(helpers.TestCtx(), "user", dto.AIQueryRequest{SessionID: "s1", Message: "How much did I spend?"})
+	if err != nil {
+		t.Fatalf("Query error: %v", err)
+	}
+	if store.createSessionCalls != 1 {
+		t.Fatalf("expected CreateSession once, got %d", store.createSessionCalls)
+	}
+	if store.createdSessionTitle != "How much did I spend?" {
+		t.Fatalf("unexpected session title: %q", store.createdSessionTitle)
+	}
+	// Timestamp flows from the service clock, not the store's wall clock.
+	if !store.createdSessionTime.Equal(fixed) {
+		t.Fatalf("expected session time from clockNow (%s), got %s", fixed, store.createdSessionTime)
+	}
+	if store.touchSessionCalls != 0 {
+		t.Fatalf("expected no TouchSession on the first message, got %d", store.touchSessionCalls)
+	}
+}
+
+func TestAIQuery_SubsequentMessageTouchesSession(t *testing.T) {
+	vertex := &fakeVertexClient{responses: []dto.VertexGenerateResponse{{Text: "ok"}}}
+	store := &fakeAIStore{messages: []models.AIMessage{{Role: "user", Content: "earlier"}}} // existing session
+	svc := NewAIService(vertex, &fakeAnalyticsClient{}, &fakeTransactionsLister{}, &fakeGoalsService{}, store)
+
+	_, err := svc.Query(helpers.TestCtx(), "user", dto.AIQueryRequest{SessionID: "s1", Message: "again"})
+	if err != nil {
+		t.Fatalf("Query error: %v", err)
+	}
+	if store.createSessionCalls != 0 {
+		t.Fatalf("expected no CreateSession on an existing session, got %d", store.createSessionCalls)
+	}
+	if store.touchSessionCalls != 1 {
+		t.Fatalf("expected TouchSession once, got %d", store.touchSessionCalls)
+	}
+}
+
+func TestSessionTitle(t *testing.T) {
+	cases := []struct{ in, want string }{
+		{"How much did I spend?", "How much did I spend?"},
+		{"   trimmed   ", "trimmed"},
+		{"Set up a monthly dining budget of three hundred dollars", "Set up a monthly dining budget of…"},
+	}
+	for _, tc := range cases {
+		if got := sessionTitle(tc.in); got != tc.want {
+			t.Fatalf("sessionTitle(%q) = %q, want %q", tc.in, got, tc.want)
+		}
 	}
 }

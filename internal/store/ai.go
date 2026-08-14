@@ -19,8 +19,40 @@ func NewAIStore(client *firestore.Client) *aiStore {
 	return &aiStore{client: client}
 }
 
+func (s *aiStore) sessionDoc(uid, sessionID string) *firestore.DocumentRef {
+	return s.client.Collection("users").Doc(uid).Collection("ai_sessions").Doc(sessionID)
+}
+
 func (s *aiStore) messagesCollection(uid, sessionID string) *firestore.CollectionRef {
-	return s.client.Collection("users").Doc(uid).Collection("ai_sessions").Doc(sessionID).Collection("messages")
+	return s.sessionDoc(uid, sessionID).Collection("messages")
+}
+
+// CreateSession writes the session metadata document on the first message, so
+// the session is listable without reading its messages. now is supplied by the
+// service (its clockNow), matching how message/snapshot timestamps are stamped.
+func (s *aiStore) CreateSession(ctx context.Context, uid, sessionID, title string, now time.Time) error {
+	_, err := s.sessionDoc(uid, sessionID).Set(ctx, models.AISession{
+		SessionID: sessionID,
+		Title:     title,
+		CreatedAt: now,
+		UpdatedAt: now,
+	})
+	if err != nil {
+		return errs.NewDatabaseError("create", "failed to create AI session", err)
+	}
+	return nil
+}
+
+// TouchSession bumps a session's updatedAt so conversation lists can order by
+// recency. It merges, so it's safe even if the session doc is somehow absent.
+func (s *aiStore) TouchSession(ctx context.Context, uid, sessionID string, now time.Time) error {
+	_, err := s.sessionDoc(uid, sessionID).Set(ctx, map[string]any{
+		"updatedAt": now,
+	}, firestore.MergeAll)
+	if err != nil {
+		return errs.NewDatabaseError("update", "failed to update AI session", err)
+	}
+	return nil
 }
 
 func (s *aiStore) SaveMessage(ctx context.Context, uid, sessionID string, msg models.AIMessage) error {
