@@ -9,6 +9,7 @@ import (
 	"github.com/GregMSThompson/finance-backend/internal/dto"
 	"github.com/GregMSThompson/finance-backend/internal/errs"
 	"github.com/GregMSThompson/finance-backend/internal/models"
+	"github.com/GregMSThompson/finance-backend/pkg/clock"
 	"github.com/GregMSThompson/finance-backend/pkg/helpers"
 )
 
@@ -16,6 +17,10 @@ type fakeVertexClient struct {
 	responses []dto.VertexGenerateResponse
 	errors    []error
 	requests  []dto.VertexGenerateRequest
+}
+
+func aiContextAt(now time.Time) context.Context {
+	return clock.WithClock(helpers.TestCtx(), func() time.Time { return now })
 }
 
 func (f *fakeVertexClient) GenerateContent(ctx context.Context, req dto.VertexGenerateRequest) (dto.VertexGenerateResponse, error) {
@@ -216,14 +221,14 @@ func (f *fakeAIStore) SaveMessage(ctx context.Context, uid, sessionID string, ms
 	return nil
 }
 
-func (f *fakeAIStore) CreateSession(ctx context.Context, uid, sessionID, title string, now time.Time) error {
+func (f *fakeAIStore) CreateSession(ctx context.Context, uid, sessionID, title string) error {
 	f.createSessionCalls++
 	f.createdSessionTitle = title
-	f.createdSessionTime = now
+	f.createdSessionTime = clock.Now(ctx)
 	return nil
 }
 
-func (f *fakeAIStore) TouchSession(ctx context.Context, uid, sessionID string, now time.Time) error {
+func (f *fakeAIStore) TouchSession(ctx context.Context, uid, sessionID string) error {
 	f.touchSessionCalls++
 	return nil
 }
@@ -252,11 +257,7 @@ func TestAIQueryToolFlow(t *testing.T) {
 	store := &fakeAIStore{}
 	transactions := &fakeTransactionsLister{}
 	svc := NewAIService(vertex, analytics, transactions, &fakeGoalsService{}, store)
-	svc.clockNow = func() time.Time {
-		return time.Date(2025, time.February, 15, 12, 0, 0, 0, time.UTC)
-	}
-
-	ctx := helpers.TestCtx()
+	ctx := aiContextAt(time.Date(2025, time.February, 15, 12, 0, 0, 0, time.UTC))
 	resp, err := svc.Query(ctx, "user", dto.AIQueryRequest{SessionID: "session", Message: "How much did I spend?"})
 	if err != nil {
 		t.Fatalf("Query error: %v", err)
@@ -456,11 +457,7 @@ func TestAIQueryRejectsOverRangeAndReflects(t *testing.T) {
 	}
 	transactions := &fakeTransactionsLister{}
 	svc := NewAIService(vertex, &fakeAnalyticsClient{}, transactions, &fakeGoalsService{}, &fakeAIStore{})
-	svc.clockNow = func() time.Time {
-		return time.Date(2026, time.February, 15, 12, 0, 0, 0, time.UTC)
-	}
-
-	ctx := helpers.TestCtx()
+	ctx := aiContextAt(time.Date(2026, time.February, 15, 12, 0, 0, 0, time.UTC))
 	resp, err := svc.Query(ctx, "user", dto.AIQueryRequest{SessionID: "s", Message: "biggest ever"})
 	if err != nil {
 		t.Fatalf("Query error: %v", err)
@@ -485,11 +482,7 @@ func TestAIQueryDefaultsTransactionLimit(t *testing.T) {
 	}
 	transactions := &fakeTransactionsLister{}
 	svc := NewAIService(vertex, &fakeAnalyticsClient{}, transactions, &fakeGoalsService{}, &fakeAIStore{})
-	svc.clockNow = func() time.Time {
-		return time.Date(2026, time.February, 15, 12, 0, 0, 0, time.UTC)
-	}
-
-	ctx := helpers.TestCtx()
+	ctx := aiContextAt(time.Date(2026, time.February, 15, 12, 0, 0, 0, time.UTC))
 	if _, err := svc.Query(ctx, "user", dto.AIQueryRequest{SessionID: "s", Message: "list"}); err != nil {
 		t.Fatalf("Query error: %v", err)
 	}
@@ -507,11 +500,7 @@ func TestGetTransactionsSurfacesHasMoreNotCursor(t *testing.T) {
 		},
 	}
 	svc := NewAIService(&fakeVertexClient{}, &fakeAnalyticsClient{}, transactions, &fakeGoalsService{}, &fakeAIStore{})
-	svc.clockNow = func() time.Time {
-		return time.Date(2026, time.February, 15, 12, 0, 0, 0, time.UTC)
-	}
-
-	ctx := helpers.TestCtx()
+	ctx := aiContextAt(time.Date(2026, time.February, 15, 12, 0, 0, 0, time.UTC))
 	res, err := svc.executeTool(ctx, "user", "session", dto.VertexToolCall{
 		Name: "get_transactions",
 		Args: map[string]any{"dateFrom": "2026-01-01", "dateTo": "2026-01-31"},
@@ -820,9 +809,8 @@ func TestAIQuery_FirstMessageCreatesSession(t *testing.T) {
 	store := &fakeAIStore{} // no prior messages → first message
 	svc := NewAIService(vertex, &fakeAnalyticsClient{}, &fakeTransactionsLister{}, &fakeGoalsService{}, store)
 	fixed := time.Date(2026, time.February, 15, 12, 0, 0, 0, time.UTC)
-	svc.clockNow = func() time.Time { return fixed }
 
-	_, err := svc.Query(helpers.TestCtx(), "user", dto.AIQueryRequest{SessionID: "s1", Message: "How much did I spend?"})
+	_, err := svc.Query(aiContextAt(fixed), "user", dto.AIQueryRequest{SessionID: "s1", Message: "How much did I spend?"})
 	if err != nil {
 		t.Fatalf("Query error: %v", err)
 	}
@@ -832,9 +820,9 @@ func TestAIQuery_FirstMessageCreatesSession(t *testing.T) {
 	if store.createdSessionTitle != "How much did I spend?" {
 		t.Fatalf("unexpected session title: %q", store.createdSessionTitle)
 	}
-	// Timestamp flows from the service clock, not the store's wall clock.
+	// Timestamp flows from the context clock, not the store's wall clock.
 	if !store.createdSessionTime.Equal(fixed) {
-		t.Fatalf("expected session time from clockNow (%s), got %s", fixed, store.createdSessionTime)
+		t.Fatalf("expected session time from context clock (%s), got %s", fixed, store.createdSessionTime)
 	}
 	if store.touchSessionCalls != 0 {
 		t.Fatalf("expected no TouchSession on the first message, got %d", store.touchSessionCalls)

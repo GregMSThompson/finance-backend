@@ -8,6 +8,7 @@ import (
 
 	"github.com/GregMSThompson/finance-backend/internal/dto"
 	"github.com/GregMSThompson/finance-backend/internal/models"
+	"github.com/GregMSThompson/finance-backend/pkg/clock"
 	"github.com/GregMSThompson/finance-backend/pkg/helpers"
 )
 
@@ -39,12 +40,14 @@ func (f *fakeEvalAnalytics) GetSpendTotal(_ context.Context, _ string, args dto.
 // 31-day month, so a monthly window spans [2026-08-01, 2026-08-31].
 var evalClock = time.Date(2026, time.August, 15, 12, 0, 0, 0, time.UTC)
 
+func evalContext() context.Context {
+	return clock.WithClock(helpers.TestCtx(), func() time.Time { return evalClock })
+}
+
 func newEvaluator(users *fakeEvalUserStore, goals *fakeGoalStore, snaps *fakeGoalSnapshotStore, analytics *fakeEvalAnalytics) *goalEvaluatorService {
 	// Notification deps default to no-ops; the goals in these tests have no
 	// ProgressPercent threshold, so the notification path never runs.
-	svc := NewGoalEvaluatorService(users, goals, snaps, analytics, &fakeNotificationStore{}, &fakeTasksClient{})
-	svc.clockNow = func() time.Time { return evalClock }
-	return svc
+	return NewGoalEvaluatorService(users, goals, snaps, analytics, &fakeNotificationStore{}, &fakeTasksClient{})
 }
 
 func monthlyGoal(id string, target float64) *models.Goal {
@@ -67,7 +70,7 @@ func TestGoalEvaluator_SnapshotPerActiveGoal(t *testing.T) {
 	snaps := &fakeGoalSnapshotStore{}
 	analytics := &fakeEvalAnalytics{result: dto.AnalyticsSpendTotalResult{Total: 120, Currency: "USD"}}
 
-	if err := newEvaluator(users, goals, snaps, analytics).Run(helpers.TestCtx()); err != nil {
+	if err := newEvaluator(users, goals, snaps, analytics).Run(evalContext()); err != nil {
 		t.Fatalf("Run error: %v", err)
 	}
 
@@ -101,7 +104,7 @@ func TestGoalEvaluator_MapsFiltersAndWindow(t *testing.T) {
 	goals := &fakeGoalStore{goals: map[string]*models.Goal{"g1": g}}
 	analytics := &fakeEvalAnalytics{result: dto.AnalyticsSpendTotalResult{Total: 10}}
 
-	if err := newEvaluator(users, goals, &fakeGoalSnapshotStore{}, analytics).Run(helpers.TestCtx()); err != nil {
+	if err := newEvaluator(users, goals, &fakeGoalSnapshotStore{}, analytics).Run(evalContext()); err != nil {
 		t.Fatalf("Run error: %v", err)
 	}
 
@@ -137,7 +140,7 @@ func TestGoalEvaluator_PaceOnTrack(t *testing.T) {
 			snaps := &fakeGoalSnapshotStore{}
 			analytics := &fakeEvalAnalytics{result: dto.AnalyticsSpendTotalResult{Total: tc.spent}}
 
-			if err := newEvaluator(users, goals, snaps, analytics).Run(helpers.TestCtx()); err != nil {
+			if err := newEvaluator(users, goals, snaps, analytics).Run(evalContext()); err != nil {
 				t.Fatalf("Run error: %v", err)
 			}
 			if len(snaps.created) != 1 {
@@ -167,7 +170,7 @@ func TestGoalEvaluator_PerGoalErrorIsolation(t *testing.T) {
 	snaps := &fakeGoalSnapshotStore{}
 	analytics := &fakeEvalAnalytics{result: dto.AnalyticsSpendTotalResult{Total: 50}}
 
-	if err := newEvaluator(users, goals, snaps, analytics).Run(helpers.TestCtx()); err != nil {
+	if err := newEvaluator(users, goals, snaps, analytics).Run(evalContext()); err != nil {
 		t.Fatalf("Run should not fail on a single bad goal: %v", err)
 	}
 	if len(snaps.created) != 1 || snaps.created[0].GoalID != "g2" {
@@ -179,7 +182,7 @@ func TestGoalEvaluator_UserListErrorPropagates(t *testing.T) {
 	users := &fakeEvalUserStore{err: errors.New("firestore down")}
 	svc := newEvaluator(users, &fakeGoalStore{goals: map[string]*models.Goal{}}, &fakeGoalSnapshotStore{}, &fakeEvalAnalytics{})
 
-	if err := svc.Run(helpers.TestCtx()); err == nil {
+	if err := svc.Run(evalContext()); err == nil {
 		t.Fatal("expected Run to fail when listing users fails")
 	}
 }
@@ -195,9 +198,7 @@ func goalWithThreshold(id string, target, thresholdPct float64) *models.Goal {
 
 func newNotifyEvaluator(goals *fakeGoalStore, snaps *fakeGoalSnapshotStore, analytics *fakeEvalAnalytics, notifs *fakeNotificationStore, tasks *fakeTasksClient) *goalEvaluatorService {
 	users := &fakeEvalUserStore{users: []*models.User{{UID: "u1"}}}
-	svc := NewGoalEvaluatorService(users, goals, snaps, analytics, notifs, tasks)
-	svc.clockNow = func() time.Time { return evalClock }
-	return svc
+	return NewGoalEvaluatorService(users, goals, snaps, analytics, notifs, tasks)
 }
 
 func TestGoalEvaluator_FiresThresholdNotification(t *testing.T) {
@@ -207,7 +208,7 @@ func TestGoalEvaluator_FiresThresholdNotification(t *testing.T) {
 	notifs := &fakeNotificationStore{}
 	tasks := &fakeTasksClient{}
 
-	if err := newNotifyEvaluator(goals, snaps, analytics, notifs, tasks).Run(helpers.TestCtx()); err != nil {
+	if err := newNotifyEvaluator(goals, snaps, analytics, notifs, tasks).Run(evalContext()); err != nil {
 		t.Fatalf("Run error: %v", err)
 	}
 
@@ -243,7 +244,7 @@ func TestGoalEvaluator_NoNotificationWhileStayingOver(t *testing.T) {
 	notifs := &fakeNotificationStore{}
 	tasks := &fakeTasksClient{}
 
-	if err := newNotifyEvaluator(goals, snaps, analytics, notifs, tasks).Run(helpers.TestCtx()); err != nil {
+	if err := newNotifyEvaluator(goals, snaps, analytics, notifs, tasks).Run(evalContext()); err != nil {
 		t.Fatalf("Run error: %v", err)
 	}
 	if len(notifs.created) != 0 || len(tasks.enqueued) != 0 {
@@ -265,7 +266,7 @@ func TestGoalEvaluator_NotifiesOnDroppingBackUnder(t *testing.T) {
 	notifs := &fakeNotificationStore{}
 	tasks := &fakeTasksClient{}
 
-	if err := newNotifyEvaluator(goals, snaps, analytics, notifs, tasks).Run(helpers.TestCtx()); err != nil {
+	if err := newNotifyEvaluator(goals, snaps, analytics, notifs, tasks).Run(evalContext()); err != nil {
 		t.Fatalf("Run error: %v", err)
 	}
 	if len(notifs.created) != 1 || len(tasks.enqueued) != 1 {
@@ -286,7 +287,7 @@ func TestGoalEvaluator_NoNotificationBelowThreshold(t *testing.T) {
 	notifs := &fakeNotificationStore{}
 	tasks := &fakeTasksClient{}
 
-	if err := newNotifyEvaluator(goals, snaps, analytics, notifs, tasks).Run(helpers.TestCtx()); err != nil {
+	if err := newNotifyEvaluator(goals, snaps, analytics, notifs, tasks).Run(evalContext()); err != nil {
 		t.Fatalf("Run error: %v", err)
 	}
 	if len(notifs.created) != 0 {
@@ -317,7 +318,7 @@ func TestGoalEvaluator_OneOffUnderBudgetCompletes(t *testing.T) {
 	notifs := &fakeNotificationStore{}
 	tasks := &fakeTasksClient{}
 
-	if err := newNotifyEvaluator(goals, snaps, analytics, notifs, tasks).Run(helpers.TestCtx()); err != nil {
+	if err := newNotifyEvaluator(goals, snaps, analytics, notifs, tasks).Run(evalContext()); err != nil {
 		t.Fatalf("Run error: %v", err)
 	}
 
@@ -343,7 +344,7 @@ func TestGoalEvaluator_OneOffOverBudgetFails(t *testing.T) {
 	notifs := &fakeNotificationStore{}
 	tasks := &fakeTasksClient{}
 
-	if err := newNotifyEvaluator(goals, snaps, analytics, notifs, tasks).Run(helpers.TestCtx()); err != nil {
+	if err := newNotifyEvaluator(goals, snaps, analytics, notifs, tasks).Run(evalContext()); err != nil {
 		t.Fatalf("Run error: %v", err)
 	}
 
@@ -363,7 +364,7 @@ func TestGoalEvaluator_OneOffNotYetEndedDoesNotTerminate(t *testing.T) {
 	notifs := &fakeNotificationStore{}
 	tasks := &fakeTasksClient{}
 
-	if err := newNotifyEvaluator(goals, snaps, analytics, notifs, tasks).Run(helpers.TestCtx()); err != nil {
+	if err := newNotifyEvaluator(goals, snaps, analytics, notifs, tasks).Run(evalContext()); err != nil {
 		t.Fatalf("Run error: %v", err)
 	}
 

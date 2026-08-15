@@ -2,13 +2,13 @@ package store
 
 import (
 	"context"
-	"time"
 
 	"cloud.google.com/go/firestore"
 	"google.golang.org/api/iterator"
 
 	"github.com/GregMSThompson/finance-backend/internal/errs"
 	"github.com/GregMSThompson/finance-backend/internal/models"
+	"github.com/GregMSThompson/finance-backend/pkg/clock"
 )
 
 type aiStore struct {
@@ -28,9 +28,9 @@ func (s *aiStore) messagesCollection(uid, sessionID string) *firestore.Collectio
 }
 
 // CreateSession writes the session metadata document on the first message, so
-// the session is listable without reading its messages. now is supplied by the
-// service (its clockNow), matching how message/snapshot timestamps are stamped.
-func (s *aiStore) CreateSession(ctx context.Context, uid, sessionID, title string, now time.Time) error {
+// the session is listable without reading its messages.
+func (s *aiStore) CreateSession(ctx context.Context, uid, sessionID, title string) error {
+	now := clock.Now(ctx)
 	_, err := s.sessionDoc(uid, sessionID).Set(ctx, models.AISession{
 		SessionID: sessionID,
 		Title:     title,
@@ -45,9 +45,9 @@ func (s *aiStore) CreateSession(ctx context.Context, uid, sessionID, title strin
 
 // TouchSession bumps a session's updatedAt so conversation lists can order by
 // recency. It merges, so it's safe even if the session doc is somehow absent.
-func (s *aiStore) TouchSession(ctx context.Context, uid, sessionID string, now time.Time) error {
+func (s *aiStore) TouchSession(ctx context.Context, uid, sessionID string) error {
 	_, err := s.sessionDoc(uid, sessionID).Set(ctx, map[string]any{
-		"updatedAt": now,
+		"updatedAt": clock.Now(ctx),
 	}, firestore.MergeAll)
 	if err != nil {
 		return errs.NewDatabaseError("update", "failed to update AI session", err)
@@ -57,7 +57,7 @@ func (s *aiStore) TouchSession(ctx context.Context, uid, sessionID string, now t
 
 func (s *aiStore) SaveMessage(ctx context.Context, uid, sessionID string, msg models.AIMessage) error {
 	if msg.CreatedAt.IsZero() {
-		msg.CreatedAt = time.Now()
+		msg.CreatedAt = clock.Now(ctx)
 	}
 
 	_, _, err := s.messagesCollection(uid, sessionID).Add(ctx, msg)

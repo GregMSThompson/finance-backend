@@ -2,7 +2,6 @@ package store
 
 import (
 	"context"
-	"time"
 
 	"cloud.google.com/go/firestore"
 	"google.golang.org/grpc/codes"
@@ -10,6 +9,7 @@ import (
 
 	"github.com/GregMSThompson/finance-backend/internal/errs"
 	"github.com/GregMSThompson/finance-backend/internal/models"
+	"github.com/GregMSThompson/finance-backend/pkg/clock"
 )
 
 type alertStore struct {
@@ -25,7 +25,7 @@ func (s *alertStore) collection(uid string) *firestore.CollectionRef {
 }
 
 func (s *alertStore) Create(ctx context.Context, uid string, a *models.Alert) error {
-	now := time.Now()
+	now := clock.Now(ctx)
 	if a.CreatedAt.IsZero() {
 		a.CreatedAt = now
 	}
@@ -73,7 +73,7 @@ func (s *alertStore) List(ctx context.Context, uid string, activeOnly bool) ([]*
 }
 
 func (s *alertStore) Update(ctx context.Context, uid string, a *models.Alert) error {
-	a.UpdatedAt = time.Now()
+	a.UpdatedAt = clock.Now(ctx)
 	_, err := s.collection(uid).Doc(a.AlertID).Set(ctx, a)
 	if err != nil {
 		return errs.NewDatabaseError("update", "failed to update alert", err)

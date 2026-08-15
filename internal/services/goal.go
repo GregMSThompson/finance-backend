@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/google/uuid"
 
@@ -13,6 +12,7 @@ import (
 	"github.com/GregMSThompson/finance-backend/internal/errs"
 	"github.com/GregMSThompson/finance-backend/internal/models"
 	"github.com/GregMSThompson/finance-backend/internal/taxonomy"
+	"github.com/GregMSThompson/finance-backend/pkg/clock"
 	"github.com/GregMSThompson/finance-backend/pkg/helpers"
 )
 
@@ -39,7 +39,6 @@ type goalService struct {
 	snapshots    goalSnapshotStore
 	jobs         jobSubmitter
 	transactions goalTransactionLister
-	clockNow     func() time.Time
 }
 
 func NewGoalService(goals goalStore, snapshots goalSnapshotStore, jobs jobSubmitter, transactions goalTransactionLister) *goalService {
@@ -48,7 +47,6 @@ func NewGoalService(goals goalStore, snapshots goalSnapshotStore, jobs jobSubmit
 		snapshots:    snapshots,
 		jobs:         jobs,
 		transactions: transactions,
-		clockNow:     time.Now,
 	}
 }
 
@@ -185,7 +183,7 @@ func (s *goalService) ListGoalTransactions(ctx context.Context, uid, goalID stri
 		return dto.TransactionListResult{}, err
 	}
 
-	now := s.clockNow()
+	now := clock.Now(ctx)
 	start, end, err := g.ResolveWindow(now)
 	if err != nil {
 		return dto.TransactionListResult{}, err

@@ -2,7 +2,6 @@ package store
 
 import (
 	"context"
-	"time"
 
 	"cloud.google.com/go/firestore"
 	"google.golang.org/grpc/codes"
@@ -10,6 +9,7 @@ import (
 
 	"github.com/GregMSThompson/finance-backend/internal/errs"
 	"github.com/GregMSThompson/finance-backend/internal/models"
+	"github.com/GregMSThompson/finance-backend/pkg/clock"
 )
 
 type goalStore struct {
@@ -25,7 +25,7 @@ func (s *goalStore) collection(uid string) *firestore.CollectionRef {
 }
 
 func (s *goalStore) Create(ctx context.Context, uid string, g *models.Goal) error {
-	now := time.Now()
+	now := clock.Now(ctx)
 	if g.CreatedAt.IsZero() {
 		g.CreatedAt = now
 	}
@@ -85,7 +85,7 @@ func (s *goalStore) List(ctx context.Context, uid string, statuses ...models.Goa
 }
 
 func (s *goalStore) Update(ctx context.Context, uid string, g *models.Goal) error {
-	g.UpdatedAt = time.Now()
+	g.UpdatedAt = clock.Now(ctx)
 	_, err := s.collection(uid).Doc(g.GoalID).Set(ctx, g)
 	if err != nil {
 		return errs.NewDatabaseError("update", "failed to update goal", err)

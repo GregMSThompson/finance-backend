@@ -9,15 +9,20 @@ import (
 
 	"github.com/GregMSThompson/finance-backend/internal/dto"
 	"github.com/GregMSThompson/finance-backend/internal/models"
+	"github.com/GregMSThompson/finance-backend/pkg/clock"
 	"github.com/GregMSThompson/finance-backend/pkg/helpers"
 )
+
+func plaidContextAt(now time.Time) context.Context {
+	return clock.WithClock(helpers.TestCtx(), func() time.Time { return now })
+}
 
 // --- fakes ---
 
 type fakePlaid struct {
-	linkToken       string
-	itemID          string
-	accessToken     string
+	linkToken      string
+	itemID         string
+	accessToken    string
 	syncPages      []dto.PlaidSyncPage
 	createLinkErr  error
 	exchangeErr    error
@@ -35,7 +40,6 @@ func (f *fakePlaid) ExchangePublicToken(ctx context.Context, publicToken string)
 	return f.itemID, f.accessToken, f.exchangeErr
 }
 
-
 func (f *fakePlaid) SyncTransactions(ctx context.Context, bankID string, accessToken string, cursor *string) (dto.PlaidSyncPage, error) {
 	if f.syncErr != nil {
 		return dto.PlaidSyncPage{}, f.syncErr
@@ -47,7 +51,6 @@ func (f *fakePlaid) SyncTransactions(ctx context.Context, bankID string, accessT
 	f.syncCalls++
 	return page, nil
 }
-
 
 type fakeBankStore struct {
 	created     []*models.Bank
@@ -140,9 +143,9 @@ func (f *fakeJobs) Submit(ctx context.Context, uid string, jobType models.JobTyp
 }
 
 type fakeAccountSyncer struct {
-	jobID  string
-	err    error
-	gotUID string
+	jobID   string
+	err     error
+	gotUID  string
 	gotBank string
 }
 
@@ -219,9 +222,7 @@ func TestRunSyncUsesCursorAndSetsNewCursor(t *testing.T) {
 
 	svc := NewPlaidService(pl, banks, txs, &fakeJobs{}, &fakeBankSvc{}, &fakeAccountSyncer{})
 	now := time.Unix(1000, 0)
-	svc.clockNow = func() time.Time { return now }
-
-	ctx := helpers.TestCtx()
+	ctx := plaidContextAt(now)
 	res, err := svc.RunSync(ctx, "uid-1", dto.PlaidSyncParams{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)

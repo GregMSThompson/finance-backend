@@ -31,6 +31,7 @@ import (
 	"github.com/GregMSThompson/finance-backend/internal/models"
 	"github.com/GregMSThompson/finance-backend/internal/services"
 	"github.com/GregMSThompson/finance-backend/internal/store"
+	"github.com/GregMSThompson/finance-backend/pkg/clock"
 	"github.com/GregMSThompson/finance-backend/pkg/logger"
 )
 
@@ -120,12 +121,10 @@ func run(ctx context.Context, client *firestore.Client, sc *scenario) error {
 		return fmt.Errorf("replay.to: %w", err)
 	}
 
-	// Evaluate only the sim user, with a virtual clock and no real deliveries.
-	var clock time.Time
+	// Evaluate only the sim user with no real deliveries.
 	evalSvc := services.NewGoalEvaluatorService(
 		singleUserStore{uid: sc.UserID},
 		goalStore, snapshotStore, analyticsSvc, notificationStore, noopTasks{},
-		services.WithClock(func() time.Time { return clock }),
 	)
 
 	steps := indexSteps(sc.Steps)
@@ -136,15 +135,16 @@ func run(ctx context.Context, client *firestore.Client, sc *scenario) error {
 
 	for day := from; !day.After(to); day = day.AddDate(0, 0, 1) {
 		key := day.Format(dateLayout)
-		clock = time.Date(day.Year(), day.Month(), day.Day(), 12, 0, 0, 0, time.UTC)
+		runAt := time.Date(day.Year(), day.Month(), day.Day(), 12, 0, 0, 0, time.UTC)
+		runCtx := clock.WithClock(ctx, func() time.Time { return runAt })
 
 		if step, ok := steps[key]; ok && len(step.Add) > 0 {
-			if err := seedTransactions(ctx, transactionStore, sc.UserID, key, step.Add); err != nil {
+			if err := seedTransactions(runCtx, transactionStore, sc.UserID, key, step.Add); err != nil {
 				return fmt.Errorf("seed transactions on %s: %w", key, err)
 			}
 		}
 
-		if err := evalSvc.Run(ctx); err != nil {
+		if err := evalSvc.Run(runCtx); err != nil {
 			return fmt.Errorf("evaluator run on %s: %w", key, err)
 		}
 

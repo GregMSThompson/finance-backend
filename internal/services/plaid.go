@@ -4,11 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"time"
 
 	"github.com/GregMSThompson/finance-backend/internal/dto"
 	"github.com/GregMSThompson/finance-backend/internal/errs"
 	"github.com/GregMSThompson/finance-backend/internal/models"
+	"github.com/GregMSThompson/finance-backend/pkg/clock"
 	"github.com/GregMSThompson/finance-backend/pkg/helpers"
 	"github.com/GregMSThompson/finance-backend/pkg/logger"
 )
@@ -61,7 +61,6 @@ type plaidService struct {
 	jobs     jobSubmitter
 	bankSvc  bankDeleter
 	accounts accountSyncer
-	clockNow func() time.Time
 }
 
 func NewPlaidService(plaid plaidClient, banks bankPSStore, txs transactionPSStore, jobs jobSubmitter, bankSvc bankDeleter, accounts accountSyncer) *plaidService {
@@ -72,7 +71,6 @@ func NewPlaidService(plaid plaidClient, banks bankPSStore, txs transactionPSStor
 		jobs:     jobs,
 		bankSvc:  bankSvc,
 		accounts: accounts,
-		clockNow: time.Now,
 	}
 }
 
@@ -95,8 +93,8 @@ func (s *plaidService) ExchangePublicToken(ctx context.Context, uid string, req 
 		Institution:      req.InstitutionName,
 		Status:           "active",
 		PlaidPublicToken: accessToken,
-		CreatedAt:        s.clockNow(),
-		UpdatedAt:        s.clockNow(),
+		CreatedAt:        clock.Now(ctx),
+		UpdatedAt:        clock.Now(ctx),
 	}
 	if err := s.banks.Create(ctx, uid, bank); err != nil {
 		return "", err

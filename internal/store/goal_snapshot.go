@@ -9,6 +9,7 @@ import (
 
 	"github.com/GregMSThompson/finance-backend/internal/errs"
 	"github.com/GregMSThompson/finance-backend/internal/models"
+	"github.com/GregMSThompson/finance-backend/pkg/clock"
 )
 
 type goalSnapshotStore struct {
@@ -25,7 +26,7 @@ func (s *goalSnapshotStore) collection(uid string) *firestore.CollectionRef {
 
 func (s *goalSnapshotStore) Create(ctx context.Context, uid string, snap *models.GoalSnapshot) error {
 	if snap.CreatedAt.IsZero() {
-		snap.CreatedAt = time.Now()
+		snap.CreatedAt = clock.Now(ctx)
 	}
 	_, err := s.collection(uid).Doc(snap.SnapshotID).Set(ctx, snap)
 	if err != nil {

@@ -2,7 +2,6 @@ package store
 
 import (
 	"context"
-	"time"
 
 	"cloud.google.com/go/firestore"
 	"google.golang.org/grpc/codes"
@@ -10,6 +9,7 @@ import (
 
 	"github.com/GregMSThompson/finance-backend/internal/errs"
 	"github.com/GregMSThompson/finance-backend/internal/models"
+	"github.com/GregMSThompson/finance-backend/pkg/clock"
 	"github.com/GregMSThompson/finance-backend/pkg/logger"
 )
 
@@ -26,7 +26,7 @@ func (s *dashboardStore) collection(uid string) *firestore.CollectionRef {
 }
 
 func (s *dashboardStore) Create(ctx context.Context, uid string, w *models.Widget) error {
-	now := time.Now()
+	now := clock.Now(ctx)
 	if w.CreatedAt.IsZero() {
 		w.CreatedAt = now
 	}
@@ -70,7 +70,7 @@ func (s *dashboardStore) List(ctx context.Context, uid string) ([]*models.Widget
 }
 
 func (s *dashboardStore) Update(ctx context.Context, uid string, w *models.Widget) error {
-	w.UpdatedAt = time.Now()
+	w.UpdatedAt = clock.Now(ctx)
 	_, err := s.collection(uid).Doc(w.WidgetID).Set(ctx, w)
 	if err != nil {
 		return errs.NewDatabaseError("update", "failed to update widget", err)
@@ -103,7 +103,7 @@ func (s *dashboardStore) BulkUpdatePositions(ctx context.Context, uid string, po
 	log := logger.FromContext(ctx)
 	bw := s.client.BulkWriter(ctx)
 	coll := s.collection(uid)
-	now := time.Now()
+	now := clock.Now(ctx)
 
 	jobs := make([]bulkPositionJob, 0, len(positions))
 	for widgetID, pos := range positions {

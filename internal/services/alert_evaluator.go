@@ -9,6 +9,7 @@ import (
 
 	"github.com/GregMSThompson/finance-backend/internal/dto"
 	"github.com/GregMSThompson/finance-backend/internal/models"
+	"github.com/GregMSThompson/finance-backend/pkg/clock"
 	"github.com/GregMSThompson/finance-backend/pkg/helpers"
 	"github.com/GregMSThompson/finance-backend/pkg/logger"
 )
@@ -52,8 +53,6 @@ type alertEvaluatorService struct {
 	analytics     evaluatorAnalytics
 	transactions  evaluatorTransactions
 	tasks         evaluatorTasksClient
-	clockNow      func() time.Time
-	period        evalPeriod
 }
 
 func NewAlertEvaluatorService(
@@ -71,15 +70,14 @@ func NewAlertEvaluatorService(
 		analytics:     analytics,
 		transactions:  transactions,
 		tasks:         tasks,
-		clockNow:      time.Now,
 	}
 }
 
 func (s *alertEvaluatorService) Run(ctx context.Context) error {
 	log := logger.FromContext(ctx)
 
-	now := s.clockNow()
-	s.period = evalPeriod{
+	now := clock.Now(ctx)
+	period := evalPeriod{
 		now:       now,
 		today:     helpers.FormatDate(now),
 		yesterday: helpers.FormatDate(now.AddDate(0, 0, -1)),
@@ -93,7 +91,7 @@ func (s *alertEvaluatorService) Run(ctx context.Context) error {
 	log.Info("starting alert evaluation", "userCount", len(users))
 
 	for _, user := range users {
-		if err := s.evaluateUser(ctx, user); err != nil {
+		if err := s.evaluateUser(ctx, user, period); err != nil {
 			log.Error("failed to evaluate user alerts", "uid", user.UID, "error", err)
 		}
 	}
@@ -101,7 +99,7 @@ func (s *alertEvaluatorService) Run(ctx context.Context) error {
 	return nil
 }
 
-func (s *alertEvaluatorService) evaluateUser(ctx context.Context, user *models.User) error {
+func (s *alertEvaluatorService) evaluateUser(ctx context.Context, user *models.User, period evalPeriod) error {
 	log := logger.FromContext(ctx)
 
 	alerts, err := s.alerts.List(ctx, user.UID, true)
@@ -110,7 +108,7 @@ func (s *alertEvaluatorService) evaluateUser(ctx context.Context, user *models.U
 	}
 
 	for _, alert := range alerts {
-		triggered, title, body, err := s.evaluateAlert(ctx, user.UID, alert)
+		triggered, title, body, err := s.evaluateAlert(ctx, user.UID, alert, period)
 		if err != nil {
 			log.Error("failed to evaluate alert", "uid", user.UID, "alertId", alert.AlertID, "type", alert.Type, "error", err)
 			continue
@@ -118,7 +116,7 @@ func (s *alertEvaluatorService) evaluateUser(ctx context.Context, user *models.U
 		if !triggered {
 			continue
 		}
-		if err := s.dispatchAlert(ctx, user, alert, title, body); err != nil {
+		if err := s.dispatchAlert(ctx, user, alert, title, body, period); err != nil {
 			log.Error("failed to dispatch alert", "uid", user.UID, "alertId", alert.AlertID, "error", err)
 		}
 	}
@@ -126,27 +124,27 @@ func (s *alertEvaluatorService) evaluateUser(ctx context.Context, user *models.U
 	return nil
 }
 
-func (s *alertEvaluatorService) evaluateAlert(ctx context.Context, uid string, alert *models.Alert) (triggered bool, title, body string, err error) {
+func (s *alertEvaluatorService) evaluateAlert(ctx context.Context, uid string, alert *models.Alert, period evalPeriod) (triggered bool, title, body string, err error) {
 	switch alert.Type {
 	case models.AlertTypeSpendThreshold:
-		return s.evaluateSpendThreshold(ctx, uid, alert)
+		return s.evaluateSpendThreshold(ctx, uid, alert, period)
 	case models.AlertTypeLargeTransaction:
-		return s.evaluateLargeTransaction(ctx, uid, alert)
+		return s.evaluateLargeTransaction(ctx, uid, alert, period)
 	case models.AlertTypeIncomeReceived:
-		return s.evaluateIncomeReceived(ctx, uid, alert)
+		return s.evaluateIncomeReceived(ctx, uid, alert, period)
 	case models.AlertTypeSubscriptionIncrease:
-		return s.evaluateSubscriptionIncrease(ctx, uid)
+		return s.evaluateSubscriptionIncrease(ctx, uid, period)
 	default:
 		return false, "", "", nil
 	}
 }
 
-func (s *alertEvaluatorService) evaluateSpendThreshold(ctx context.Context, uid string, alert *models.Alert) (bool, string, string, error) {
-	from := evalWindowFrom(alert.Config.Window, s.period.now)
+func (s *alertEvaluatorService) evaluateSpendThreshold(ctx context.Context, uid string, alert *models.Alert, period evalPeriod) (bool, string, string, error) {
+	from := evalWindowFrom(alert.Config.Window, period.now)
 
 	args := dto.AnalyticsSpendTotalArgs{
 		DateFrom: helpers.Ptr(from),
-		DateTo:   helpers.Ptr(s.period.today),
+		DateTo:   helpers.Ptr(period.today),
 	}
 	switch alert.Config.Dimension {
 	case "category":
@@ -177,12 +175,12 @@ func (s *alertEvaluatorService) evaluateSpendThreshold(ctx context.Context, uid 
 	return true, title, body, nil
 }
 
-func (s *alertEvaluatorService) evaluateLargeTransaction(ctx context.Context, uid string, alert *models.Alert) (bool, string, string, error) {
+func (s *alertEvaluatorService) evaluateLargeTransaction(ctx context.Context, uid string, alert *models.Alert, period evalPeriod) (bool, string, string, error) {
 	pending := false
 	result, err := s.transactions.ListTransactions(ctx, uid, dto.TransactionListArgs{
 		Pending:  helpers.Ptr(pending),
-		DateFrom: helpers.Ptr(s.period.yesterday),
-		DateTo:   helpers.Ptr(s.period.today),
+		DateFrom: helpers.Ptr(period.yesterday),
+		DateTo:   helpers.Ptr(period.today),
 		OrderBy:  "amount",
 		Desc:     true,
 		Limit:    1,
@@ -205,10 +203,10 @@ func (s *alertEvaluatorService) evaluateLargeTransaction(ctx context.Context, ui
 	return true, title, body, nil
 }
 
-func (s *alertEvaluatorService) evaluateIncomeReceived(ctx context.Context, uid string, alert *models.Alert) (bool, string, string, error) {
+func (s *alertEvaluatorService) evaluateIncomeReceived(ctx context.Context, uid string, alert *models.Alert, period evalPeriod) (bool, string, string, error) {
 	result, err := s.analytics.GetIncomeVsExpenses(ctx, uid, dto.AnalyticsIncomeVsExpensesArgs{
-		DateFrom: s.period.yesterday,
-		DateTo:   s.period.today,
+		DateFrom: period.yesterday,
+		DateTo:   period.today,
 	})
 	if err != nil {
 		return false, "", "", err
@@ -227,19 +225,19 @@ func (s *alertEvaluatorService) evaluateIncomeReceived(ctx context.Context, uid 
 	return true, title, body, nil
 }
 
-func (s *alertEvaluatorService) evaluateSubscriptionIncrease(ctx context.Context, uid string) (bool, string, string, error) {
-	from := helpers.FormatDate(s.period.now.AddDate(0, 0, -90))
+func (s *alertEvaluatorService) evaluateSubscriptionIncrease(ctx context.Context, uid string, period evalPeriod) (bool, string, string, error) {
+	from := helpers.FormatDate(period.now.AddDate(0, 0, -90))
 
 	result, err := s.analytics.GetRecurringTransactions(ctx, uid, dto.AnalyticsRecurringArgs{
 		DateFrom: from,
-		DateTo:   s.period.today,
+		DateTo:   period.today,
 	})
 	if err != nil {
 		return false, "", "", err
 	}
 
 	for _, item := range result.Items {
-		if item.LastDate != s.period.yesterday {
+		if item.LastDate != period.yesterday {
 			continue
 		}
 		if item.LastAmount <= item.TypicalAmount {
@@ -257,7 +255,7 @@ func (s *alertEvaluatorService) evaluateSubscriptionIncrease(ctx context.Context
 	return false, "", "", nil
 }
 
-func (s *alertEvaluatorService) dispatchAlert(ctx context.Context, user *models.User, alert *models.Alert, title, body string) error {
+func (s *alertEvaluatorService) dispatchAlert(ctx context.Context, user *models.User, alert *models.Alert, title, body string, period evalPeriod) error {
 	for _, delivery := range alert.Delivery {
 		notification := &models.Notification{
 			NotificationID: uuid.New().String(),
@@ -270,7 +268,7 @@ func (s *alertEvaluatorService) dispatchAlert(ctx context.Context, user *models.
 				"sourceId": alert.AlertID,
 			},
 			Delivery:  delivery,
-			CreatedAt: s.period.now,
+			CreatedAt: period.now,
 		}
 
 		if err := s.notifications.Create(ctx, user.UID, notification); err != nil {

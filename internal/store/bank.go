@@ -2,7 +2,6 @@ package store
 
 import (
 	"context"
-	"time"
 
 	"cloud.google.com/go/firestore"
 	"google.golang.org/grpc/codes"
@@ -10,6 +9,7 @@ import (
 
 	"github.com/GregMSThompson/finance-backend/internal/errs"
 	"github.com/GregMSThompson/finance-backend/internal/models"
+	"github.com/GregMSThompson/finance-backend/pkg/clock"
 )
 
 type kmsCipher interface {
@@ -42,7 +42,7 @@ func (s *bankStore) itemIndex() *firestore.CollectionRef {
 }
 
 func (s *bankStore) Create(ctx context.Context, uid string, bank *models.Bank) error {
-	now := time.Now()
+	now := clock.Now(ctx)
 	if bank.CreatedAt.IsZero() {
 		bank.CreatedAt = now
 	}
@@ -139,7 +139,7 @@ func (s *bankStore) FindUserIDByBankID(ctx context.Context, bankID string) (stri
 func (s *bankStore) SetNeedsReauth(ctx context.Context, uid, bankID string, needs bool) error {
 	_, err := s.collection(uid).Doc(bankID).Update(ctx, []firestore.Update{
 		{Path: "needsReauth", Value: needs},
-		{Path: "updatedAt", Value: time.Now()},
+		{Path: "updatedAt", Value: clock.Now(ctx)},
 	})
 	if err != nil {
 		return errs.NewDatabaseError("update", "failed to update needsReauth", err)

@@ -9,6 +9,7 @@ import (
 
 	"github.com/GregMSThompson/finance-backend/internal/dto"
 	"github.com/GregMSThompson/finance-backend/internal/models"
+	"github.com/GregMSThompson/finance-backend/pkg/clock"
 	"github.com/GregMSThompson/finance-backend/pkg/helpers"
 	"github.com/GregMSThompson/finance-backend/pkg/logger"
 )
@@ -41,7 +42,6 @@ type goalEvaluatorService struct {
 	analytics     goalEvaluatorAnalytics
 	notifications evaluatorNotificationStore
 	tasks         evaluatorTasksClient
-	clockNow      func() time.Time
 }
 
 // goalEvaluation is the outcome of evaluating one goal on one run: the snapshot
@@ -53,15 +53,6 @@ type goalEvaluation struct {
 	newStatus    models.GoalStatus
 }
 
-// EvaluatorOption customizes a goalEvaluatorService at construction.
-type EvaluatorOption func(*goalEvaluatorService)
-
-// WithClock overrides the run clock. Production uses the default time.Now; the
-// goal-sim tool injects a virtual clock to replay evaluation across many days.
-func WithClock(now func() time.Time) EvaluatorOption {
-	return func(s *goalEvaluatorService) { s.clockNow = now }
-}
-
 func NewGoalEvaluatorService(
 	users goalEvaluatorUserStore,
 	goals goalEvaluatorGoalStore,
@@ -69,21 +60,15 @@ func NewGoalEvaluatorService(
 	analytics goalEvaluatorAnalytics,
 	notifications evaluatorNotificationStore,
 	tasks evaluatorTasksClient,
-	opts ...EvaluatorOption,
 ) *goalEvaluatorService {
-	s := &goalEvaluatorService{
+	return &goalEvaluatorService{
 		users:         users,
 		goals:         goals,
 		snapshots:     snapshots,
 		analytics:     analytics,
 		notifications: notifications,
 		tasks:         tasks,
-		clockNow:      time.Now,
 	}
-	for _, opt := range opts {
-		opt(s)
-	}
-	return s
 }
 
 // Run evaluates every user's active goals against a single run clock. A failure
@@ -99,7 +84,7 @@ func (s *goalEvaluatorService) Run(ctx context.Context) error {
 
 	log.Info("starting goal evaluation", "userCount", len(users))
 
-	now := s.clockNow()
+	now := clock.Now(ctx)
 	for _, user := range users {
 		if err := s.evaluateUser(ctx, user.UID, now); err != nil {
 			log.Error("failed to evaluate user goals", "uid", user.UID, "error", err)

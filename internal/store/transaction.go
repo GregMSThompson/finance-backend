@@ -3,7 +3,6 @@ package store
 import (
 	"context"
 	"strings"
-	"time"
 
 	"cloud.google.com/go/firestore"
 	"google.golang.org/api/iterator"
@@ -13,6 +12,7 @@ import (
 	"github.com/GregMSThompson/finance-backend/internal/dto"
 	"github.com/GregMSThompson/finance-backend/internal/errs"
 	"github.com/GregMSThompson/finance-backend/internal/models"
+	"github.com/GregMSThompson/finance-backend/pkg/clock"
 	"github.com/GregMSThompson/finance-backend/pkg/helpers"
 	"github.com/GregMSThompson/finance-backend/pkg/pagination"
 )
@@ -172,7 +172,7 @@ func (s *transactionStore) UpsertBatch(ctx context.Context, uid string, txs []mo
 
 	bw := s.client.BulkWriter(ctx)
 	jobs := make([]*firestore.BulkWriterJob, 0, len(txs))
-	now := time.Now()
+	now := clock.Now(ctx)
 
 	for _, t := range txs {
 		t.UpdatedAt = now
@@ -218,7 +218,7 @@ func (s *transactionStore) GetCursor(ctx context.Context, uid, bankID string) (s
 func (s *transactionStore) SetCursor(ctx context.Context, uid, bankID, cursor string) error {
 	_, err := s.cursorDoc(uid, bankID).Set(ctx, map[string]interface{}{
 		"cursor":    cursor,
-		"updatedAt": time.Now(),
+		"updatedAt": clock.Now(ctx),
 	}, firestore.MergeAll)
 	if err != nil {
 		return errs.NewDatabaseError("update", "failed to set cursor", err)

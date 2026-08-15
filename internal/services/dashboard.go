@@ -10,6 +10,7 @@ import (
 	"github.com/GregMSThompson/finance-backend/internal/dto"
 	"github.com/GregMSThompson/finance-backend/internal/errs"
 	"github.com/GregMSThompson/finance-backend/internal/models"
+	"github.com/GregMSThompson/finance-backend/pkg/clock"
 	"github.com/GregMSThompson/finance-backend/pkg/helpers"
 )
 
@@ -38,11 +39,10 @@ type dashboardService struct {
 	store        dashboardStore
 	analytics    dashboardAnalytics
 	transactions dashboardTransactions
-	clockNow     func() time.Time
 }
 
 func NewDashboardService(store dashboardStore, analytics dashboardAnalytics, transactions dashboardTransactions) *dashboardService {
-	return &dashboardService{store: store, analytics: analytics, transactions: transactions, clockNow: time.Now}
+	return &dashboardService{store: store, analytics: analytics, transactions: transactions}
 }
 
 func (s *dashboardService) GetDashboard(ctx context.Context, uid string) ([]*models.Widget, error) {
@@ -137,12 +137,12 @@ func (s *dashboardService) GetWidgetData(ctx context.Context, uid, widgetID stri
 	return dto.WidgetDataResponse{
 		WidgetID:    widgetID,
 		Data:        data,
-		LastUpdated: s.clockNow(),
+		LastUpdated: clock.Now(ctx),
 	}, nil
 }
 
 func (s *dashboardService) fetchTopSpenders(ctx context.Context, uid string, cfg models.WidgetConfig) (dto.TopSpendersData, error) {
-	from, to, err := resolveDateRange(*cfg.DateRange, s.clockNow())
+	from, to, err := resolveDateRange(*cfg.DateRange, clock.Now(ctx))
 	if err != nil {
 		return dto.TopSpendersData{}, err
 	}
@@ -181,9 +181,9 @@ func (s *dashboardService) fetchSpendingTrend(ctx context.Context, uid string, c
 	var from, to string
 	var err error
 	if cfg.DateRange != nil {
-		from, to, err = resolveDateRange(*cfg.DateRange, s.clockNow())
+		from, to, err = resolveDateRange(*cfg.DateRange, clock.Now(ctx))
 	} else {
-		from, to, err = resolveWindow(cfg.Window, s.clockNow())
+		from, to, err = resolveWindow(cfg.Window, clock.Now(ctx))
 	}
 	if err != nil {
 		return dto.AnalyticsMovingAverageResult{}, err
@@ -205,7 +205,7 @@ func (s *dashboardService) fetchPeriodComparison(ctx context.Context, uid string
 		currFrom, currTo = cfg.CurrentRange.StartDate, cfg.CurrentRange.EndDate
 		prevFrom, prevTo = cfg.PreviousRange.StartDate, cfg.PreviousRange.EndDate
 	} else {
-		currFrom, currTo, prevFrom, prevTo, err = resolvePeriodPreset(cfg.Preset, s.clockNow())
+		currFrom, currTo, prevFrom, prevTo, err = resolvePeriodPreset(cfg.Preset, clock.Now(ctx))
 		if err != nil {
 			return dto.PeriodComparisonWidgetData{}, err
 		}
@@ -244,7 +244,7 @@ func (s *dashboardService) fetchPeriodComparison(ctx context.Context, uid string
 }
 
 func (s *dashboardService) fetchLargestTransactions(ctx context.Context, uid string, cfg models.WidgetConfig) (dto.LargestTransactionsData, error) {
-	from, to, err := resolveDateRange(*cfg.DateRange, s.clockNow())
+	from, to, err := resolveDateRange(*cfg.DateRange, clock.Now(ctx))
 	if err != nil {
 		return dto.LargestTransactionsData{}, err
 	}
@@ -278,12 +278,12 @@ func (s *dashboardService) fetchRecurringSubscriptions(ctx context.Context, uid 
 	var from, to string
 	if cfg.DateRange != nil {
 		var err error
-		from, to, err = resolveDateRange(*cfg.DateRange, s.clockNow())
+		from, to, err = resolveDateRange(*cfg.DateRange, clock.Now(ctx))
 		if err != nil {
 			return dto.RecurringSubscriptionsData{}, err
 		}
 	} else {
-		now := s.clockNow()
+		now := clock.Now(ctx)
 		from = helpers.FormatDate(now.AddDate(0, -6, 0))
 		to = helpers.FormatDate(now)
 	}

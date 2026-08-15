@@ -2,13 +2,13 @@ package store
 
 import (
 	"context"
-	"time"
 
 	"cloud.google.com/go/firestore"
 	"google.golang.org/api/iterator"
 
 	"github.com/GregMSThompson/finance-backend/internal/errs"
 	"github.com/GregMSThompson/finance-backend/internal/models"
+	"github.com/GregMSThompson/finance-backend/pkg/clock"
 )
 
 type accountStore struct {
@@ -33,7 +33,7 @@ func (s *accountStore) UpsertBatch(ctx context.Context, uid, bankID string, acco
 
 	bw := s.client.BulkWriter(ctx)
 	jobs := make([]*firestore.BulkWriterJob, 0, len(accounts))
-	now := time.Now()
+	now := clock.Now(ctx)
 
 	for _, a := range accounts {
 		a.UpdatedAt = now

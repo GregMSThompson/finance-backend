@@ -16,6 +16,7 @@ func NewWorkerRouter(deps *taskhandlers.Deps) chi.Router {
 	ctMw := middleware.NewCloudTasksMiddleware(deps.Audience, deps.AppEnv, deps.TestAPIKey, deps.TestAPIKeyEnabled, deps.ResponseHandler)
 
 	r.Use(chimiddleware.RequestID)
+	r.Use(middleware.Clock)
 	r.Use(loggerMw.LoggerMiddleware)
 	r.Use(ctMw.CloudTasksAuth)
 	r.Use(chimiddleware.Logger)

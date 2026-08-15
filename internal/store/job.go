@@ -3,7 +3,6 @@ package store
 import (
 	"context"
 	"encoding/json"
-	"time"
 
 	"cloud.google.com/go/firestore"
 	"google.golang.org/grpc/codes"
@@ -11,6 +10,7 @@ import (
 
 	"github.com/GregMSThompson/finance-backend/internal/errs"
 	"github.com/GregMSThompson/finance-backend/internal/models"
+	"github.com/GregMSThompson/finance-backend/pkg/clock"
 )
 
 type jobStore struct {
@@ -22,7 +22,7 @@ func NewJobStore(client *firestore.Client) *jobStore {
 }
 
 func (s *jobStore) Create(ctx context.Context, uid string, j *models.Job) error {
-	now := time.Now()
+	now := clock.Now(ctx)
 	if j.CreatedAt.IsZero() {
 		j.CreatedAt = now
 	}
@@ -52,7 +52,7 @@ func (s *jobStore) Get(ctx context.Context, uid, jobID string) (*models.Job, err
 func (s *jobStore) MarkRunning(ctx context.Context, uid, jobID string) error {
 	_, err := s.collection(uid).Doc(jobID).Update(ctx, []firestore.Update{
 		{Path: "status", Value: models.JobStatusRunning},
-		{Path: "updatedAt", Value: time.Now()},
+		{Path: "updatedAt", Value: clock.Now(ctx)},
 	})
 	if err != nil {
 		return errs.NewDatabaseError("update", "failed to mark job running", err)
@@ -61,7 +61,7 @@ func (s *jobStore) MarkRunning(ctx context.Context, uid, jobID string) error {
 }
 
 func (s *jobStore) MarkCompleted(ctx context.Context, uid, jobID string, result json.RawMessage) error {
-	now := time.Now()
+	now := clock.Now(ctx)
 	_, err := s.collection(uid).Doc(jobID).Update(ctx, []firestore.Update{
 		{Path: "status", Value: models.JobStatusCompleted},
 		{Path: "result", Value: result},
@@ -75,7 +75,7 @@ func (s *jobStore) MarkCompleted(ctx context.Context, uid, jobID string, result 
 }
 
 func (s *jobStore) MarkFailed(ctx context.Context, uid, jobID, errMsg string) error {
-	now := time.Now()
+	now := clock.Now(ctx)
 	_, err := s.collection(uid).Doc(jobID).Update(ctx, []firestore.Update{
 		{Path: "status", Value: models.JobStatusFailed},
 		{Path: "error", Value: errMsg},

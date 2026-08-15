@@ -9,20 +9,11 @@ import (
 	"github.com/GregMSThompson/finance-backend/internal/dto"
 	"github.com/GregMSThompson/finance-backend/internal/errs"
 	"github.com/GregMSThompson/finance-backend/internal/models"
+	"github.com/GregMSThompson/finance-backend/pkg/clock"
 )
 
-// fixedClock returns a constructor option that overrides the service clock with a fixed time.
-func withFixedClock(t time.Time) func(*dashboardService) {
-	return func(s *dashboardService) { s.clockNow = func() time.Time { return t } }
-}
-
-// newSvc creates a dashboardService with optional overrides applied.
-func newSvc(store dashboardStore, an dashboardAnalytics, opts ...func(*dashboardService)) *dashboardService {
-	s := NewDashboardService(store, an, &fakeTransactionsLister{})
-	for _, o := range opts {
-		o(s)
-	}
-	return s
+func dashboardContextAt(now time.Time) context.Context {
+	return clock.WithClock(context.Background(), func() time.Time { return now })
 }
 
 // --- Fakes ---
@@ -101,17 +92,17 @@ func (f *fakeDashboardStore) BulkUpdatePositions(_ context.Context, _ string, po
 }
 
 type fakeDashboardAnalytics struct {
-	topNResult       dto.AnalyticsTopNResult
-	topNErr          error
-	movingAvgResult  dto.AnalyticsMovingAverageResult
-	movingAvgErr     error
-	periodResult     dto.AnalyticsPeriodComparisonResult
-	periodErr        error
-	recurringResult  dto.RecurringTransactionsResult
-	recurringErr     error
-	lastTopNArgs     dto.AnalyticsTopNArgs
+	topNResult        dto.AnalyticsTopNResult
+	topNErr           error
+	movingAvgResult   dto.AnalyticsMovingAverageResult
+	movingAvgErr      error
+	periodResult      dto.AnalyticsPeriodComparisonResult
+	periodErr         error
+	recurringResult   dto.RecurringTransactionsResult
+	recurringErr      error
+	lastTopNArgs      dto.AnalyticsTopNArgs
 	lastMovingAvgArgs dto.AnalyticsMovingAverageArgs
-	lastPeriodArgs   dto.AnalyticsPeriodComparisonArgs
+	lastPeriodArgs    dto.AnalyticsPeriodComparisonArgs
 	lastRecurringArgs dto.AnalyticsRecurringArgs
 }
 
@@ -528,9 +519,9 @@ func TestGetWidgetData_RecurringSubscriptions(t *testing.T) {
 		},
 	}
 	fixedNow := time.Date(2026, 3, 15, 12, 0, 0, 0, time.UTC)
-	svc := newSvc(store, an, withFixedClock(fixedNow))
+	svc := NewDashboardService(store, an, &fakeTransactionsLister{})
 
-	resp, err := svc.GetWidgetData(context.Background(), "uid1", "w1")
+	resp, err := svc.GetWidgetData(dashboardContextAt(fixedNow), "uid1", "w1")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -763,7 +754,6 @@ func TestAddWidget_PeriodComparison_CustomRanges(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
-
 
 func TestAddWidget_PeriodComparison_BothPresetAndCustom(t *testing.T) {
 	svc := NewDashboardService(newFakeStore(), &fakeDashboardAnalytics{}, &fakeTransactionsLister{})

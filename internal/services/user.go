@@ -3,11 +3,11 @@ package services
 import (
 	"context"
 	"strings"
-	"time"
 
 	"github.com/GregMSThompson/finance-backend/internal/dto"
 	"github.com/GregMSThompson/finance-backend/internal/errs"
 	"github.com/GregMSThompson/finance-backend/internal/models"
+	"github.com/GregMSThompson/finance-backend/pkg/clock"
 	"github.com/GregMSThompson/finance-backend/pkg/logger"
 )
 
@@ -42,7 +42,7 @@ func (s *userService) SetFCMToken(ctx context.Context, uid string, req dto.SetFC
 	}
 
 	user.FCMToken = req.Token
-	user.UpdatedAt = time.Now()
+	user.UpdatedAt = clock.Now(ctx)
 
 	if err := s.Store.UpdateUser(ctx, user); err != nil {
 		log.Error("failed to update fcm token", "error", err)
@@ -72,8 +72,8 @@ func (s *userService) CreateUser(ctx context.Context, uid, email string, req dto
 		Email:     email,
 		FirstName: req.FirstName,
 		LastName:  req.LastName,
-		CreatedAt: time.Now(),
-		UpdatedAt: time.Now(),
+		CreatedAt: clock.Now(ctx),
+		UpdatedAt: clock.Now(ctx),
 	}
 
 	err := s.Store.CreateUser(ctx, user)

@@ -9,8 +9,13 @@ import (
 	"github.com/GregMSThompson/finance-backend/internal/dto"
 	"github.com/GregMSThompson/finance-backend/internal/errs"
 	"github.com/GregMSThompson/finance-backend/internal/models"
+	"github.com/GregMSThompson/finance-backend/pkg/clock"
 	"github.com/GregMSThompson/finance-backend/pkg/helpers"
 )
+
+func goalContextAt(now time.Time) context.Context {
+	return clock.WithClock(context.Background(), func() time.Time { return now })
+}
 
 // --- fakes ---
 
@@ -370,10 +375,9 @@ func TestListGoalTransactions_ScopesToWindowAndFilters(t *testing.T) {
 		Transactions: []models.Transaction{{TransactionID: "t1"}},
 	}}
 	svc := NewGoalService(goals, &fakeGoalSnapshotStore{}, &fakeJobs{}, tx)
-	svc.clockNow = func() time.Time { return time.Date(2026, time.August, 15, 12, 0, 0, 0, time.UTC) }
 
 	cursor := "cur"
-	res, err := svc.ListGoalTransactions(context.Background(), "uid1", "g1", &cursor, 25)
+	res, err := svc.ListGoalTransactions(goalContextAt(time.Date(2026, time.August, 15, 12, 0, 0, 0, time.UTC)), "uid1", "g1", &cursor, 25)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -417,9 +421,8 @@ func TestListGoalTransactions_CapsAtWindowEnd(t *testing.T) {
 	goals := &fakeGoalStore{goals: map[string]*models.Goal{"g1": g}}
 	tx := &fakeTransactionsLister{}
 	svc := NewGoalService(goals, &fakeGoalSnapshotStore{}, &fakeJobs{}, tx)
-	svc.clockNow = func() time.Time { return time.Date(2026, time.August, 15, 12, 0, 0, 0, time.UTC) }
 
-	if _, err := svc.ListGoalTransactions(context.Background(), "uid1", "g1", nil, 50); err != nil {
+	if _, err := svc.ListGoalTransactions(goalContextAt(time.Date(2026, time.August, 15, 12, 0, 0, 0, time.UTC)), "uid1", "g1", nil, 50); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if helpers.Value(tx.args.DateFrom) != "2026-06-01" || helpers.Value(tx.args.DateTo) != "2026-06-30" {

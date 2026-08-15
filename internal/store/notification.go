@@ -2,7 +2,6 @@ package store
 
 import (
 	"context"
-	"time"
 
 	"cloud.google.com/go/firestore"
 	"google.golang.org/grpc/codes"
@@ -10,6 +9,7 @@ import (
 
 	"github.com/GregMSThompson/finance-backend/internal/errs"
 	"github.com/GregMSThompson/finance-backend/internal/models"
+	"github.com/GregMSThompson/finance-backend/pkg/clock"
 )
 
 type notificationStore struct {
@@ -27,7 +27,7 @@ func (s *notificationStore) collection(uid string) *firestore.CollectionRef {
 // Create writes a new notification. CreatedAt is set to now if zero.
 func (s *notificationStore) Create(ctx context.Context, uid string, n *models.Notification) error {
 	if n.CreatedAt.IsZero() {
-		n.CreatedAt = time.Now()
+		n.CreatedAt = clock.Now(ctx)
 	}
 	_, err := s.collection(uid).Doc(n.NotificationID).Set(ctx, n)
 	if err != nil {
@@ -72,7 +72,7 @@ func (s *notificationStore) ListRecent(ctx context.Context, uid string, limit in
 // MarkDelivered sets DeliveredAt to the current time.
 func (s *notificationStore) MarkDelivered(ctx context.Context, uid, notificationID string) error {
 	_, err := s.collection(uid).Doc(notificationID).Update(ctx, []firestore.Update{
-		{Path: "deliveredAt", Value: time.Now()},
+		{Path: "deliveredAt", Value: clock.Now(ctx)},
 	})
 	if err != nil {
 		return errs.NewDatabaseError("update", "failed to mark notification delivered", err)

@@ -12,6 +12,7 @@ import (
 	"github.com/GregMSThompson/finance-backend/internal/errs"
 	"github.com/GregMSThompson/finance-backend/internal/models"
 	"github.com/GregMSThompson/finance-backend/internal/taxonomy"
+	"github.com/GregMSThompson/finance-backend/pkg/clock"
 	"github.com/GregMSThompson/finance-backend/pkg/helpers"
 	"github.com/GregMSThompson/finance-backend/pkg/logger"
 )
@@ -103,8 +104,8 @@ type aiGetTransactionsArgs struct {
 type aiStore interface {
 	SaveMessage(ctx context.Context, uid, sessionID string, msg models.AIMessage) error
 	ListMessages(ctx context.Context, uid, sessionID string, limit int) ([]models.AIMessage, error)
-	CreateSession(ctx context.Context, uid, sessionID, title string, now time.Time) error
-	TouchSession(ctx context.Context, uid, sessionID string, now time.Time) error
+	CreateSession(ctx context.Context, uid, sessionID, title string) error
+	TouchSession(ctx context.Context, uid, sessionID string) error
 }
 
 type aiService struct {
@@ -113,7 +114,6 @@ type aiService struct {
 	transactions aiTransactions
 	goals        aiGoals
 	store        aiStore
-	clockNow     func() time.Time
 }
 
 func NewAIService(vertex vertexClient, analysis analyticsClient, transactions aiTransactions, goals aiGoals, store aiStore) *aiService {
@@ -123,7 +123,6 @@ func NewAIService(vertex vertexClient, analysis analyticsClient, transactions ai
 		transactions: transactions,
 		goals:        goals,
 		store:        store,
-		clockNow:     time.Now,
 	}
 }
 
@@ -139,7 +138,7 @@ func (s *aiService) Query(ctx context.Context, uid string, q dto.AIQueryRequest)
 	// we create its metadata document (title from this first message).
 	isNewSession := len(history) == 0
 
-	now := s.clockNow()
+	now := clock.Now(ctx)
 	contents := convertMessagesToContents(history, q.Message)
 	var lastToolCall *dto.VertexToolCall
 
@@ -288,14 +287,12 @@ func (s *aiService) finishQuery(ctx context.Context, uid string, q dto.AIQueryRe
 	}
 
 	// Session metadata is best-effort: the answer is already produced, so a
-	// metadata failure is logged, not surfaced. The timestamp comes from the
-	// service clock, matching how messages are stamped.
-	now := s.clockNow()
+	// metadata failure is logged, not surfaced.
 	if isNewSession {
-		if err := s.store.CreateSession(ctx, uid, q.SessionID, sessionTitle(q.Message), now); err != nil {
+		if err := s.store.CreateSession(ctx, uid, q.SessionID, sessionTitle(q.Message)); err != nil {
 			log.Warn("failed to create AI session metadata", "session_id", q.SessionID, "error", err)
 		}
-	} else if err := s.store.TouchSession(ctx, uid, q.SessionID, now); err != nil {
+	} else if err := s.store.TouchSession(ctx, uid, q.SessionID); err != nil {
 		log.Warn("failed to update AI session metadata", "session_id", q.SessionID, "error", err)
 	}
 
@@ -369,7 +366,7 @@ func convertMessagesToContents(history []models.AIMessage, currentMessage string
 
 func (s *aiService) saveMessage(ctx context.Context, uid, sessionID string, msg models.AIMessage) error {
 	if msg.CreatedAt.IsZero() {
-		msg.CreatedAt = s.clockNow()
+		msg.CreatedAt = clock.Now(ctx)
 	}
 	return s.store.SaveMessage(ctx, uid, sessionID, msg)
 }
@@ -412,13 +409,13 @@ func (s *aiService) executeTool(ctx context.Context, uid, sessionID string, call
 		if err != nil {
 			return dto.VertexToolResult{}, err
 		}
-		if err := s.applyDefaults(&raw.Pending, &raw.DateFrom, &raw.DateTo); err != nil {
+		if err := s.applyDefaults(ctx, &raw.Pending, &raw.DateFrom, &raw.DateTo); err != nil {
 			return dto.VertexToolResult{}, err
 		}
 		if err := validatePrimary(raw.PFCPrimary); err != nil {
 			return dto.VertexToolResult{}, err
 		}
-		if err := s.validateMaxDateRange(raw.DateFrom, raw.DateTo); err != nil {
+		if err := s.validateMaxDateRange(ctx, raw.DateFrom, raw.DateTo); err != nil {
 			return dto.VertexToolResult{}, err
 		}
 		if raw.Limit <= 0 {
@@ -636,7 +633,7 @@ func executeAnalyticsTool[T any, R any](
 	dateTo func(*T) **string,
 	primary func(*T) *string,
 	validate func(*T) error,
-	applyDefaults func(pending **bool, dateFrom **string, dateTo **string) error,
+	applyDefaults func(ctx context.Context, pending **bool, dateFrom **string, dateTo **string) error,
 	exec func(context.Context, string, T) (R, error),
 ) (dto.VertexToolResult, error) {
 	// This helper centralizes shared tool prep (decode, defaults, primary validation) across
@@ -647,7 +644,7 @@ func executeAnalyticsTool[T any, R any](
 	if err != nil {
 		return dto.VertexToolResult{}, err
 	}
-	if err := applyDefaults(pending(&args), dateFrom(&args), dateTo(&args)); err != nil {
+	if err := applyDefaults(ctx, pending(&args), dateFrom(&args), dateTo(&args)); err != nil {
 		return dto.VertexToolResult{}, err
 	}
 	if err := validatePrimary(primary(&args)); err != nil {
@@ -955,13 +952,13 @@ func decodeArgs[T any](args map[string]any) (T, error) {
 	return out, nil
 }
 
-func (s *aiService) applyDefaults(pending **bool, dateFrom **string, dateTo **string) error {
+func (s *aiService) applyDefaults(ctx context.Context, pending **bool, dateFrom **string, dateTo **string) error {
 	if *pending == nil {
 		*pending = helpers.Ptr(false)
 	}
 
 	if (dateFrom == nil || *dateFrom == nil || **dateFrom == "") && (dateTo == nil || *dateTo == nil || **dateTo == "") {
-		now := s.clockNow()
+		now := clock.Now(ctx)
 		start := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, now.Location())
 		*dateFrom = helpers.Ptr(helpers.FormatDate(start))
 		*dateTo = helpers.Ptr(helpers.FormatDate(now))
@@ -983,8 +980,8 @@ func validatePrimary(primary *string) error {
 // validateMaxDateRange rejects get_transactions windows wider than
 // maxTransactionDateRange. A missing dateTo is treated as today; a missing
 // dateFrom is rejected outright, since an open-ended past is unbounded.
-func (s *aiService) validateMaxDateRange(dateFrom, dateTo *string) error {
-	toTime := s.clockNow()
+func (s *aiService) validateMaxDateRange(ctx context.Context, dateFrom, dateTo *string) error {
+	toTime := clock.Now(ctx)
 	if dateTo != nil && *dateTo != "" {
 		t, err := helpers.ParseDate(*dateTo)
 		if err != nil {

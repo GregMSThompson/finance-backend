@@ -17,6 +17,7 @@ func NewAPIRouter(deps *handlers.Deps) chi.Router {
 	plaidWebhookMw := middleware.NewPlaidWebhookMiddleware(deps.PlaidVerifier, deps.ResponseHandler)
 
 	r.Use(chimiddleware.RequestID)
+	r.Use(middleware.Clock)
 	r.Use(loggerMw.LoggerMiddleware)
 	r.Use(chimiddleware.Logger)
 	r.Use(chimiddleware.Recoverer)
