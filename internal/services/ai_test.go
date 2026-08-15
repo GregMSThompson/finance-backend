@@ -791,16 +791,13 @@ func TestGetConversation(t *testing.T) {
 	}
 }
 
-func TestGetConversationEmptyIsNonNilSlice(t *testing.T) {
+func TestGetConversationUnknownReturnsNotFound(t *testing.T) {
 	svc := NewAIService(&fakeVertexClient{}, &fakeAnalyticsClient{}, &fakeTransactionsLister{}, &fakeGoalsService{}, &fakeAIStore{})
 
-	res, err := svc.GetConversation(helpers.TestCtx(), "user", "unknown", 100)
-	if err != nil {
-		t.Fatalf("GetConversation error: %v", err)
-	}
-	// Non-nil so it serializes as [] rather than null.
-	if res.Messages == nil || len(res.Messages) != 0 {
-		t.Fatalf("expected empty non-nil messages, got %#v", res.Messages)
+	_, err := svc.GetConversation(helpers.TestCtx(), "user", "unknown", 100)
+	var nf *errs.NotFoundError
+	if !errors.As(err, &nf) {
+		t.Fatalf("expected NotFoundError for a session with no messages, got %v", err)
 	}
 }
 

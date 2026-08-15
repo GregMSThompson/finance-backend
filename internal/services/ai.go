@@ -231,6 +231,10 @@ func (s *aiService) GetConversation(ctx context.Context, uid, sessionID string, 
 		return dto.AIConversationResponse{}, err
 	}
 
+	if len(msgs) == 0 {
+		return dto.AIConversationResponse{}, errs.NewNotFoundError("conversation not found")
+	}
+
 	out := dto.AIConversationResponse{
 		SessionID: sessionID,
 		Messages:  make([]dto.AIMessageView, 0, len(msgs)),
