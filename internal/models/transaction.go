@@ -9,7 +9,7 @@ type Transaction struct {
 	BankID         string    `firestore:"bankId" json:"bankId"`               // Plaid item_id
 	AccountID      string    `firestore:"accountId" json:"accountId"`          // Plaid account_id
 	Name           string    `firestore:"name" json:"name"`
-	Amount         float64   `firestore:"amount" json:"amount"`
+	AmountMinor    int64     `firestore:"amountMinor" json:"amountMinor"` // integer minor units (e.g. cents); converted from Plaid's major-unit float at ingestion
 	Currency       string    `firestore:"currency" json:"currency"`
 	Pending        bool      `firestore:"pending" json:"pending"`
 	Date           string    `firestore:"date" json:"date"` // YYYY-MM-DD as Plaid returns

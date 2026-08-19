@@ -10,6 +10,8 @@ import (
 	"github.com/GregMSThompson/finance-backend/internal/dto"
 	"github.com/GregMSThompson/finance-backend/internal/errs"
 	"github.com/GregMSThompson/finance-backend/internal/models"
+	"github.com/GregMSThompson/finance-backend/pkg/helpers"
+	"github.com/GregMSThompson/finance-backend/pkg/logger"
 )
 
 type Adapter struct {
@@ -155,16 +157,31 @@ func (a *Adapter) SyncTransactions(ctx context.Context, bankID string, accessTok
 
 	txs := make([]models.Transaction, 0, len(resp.GetAdded())+len(resp.GetModified()))
 	now := time.Now()
+	log := logger.FromContext(ctx)
 
-	convert := func(plaidTx plaid.Transaction) models.Transaction {
+	// convert maps a Plaid transaction into our model, normalising Plaid's
+	// major-unit float amount into integer minor units at this ingestion boundary
+	// so no float amount is ever stored. Returns ok=false for transactions we
+	// can't convert (unsupported currency) so the caller can skip them.
+	convert := func(plaidTx plaid.Transaction) (models.Transaction, bool) {
+		currency := plaidTx.GetIsoCurrencyCode()
+		amountMinor, err := helpers.ToMinorUnits(plaidTx.GetAmount(), currency)
+		if err != nil {
+			// Carry on and log: one unsupported-currency transaction must not wedge
+			// the whole sync. USD-only for now.
+			log.Warn("skipping transaction with unsupported currency",
+				"transaction_id", plaidTx.GetTransactionId(),
+				"currency", currency)
+			return models.Transaction{}, false
+		}
 		pfc := plaidTx.GetPersonalFinanceCategory()
 		return models.Transaction{
 			TransactionID:  plaidTx.GetTransactionId(),
 			BankID:         bankID,
 			AccountID:      plaidTx.GetAccountId(),
 			Name:           plaidTx.GetName(),
-			Amount:         plaidTx.GetAmount(),
-			Currency:       plaidTx.GetIsoCurrencyCode(),
+			AmountMinor:    amountMinor,
+			Currency:       currency,
 			Pending:        plaidTx.GetPending(),
 			Date:           plaidTx.GetDate(),
 			AuthorizedDate: plaidTx.GetAuthorizedDate(),
@@ -175,14 +192,18 @@ func (a *Adapter) SyncTransactions(ctx context.Context, bankID string, accessTok
 			PFCIconURL:     plaidTx.GetPersonalFinanceCategoryIconUrl(),
 			CreatedAt:      now,
 			UpdatedAt:      now,
-		}
+		}, true
 	}
 
 	for _, t := range resp.GetAdded() {
-		txs = append(txs, convert(t))
+		if tx, ok := convert(t); ok {
+			txs = append(txs, tx)
+		}
 	}
 	for _, t := range resp.GetModified() {
-		txs = append(txs, convert(t))
+		if tx, ok := convert(t); ok {
+			txs = append(txs, tx)
+		}
 	}
 
 	page.Transactions = txs
