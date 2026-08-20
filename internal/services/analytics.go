@@ -3,6 +3,8 @@ package services
 import (
 	"context"
 	"fmt"
+	"math"
+	"slices"
 	"sort"
 	"sync"
 
@@ -31,7 +33,7 @@ func (s *analyticsService) GetSpendTotal(ctx context.Context, uid string, args d
 		To:   helpers.Value(args.DateTo),
 	}
 
-	var total float64
+	var total int64
 	var currency string
 	if err := s.txs.Query(ctx, uid, dto.TransactionQuery{
 		Pending:      args.Pending,
@@ -47,7 +49,7 @@ func (s *analyticsService) GetSpendTotal(ctx context.Context, uid string, args d
 		if args.PFCPrimary == nil && taxonomy.IsNonSpendCategory(tx.PFCPrimary) {
 			return nil
 		}
-		total += tx.Amount
+		total += tx.AmountMinor
 		if currency == "" && tx.Currency != "" {
 			currency = tx.Currency
 		}
@@ -56,7 +58,7 @@ func (s *analyticsService) GetSpendTotal(ctx context.Context, uid string, args d
 		return result, err
 	}
 
-	result.Total = total
+	result.TotalMinor = total
 	result.Currency = currency
 	return result, nil
 }
@@ -144,29 +146,30 @@ func (s *analyticsService) GetPeriodComparison(ctx context.Context, uid string, 
 	}
 
 	result.Current = dto.PeriodSummary{
-		Total:    currentData.total,
-		Count:    currentData.count,
-		Currency: currentData.currency,
-		From:     args.CurrentFrom,
-		To:       args.CurrentTo,
-		Items:    currentItems,
+		TotalMinor: currentData.total,
+		Count:      currentData.count,
+		Currency:   currentData.currency,
+		From:       args.CurrentFrom,
+		To:         args.CurrentTo,
+		Items:      currentItems,
 	}
 	result.Previous = dto.PeriodSummary{
-		Total:    previousData.total,
-		Count:    previousData.count,
-		Currency: previousData.currency,
-		From:     args.PreviousFrom,
-		To:       args.PreviousTo,
-		Items:    previousItems,
+		TotalMinor: previousData.total,
+		Count:      previousData.count,
+		Currency:   previousData.currency,
+		From:       args.PreviousFrom,
+		To:         args.PreviousTo,
+		Items:      previousItems,
 	}
 	result.Change = buildChange(currentData, previousData, args.GroupBy)
 
 	return result, nil
 }
 
-// periodData holds the accumulated totals for a single query period.
+// periodData holds the accumulated totals for a single query period. total is in
+// integer minor units.
 type periodData struct {
-	total    float64
+	total    int64
 	count    int
 	currency string
 	items    map[string]*dto.AnalyticsBreakdownItem
@@ -179,7 +182,7 @@ func collectPeriod(ctx context.Context, store transactionAnalyticsStore, uid str
 		items: map[string]*dto.AnalyticsBreakdownItem{},
 	}
 	err := store.Query(ctx, uid, q, func(tx *models.Transaction) error {
-		data.total += tx.Amount
+		data.total += tx.AmountMinor
 		data.count++
 		if data.currency == "" && tx.Currency != "" {
 			data.currency = tx.Currency
@@ -192,7 +195,7 @@ func collectPeriod(ctx context.Context, store transactionAnalyticsStore, uid str
 					item = &dto.AnalyticsBreakdownItem{Key: key}
 					data.items[key] = item
 				}
-				item.Total += tx.Amount
+				item.TotalMinor += tx.AmountMinor
 				item.Count++
 			}
 		}
@@ -203,9 +206,9 @@ func collectPeriod(ctx context.Context, store transactionAnalyticsStore, uid str
 
 func buildChange(current, previous periodData, groupBy string) dto.PeriodChange {
 	change := dto.PeriodChange{
-		AbsoluteChange:   current.total - previous.total,
-		PercentageChange: percentageChange(current.total, previous.total),
-		CountChange:      current.count - previous.count,
+		AbsoluteChangeMinor: current.total - previous.total,
+		PercentageChange:    percentageChange(current.total, previous.total),
+		CountChange:         current.count - previous.count,
 	}
 
 	if groupBy != "" {
@@ -218,25 +221,25 @@ func buildChange(current, previous periodData, groupBy string) dto.PeriodChange 
 		}
 
 		for key := range keys {
-			var currTotal float64
+			var currTotal int64
 			var currCount int
-			var prevTotal float64
+			var prevTotal int64
 			var prevCount int
 
 			if item := current.items[key]; item != nil {
-				currTotal = item.Total
+				currTotal = item.TotalMinor
 				currCount = item.Count
 			}
 			if item := previous.items[key]; item != nil {
-				prevTotal = item.Total
+				prevTotal = item.TotalMinor
 				prevCount = item.Count
 			}
 
 			change.Items = append(change.Items, dto.BreakdownItemChange{
-				Key:              key,
-				AbsoluteChange:   currTotal - prevTotal,
-				PercentageChange: percentageChange(currTotal, prevTotal),
-				CountChange:      currCount - prevCount,
+				Key:                 key,
+				AbsoluteChangeMinor: currTotal - prevTotal,
+				PercentageChange:    percentageChange(currTotal, prevTotal),
+				CountChange:         currCount - prevCount,
 			})
 		}
 	}
@@ -253,10 +256,10 @@ func (s *analyticsService) GetRecurringTransactions(ctx context.Context, uid str
 
 	type merchantGroup struct {
 		dates      []string
-		amounts    []float64
+		amounts    []int64
 		currency   string
 		lastDate   string
-		lastAmount float64
+		lastAmount int64
 	}
 
 	pending := false
@@ -274,20 +277,20 @@ func (s *analyticsService) GetRecurringTransactions(ctx context.Context, uid str
 			groups[tx.Name] = g
 		}
 		g.dates = append(g.dates, tx.Date)
-		g.amounts = append(g.amounts, tx.Amount)
+		g.amounts = append(g.amounts, tx.AmountMinor)
 		if g.currency == "" && tx.Currency != "" {
 			g.currency = tx.Currency
 		}
 		if tx.Date >= g.lastDate {
 			g.lastDate = tx.Date
-			g.lastAmount = tx.Amount
+			g.lastAmount = tx.AmountMinor
 		}
 		return nil
 	}); err != nil {
 		return result, err
 	}
 
-	var totalMonthly float64
+	var totalMonthly int64
 	var currency string
 
 	for name, g := range groups {
@@ -313,15 +316,15 @@ func (s *analyticsService) GetRecurringTransactions(ctx context.Context, uid str
 		monthly := recurringMonthlyEquivalent(typical, freq)
 
 		result.Items = append(result.Items, dto.RecurringItem{
-			Merchant:          name,
-			Frequency:         freq,
-			TypicalAmount:     typical,
-			AmountIsVariable:  variable,
-			Currency:          g.currency,
-			OccurrenceCount:   len(g.dates),
-			LastDate:          g.lastDate,
-			LastAmount:        g.lastAmount,
-			MonthlyEquivalent: monthly,
+			Merchant:               name,
+			Frequency:              freq,
+			TypicalAmountMinor:     typical,
+			AmountIsVariable:       variable,
+			Currency:               g.currency,
+			OccurrenceCount:        len(g.dates),
+			LastDate:               g.lastDate,
+			LastAmountMinor:        g.lastAmount,
+			MonthlyEquivalentMinor: monthly,
 		})
 		totalMonthly += monthly
 		if currency == "" && g.currency != "" {
@@ -329,7 +332,7 @@ func (s *analyticsService) GetRecurringTransactions(ctx context.Context, uid str
 		}
 	}
 
-	result.TotalMonthlyEquivalent = totalMonthly
+	result.TotalMonthlyEquivalentMinor = totalMonthly
 	result.Currency = currency
 	return result, nil
 }
@@ -362,19 +365,20 @@ func medianInt(vals []int) int {
 	return sorted[len(sorted)/2]
 }
 
-// amountStats returns the median amount and whether the spread exceeds 10% of the median.
-func amountStats(amounts []float64) (median float64, variable bool) {
-	sorted := make([]float64, len(amounts))
-	copy(sorted, amounts)
-	sort.Float64s(sorted)
+// amountStats returns the median amount (in minor units) and whether the spread
+// exceeds 10% of the median. The even-count median is rounded to the nearest
+// minor unit so the result stays an integer amount.
+func amountStats(amounts []int64) (median int64, variable bool) {
+	sorted := slices.Clone(amounts)
+	sort.Slice(sorted, func(i, j int) bool { return sorted[i] < sorted[j] })
 	n := len(sorted)
 	if n%2 == 0 {
-		median = (sorted[n/2-1] + sorted[n/2]) / 2
+		median = int64(math.Round(float64(sorted[n/2-1]+sorted[n/2]) / 2))
 	} else {
 		median = sorted[n/2]
 	}
 	if median > 0 {
-		variable = (sorted[n-1]-sorted[0])/median > 0.10
+		variable = float64(sorted[n-1]-sorted[0])/float64(median) > 0.10
 	}
 	return
 }
@@ -395,21 +399,22 @@ func classifyFrequency(medianGap int) string {
 	}
 }
 
-// recurringMonthlyEquivalent normalises an amount to a monthly cost for a given frequency.
-func recurringMonthlyEquivalent(amount float64, frequency string) float64 {
+// recurringMonthlyEquivalent normalises an amount (in minor units) to a monthly
+// cost for a given frequency, rounding back to the nearest minor unit.
+func recurringMonthlyEquivalent(amount int64, frequency string) int64 {
 	switch frequency {
 	case "weekly":
 		// 52 weeks / 12 months = 4.33 recurring charges per month.
-		return amount * 4.33
+		return int64(math.Round(float64(amount) * 4.33))
 	case "biweekly":
 		// 26 biweekly periods / 12 months = 2.17 recurring charges per month.
-		return amount * 2.17
+		return int64(math.Round(float64(amount) * 2.17))
 	case "monthly":
 		// Already monthly, so no adjustment.
 		return amount
 	case "quarterly":
 		// 1 quarterly charge every 3 months, so divide by 3 for monthly equivalent.
-		return amount / 3
+		return int64(math.Round(float64(amount) / 3))
 	default:
 		return 0
 	}
@@ -422,7 +427,7 @@ func (s *analyticsService) GetIncomeVsExpenses(ctx context.Context, uid string, 
 	}
 
 	pending := false
-	var total, income float64
+	var total, income int64
 	var currency string
 
 	if err := s.txs.Query(ctx, uid, dto.TransactionQuery{
@@ -431,9 +436,9 @@ func (s *analyticsService) GetIncomeVsExpenses(ctx context.Context, uid string, 
 		DateFrom:  &args.DateFrom,
 		DateTo:    &args.DateTo,
 	}, func(tx *models.Transaction) error {
-		total += tx.Amount
+		total += tx.AmountMinor
 		if tx.PFCPrimary == "INCOME" {
-			income += tx.Amount
+			income += tx.AmountMinor
 		}
 		if currency == "" && tx.Currency != "" {
 			currency = tx.Currency
@@ -443,9 +448,9 @@ func (s *analyticsService) GetIncomeVsExpenses(ctx context.Context, uid string, 
 		return result, err
 	}
 
-	result.Income = income
-	result.Expenses = total - income
-	result.Net = income - result.Expenses
+	result.IncomeMinor = income
+	result.ExpensesMinor = total - income
+	result.NetMinor = income - result.ExpensesMinor
 	result.Currency = currency
 	return result, nil
 }
@@ -476,7 +481,7 @@ func (s *analyticsService) GetTopN(ctx context.Context, uid string, args dto.Ana
 		return result, err
 	}
 
-	result.TotalSpend = data.total
+	result.TotalSpendMinor = data.total
 	result.Currency = data.currency
 
 	limit := args.Limit
@@ -491,11 +496,11 @@ func (s *analyticsService) GetTopN(ctx context.Context, uid string, args dto.Ana
 		}
 		var pct float64
 		if data.total > 0 {
-			pct = item.Total / data.total * 100
+			pct = float64(item.TotalMinor) / float64(data.total) * 100
 		}
 		items = append(items, dto.TopNItem{
 			Key:        item.Key,
-			Total:      item.Total,
+			TotalMinor: item.TotalMinor,
 			Count:      item.Count,
 			Percentage: pct,
 		})
@@ -503,11 +508,11 @@ func (s *analyticsService) GetTopN(ctx context.Context, uid string, args dto.Ana
 
 	desc := args.Direction != "bottom"
 	sort.Slice(items, func(i, j int) bool {
-		if items[i].Total != items[j].Total {
+		if items[i].TotalMinor != items[j].TotalMinor {
 			if desc {
-				return items[i].Total > items[j].Total
+				return items[i].TotalMinor > items[j].TotalMinor
 			}
-			return items[i].Total < items[j].Total
+			return items[i].TotalMinor < items[j].TotalMinor
 		}
 		if items[i].Count != items[j].Count {
 			if desc {
@@ -537,9 +542,10 @@ func topNGroupBy(dimension string) (string, error) {
 	}
 }
 
-// maBucket holds accumulated spend totals for a single moving-average period bucket.
+// maBucket holds accumulated spend totals (in minor units) for a single
+// moving-average period bucket.
 type maBucket struct {
-	total float64
+	total int64
 	count int
 }
 
@@ -574,12 +580,12 @@ func (s *analyticsService) GetMovingAverage(ctx context.Context, uid string, arg
 	units := maUnits(args.Granularity, daysAnalyzed)
 
 	overallSeries := map[string]*maBucket{}
-	var overallTotal float64
+	var overallTotal int64
 	var overallCount int
 	var currency string
 
 	scopeSeries := map[string]map[string]*maBucket{}
-	scopeTotals := map[string]float64{}
+	scopeTotals := map[string]int64{}
 	scopeCounts := map[string]int{}
 
 	pending := false
@@ -599,9 +605,9 @@ func (s *analyticsService) GetMovingAverage(ctx context.Context, uid string, arg
 		if _, ok := overallSeries[pk]; !ok {
 			overallSeries[pk] = &maBucket{}
 		}
-		overallSeries[pk].total += tx.Amount
+		overallSeries[pk].total += tx.AmountMinor
 		overallSeries[pk].count++
-		overallTotal += tx.Amount
+		overallTotal += tx.AmountMinor
 		overallCount++
 		if currency == "" && tx.Currency != "" {
 			currency = tx.Currency
@@ -616,9 +622,9 @@ func (s *analyticsService) GetMovingAverage(ctx context.Context, uid string, arg
 				if _, ok := scopeSeries[sk][pk]; !ok {
 					scopeSeries[sk][pk] = &maBucket{}
 				}
-				scopeSeries[sk][pk].total += tx.Amount
+				scopeSeries[sk][pk].total += tx.AmountMinor
 				scopeSeries[sk][pk].count++
-				scopeTotals[sk] += tx.Amount
+				scopeTotals[sk] += tx.AmountMinor
 				scopeCounts[sk]++
 			}
 		}
@@ -629,7 +635,7 @@ func (s *analyticsService) GetMovingAverage(ctx context.Context, uid string, arg
 	}
 
 	if units > 0 {
-		result.AveragePerUnit = overallTotal / units
+		result.AveragePerUnitMinor = float64(overallTotal) / units
 	}
 	result.TransactionCount = overallCount
 	result.Currency = currency
@@ -640,13 +646,13 @@ func (s *analyticsService) GetMovingAverage(ctx context.Context, uid string, arg
 		for sk, periods := range scopeSeries {
 			var avg float64
 			if units > 0 {
-				avg = scopeTotals[sk] / units
+				avg = float64(scopeTotals[sk]) / units
 			}
 			items = append(items, dto.MovingAverageItem{
-				Key:              sk,
-				AveragePerUnit:   avg,
-				TransactionCount: scopeCounts[sk],
-				Series:           buildMASeries(periods),
+				Key:                 sk,
+				AveragePerUnitMinor: avg,
+				TransactionCount:    scopeCounts[sk],
+				Series:              buildMASeries(periods),
 			})
 		}
 		sort.Slice(items, func(i, j int) bool { return items[i].Key < items[j].Key })
@@ -668,7 +674,7 @@ func buildMASeries(buckets map[string]*maBucket) []dto.MovingAverageDataPoint {
 		b := buckets[k]
 		series = append(series, dto.MovingAverageDataPoint{
 			Period:           k,
-			Total:            b.total,
+			TotalMinor:       b.total,
 			TransactionCount: b.count,
 		})
 	}
@@ -741,11 +747,11 @@ func validateScope(scope string) error {
 	}
 }
 
-func percentageChange(current, previous float64) *float64 {
+func percentageChange(current, previous int64) *float64 {
 	if previous == 0 {
 		return nil
 	}
-	pct := (current - previous) / previous * 100
+	pct := float64(current-previous) / float64(previous) * 100
 	return &pct
 }
 

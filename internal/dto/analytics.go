@@ -10,10 +10,10 @@ type AnalyticsSpendTotalArgs struct {
 }
 
 type AnalyticsSpendTotalResult struct {
-	Total    float64 `json:"total"`
-	Currency string  `json:"currency"`
-	From     string  `json:"from,omitempty"`
-	To       string  `json:"to,omitempty"`
+	TotalMinor int64  `json:"totalMinor"`
+	Currency   string `json:"currency"`
+	From       string `json:"from,omitempty"`
+	To         string `json:"to,omitempty"`
 }
 
 type AnalyticsSpendBreakdownArgs struct {
@@ -26,9 +26,9 @@ type AnalyticsSpendBreakdownArgs struct {
 }
 
 type AnalyticsBreakdownItem struct {
-	Key   string  `json:"key"`
-	Total float64 `json:"total"`
-	Count int     `json:"count"`
+	Key        string `json:"key"`
+	TotalMinor int64  `json:"totalMinor"`
+	Count      int    `json:"count"`
 }
 
 type AnalyticsSpendBreakdownResult struct {
@@ -52,26 +52,26 @@ type AnalyticsPeriodComparisonArgs struct {
 }
 
 type PeriodSummary struct {
-	Total    float64                  `json:"total"`
-	Count    int                      `json:"count"`
-	Currency string                   `json:"currency"`
-	From     string                   `json:"from"`
-	To       string                   `json:"to"`
-	Items    []AnalyticsBreakdownItem `json:"items,omitempty"`
+	TotalMinor int64                    `json:"totalMinor"`
+	Count      int                      `json:"count"`
+	Currency   string                   `json:"currency"`
+	From       string                   `json:"from"`
+	To         string                   `json:"to"`
+	Items      []AnalyticsBreakdownItem `json:"items,omitempty"`
 }
 
 type BreakdownItemChange struct {
-	Key              string   `json:"key"`
-	AbsoluteChange   float64  `json:"absoluteChange"`
-	PercentageChange *float64 `json:"percentageChange,omitempty"`
-	CountChange      int      `json:"countChange"`
+	Key                 string   `json:"key"`
+	AbsoluteChangeMinor int64    `json:"absoluteChangeMinor"`
+	PercentageChange    *float64 `json:"percentageChange,omitempty"`
+	CountChange         int      `json:"countChange"`
 }
 
 type PeriodChange struct {
-	AbsoluteChange   float64               `json:"absoluteChange"`
-	PercentageChange *float64              `json:"percentageChange,omitempty"`
-	CountChange      int                   `json:"countChange"`
-	Items            []BreakdownItemChange `json:"items,omitempty"`
+	AbsoluteChangeMinor int64                 `json:"absoluteChangeMinor"`
+	PercentageChange    *float64              `json:"percentageChange,omitempty"`
+	CountChange         int                   `json:"countChange"`
+	Items               []BreakdownItemChange `json:"items,omitempty"`
 }
 
 type AnalyticsPeriodComparisonResult struct {
@@ -88,23 +88,23 @@ type AnalyticsRecurringArgs struct {
 }
 
 type RecurringItem struct {
-	Merchant          string  `json:"merchant"`
-	Frequency         string  `json:"frequency"`
-	TypicalAmount     float64 `json:"typicalAmount"`
-	AmountIsVariable  bool    `json:"amountIsVariable"`
-	Currency          string  `json:"currency"`
-	OccurrenceCount   int     `json:"occurrenceCount"`
-	LastDate          string  `json:"lastDate"`
-	LastAmount        float64 `json:"lastAmount"`
-	MonthlyEquivalent float64 `json:"monthlyEquivalent"`
+	Merchant               string `json:"merchant"`
+	Frequency              string `json:"frequency"`
+	TypicalAmountMinor     int64  `json:"typicalAmountMinor"`
+	AmountIsVariable       bool   `json:"amountIsVariable"`
+	Currency               string `json:"currency"`
+	OccurrenceCount        int    `json:"occurrenceCount"`
+	LastDate               string `json:"lastDate"`
+	LastAmountMinor        int64  `json:"lastAmountMinor"`
+	MonthlyEquivalentMinor int64  `json:"monthlyEquivalentMinor"`
 }
 
 type RecurringTransactionsResult struct {
-	Items                  []RecurringItem `json:"items"`
-	TotalMonthlyEquivalent float64         `json:"totalMonthlyEquivalent"`
-	Currency               string          `json:"currency"`
-	From                   string          `json:"from"`
-	To                     string          `json:"to"`
+	Items                       []RecurringItem `json:"items"`
+	TotalMonthlyEquivalentMinor int64           `json:"totalMonthlyEquivalentMinor"`
+	Currency                    string          `json:"currency"`
+	From                        string          `json:"from"`
+	To                          string          `json:"to"`
 }
 
 type AnalyticsMovingAverageArgs struct {
@@ -118,16 +118,19 @@ type AnalyticsMovingAverageArgs struct {
 }
 
 type MovingAverageDataPoint struct {
-	Period           string  `json:"period"`
-	Total            float64 `json:"total"`
-	TransactionCount int     `json:"transactionCount"`
+	Period           string `json:"period"`
+	TotalMinor       int64  `json:"totalMinor"`
+	TransactionCount int    `json:"transactionCount"`
 }
 
 type MovingAverageItem struct {
-	Key              string                   `json:"key"`
-	AveragePerUnit   float64                  `json:"averagePerUnit"`
-	TransactionCount int                      `json:"transactionCount"`
-	Series           []MovingAverageDataPoint `json:"series"`
+	Key string `json:"key"`
+	// AveragePerUnitMinor is a per-period average in minor units. It stays a
+	// float because it's a computed average (total / units), not a raw amount;
+	// the Minor suffix signals the unit so the client converts for display.
+	AveragePerUnitMinor float64                  `json:"averagePerUnitMinor"`
+	TransactionCount    int                      `json:"transactionCount"`
+	Series              []MovingAverageDataPoint `json:"series"`
 }
 
 type AnalyticsTopNArgs struct {
@@ -143,19 +146,19 @@ type AnalyticsTopNArgs struct {
 
 type TopNItem struct {
 	Key        string  `json:"key"`
-	Total      float64 `json:"total"`
+	TotalMinor int64   `json:"totalMinor"`
 	Count      int     `json:"count"`
 	Percentage float64 `json:"percentage"`
 }
 
 type AnalyticsTopNResult struct {
-	Dimension  string     `json:"dimension"`
-	Direction  string     `json:"direction"`
-	TotalSpend float64    `json:"totalSpend"`
-	Currency   string     `json:"currency"`
-	From       string     `json:"from"`
-	To         string     `json:"to"`
-	Items      []TopNItem `json:"items"`
+	Dimension       string     `json:"dimension"`
+	Direction       string     `json:"direction"`
+	TotalSpendMinor int64      `json:"totalSpendMinor"`
+	Currency        string     `json:"currency"`
+	From            string     `json:"from"`
+	To              string     `json:"to"`
+	Items           []TopNItem `json:"items"`
 }
 
 type AnalyticsIncomeVsExpensesArgs struct {
@@ -165,23 +168,25 @@ type AnalyticsIncomeVsExpensesArgs struct {
 }
 
 type IncomeVsExpensesResult struct {
-	Income   float64 `json:"income"`
-	Expenses float64 `json:"expenses"`
-	Net      float64 `json:"net"`
-	Currency string  `json:"currency"`
-	From     string  `json:"from"`
-	To       string  `json:"to"`
+	IncomeMinor   int64  `json:"incomeMinor"`
+	ExpensesMinor int64  `json:"expensesMinor"`
+	NetMinor      int64  `json:"netMinor"`
+	Currency      string `json:"currency"`
+	From          string `json:"from"`
+	To            string `json:"to"`
 }
 
 type AnalyticsMovingAverageResult struct {
-	Granularity      string                   `json:"granularity"`
-	Scope            string                   `json:"scope"`
-	AveragePerUnit   float64                  `json:"averagePerUnit"`
-	TransactionCount int                      `json:"transactionCount"`
-	DaysAnalyzed     int                      `json:"daysAnalyzed"`
-	Currency         string                   `json:"currency"`
-	From             string                   `json:"from"`
-	To               string                   `json:"to"`
-	Series           []MovingAverageDataPoint `json:"series,omitempty"`
-	Items            []MovingAverageItem      `json:"items,omitempty"`
+	Granularity string `json:"granularity"`
+	Scope       string `json:"scope"`
+	// AveragePerUnitMinor is a per-period average in minor units — see the note
+	// on MovingAverageItem.AveragePerUnitMinor.
+	AveragePerUnitMinor float64                  `json:"averagePerUnitMinor"`
+	TransactionCount    int                      `json:"transactionCount"`
+	DaysAnalyzed        int                      `json:"daysAnalyzed"`
+	Currency            string                   `json:"currency"`
+	From                string                   `json:"from"`
+	To                  string                   `json:"to"`
+	Series              []MovingAverageDataPoint `json:"series,omitempty"`
+	Items               []MovingAverageItem      `json:"items,omitempty"`
 }

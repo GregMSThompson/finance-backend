@@ -32,8 +32,8 @@ func (f *fakeAnalyticsStore) Query(ctx context.Context, uid string, q dto.Transa
 func TestAnalyticsSpendTotal(t *testing.T) {
 	store := &fakeAnalyticsStore{
 		txs: []*models.Transaction{
-			{Amount: 10.5, Currency: "USD"},
-			{Amount: 2.25, Currency: "USD"},
+			{AmountMinor: 1050, Currency: "USD"},
+			{AmountMinor: 225, Currency: "USD"},
 		},
 	}
 	svc := NewAnalyticsService(store)
@@ -43,8 +43,8 @@ func TestAnalyticsSpendTotal(t *testing.T) {
 		t.Fatalf("GetSpendTotal error: %v", err)
 	}
 
-	if got.Total != 12.75 {
-		t.Fatalf("total mismatch: got %v", got.Total)
+	if got.TotalMinor != 1275 {
+		t.Fatalf("total mismatch: got %v", got.TotalMinor)
 	}
 	if got.Currency != "USD" {
 		t.Fatalf("currency mismatch: got %q", got.Currency)
@@ -54,11 +54,11 @@ func TestAnalyticsSpendTotal(t *testing.T) {
 func TestAnalyticsSpendTotalExcludesIncomeAndTransfers(t *testing.T) {
 	store := &fakeAnalyticsStore{
 		txs: []*models.Transaction{
-			{Amount: 40, Currency: "USD", PFCPrimary: "FOOD_AND_DRINK"},
-			{Amount: 5000, Currency: "USD", PFCPrimary: "INCOME"},
-			{Amount: 300, Currency: "USD", PFCPrimary: "TRANSFER_IN"},
-			{Amount: 200, Currency: "USD", PFCPrimary: "TRANSFER_OUT"},
-			{Amount: 10, Currency: "USD", PFCPrimary: "ENTERTAINMENT"},
+			{AmountMinor: 4000, Currency: "USD", PFCPrimary: "FOOD_AND_DRINK"},
+			{AmountMinor: 500000, Currency: "USD", PFCPrimary: "INCOME"},
+			{AmountMinor: 30000, Currency: "USD", PFCPrimary: "TRANSFER_IN"},
+			{AmountMinor: 20000, Currency: "USD", PFCPrimary: "TRANSFER_OUT"},
+			{AmountMinor: 1000, Currency: "USD", PFCPrimary: "ENTERTAINMENT"},
 		},
 	}
 	svc := NewAnalyticsService(store)
@@ -67,15 +67,15 @@ func TestAnalyticsSpendTotalExcludesIncomeAndTransfers(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetSpendTotal error: %v", err)
 	}
-	if got.Total != 50 {
-		t.Fatalf("expected only spend categories summed (50), got %v", got.Total)
+	if got.TotalMinor != 5000 {
+		t.Fatalf("expected only spend categories summed (5000), got %v", got.TotalMinor)
 	}
 }
 
 func TestAnalyticsSpendTotalHonorsExplicitIncomeFilter(t *testing.T) {
 	store := &fakeAnalyticsStore{
 		txs: []*models.Transaction{
-			{Amount: 5000, Currency: "USD", PFCPrimary: "INCOME"},
+			{AmountMinor: 500000, Currency: "USD", PFCPrimary: "INCOME"},
 		},
 	}
 	svc := NewAnalyticsService(store)
@@ -86,17 +86,17 @@ func TestAnalyticsSpendTotalHonorsExplicitIncomeFilter(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetSpendTotal error: %v", err)
 	}
-	if got.Total != 5000 {
-		t.Fatalf("explicit INCOME filter should return income (5000), got %v", got.Total)
+	if got.TotalMinor != 500000 {
+		t.Fatalf("explicit INCOME filter should return income (500000), got %v", got.TotalMinor)
 	}
 }
 
 func TestAnalyticsSpendBreakdown(t *testing.T) {
 	store := &fakeAnalyticsStore{
 		txs: []*models.Transaction{
-			{Name: "Coffee", Amount: 3, Currency: "USD"},
-			{Name: "Coffee", Amount: 2, Currency: "USD"},
-			{Name: "Lunch", Amount: 8, Currency: "USD"},
+			{Name: "Coffee", AmountMinor: 300, Currency: "USD"},
+			{Name: "Coffee", AmountMinor: 200, Currency: "USD"},
+			{Name: "Lunch", AmountMinor: 800, Currency: "USD"},
 		},
 	}
 	svc := NewAnalyticsService(store)
@@ -119,10 +119,10 @@ func TestAnalyticsSpendBreakdown(t *testing.T) {
 	for _, item := range got.Items {
 		items[item.Key] = item
 	}
-	if items["Coffee"].Total != 5 || items["Coffee"].Count != 2 {
+	if items["Coffee"].TotalMinor != 500 || items["Coffee"].Count != 2 {
 		t.Fatalf("coffee totals mismatch: %+v", items["Coffee"])
 	}
-	if items["Lunch"].Total != 8 || items["Lunch"].Count != 1 {
+	if items["Lunch"].TotalMinor != 800 || items["Lunch"].Count != 1 {
 		t.Fatalf("lunch totals mismatch: %+v", items["Lunch"])
 	}
 }
@@ -207,12 +207,12 @@ func TestGetPeriodComparisonBasicTotal(t *testing.T) {
 		fn: func(q dto.TransactionQuery) ([]*models.Transaction, error) {
 			if helpers.Value(q.DateFrom) == "2025-02-01" {
 				return []*models.Transaction{
-					{Amount: 30, Currency: "USD"},
-					{Amount: 20, Currency: "USD"},
+					{AmountMinor: 3000, Currency: "USD"},
+					{AmountMinor: 2000, Currency: "USD"},
 				}, nil
 			}
 			return []*models.Transaction{
-				{Amount: 40, Currency: "USD"},
+				{AmountMinor: 4000, Currency: "USD"},
 			}, nil
 		},
 	}
@@ -228,14 +228,14 @@ func TestGetPeriodComparisonBasicTotal(t *testing.T) {
 		t.Fatalf("GetPeriodComparison error: %v", err)
 	}
 
-	if got.Current.Total != 50 || got.Current.Count != 2 {
-		t.Fatalf("current mismatch: total=%v count=%v", got.Current.Total, got.Current.Count)
+	if got.Current.TotalMinor != 5000 || got.Current.Count != 2 {
+		t.Fatalf("current mismatch: total=%v count=%v", got.Current.TotalMinor, got.Current.Count)
 	}
-	if got.Previous.Total != 40 || got.Previous.Count != 1 {
-		t.Fatalf("previous mismatch: total=%v count=%v", got.Previous.Total, got.Previous.Count)
+	if got.Previous.TotalMinor != 4000 || got.Previous.Count != 1 {
+		t.Fatalf("previous mismatch: total=%v count=%v", got.Previous.TotalMinor, got.Previous.Count)
 	}
-	if got.Change.AbsoluteChange != 10 {
-		t.Fatalf("absolute change mismatch: %v", got.Change.AbsoluteChange)
+	if got.Change.AbsoluteChangeMinor != 1000 {
+		t.Fatalf("absolute change mismatch: %v", got.Change.AbsoluteChangeMinor)
 	}
 	if got.Change.PercentageChange == nil {
 		t.Fatal("expected non-nil percentage change")
@@ -259,7 +259,7 @@ func TestGetPeriodComparisonNilPercentageWhenPreviousZero(t *testing.T) {
 		fn: func(q dto.TransactionQuery) ([]*models.Transaction, error) {
 			if helpers.Value(q.DateFrom) == "2025-02-01" {
 				return []*models.Transaction{
-					{Amount: 30, Currency: "USD"},
+					{AmountMinor: 3000, Currency: "USD"},
 				}, nil
 			}
 			return nil, nil
@@ -280,8 +280,8 @@ func TestGetPeriodComparisonNilPercentageWhenPreviousZero(t *testing.T) {
 	if got.Change.PercentageChange != nil {
 		t.Fatalf("expected nil percentage change when previous=0, got %v", *got.Change.PercentageChange)
 	}
-	if got.Change.AbsoluteChange != 30 {
-		t.Fatalf("absolute change mismatch: %v", got.Change.AbsoluteChange)
+	if got.Change.AbsoluteChangeMinor != 3000 {
+		t.Fatalf("absolute change mismatch: %v", got.Change.AbsoluteChangeMinor)
 	}
 }
 
@@ -290,13 +290,13 @@ func TestGetPeriodComparisonWithGroupBy(t *testing.T) {
 		fn: func(q dto.TransactionQuery) ([]*models.Transaction, error) {
 			if helpers.Value(q.DateFrom) == "2025-02-01" {
 				return []*models.Transaction{
-					{Name: "Coffee", Amount: 5, Currency: "USD"},
-					{Name: "Lunch", Amount: 10, Currency: "USD"},
+					{Name: "Coffee", AmountMinor: 500, Currency: "USD"},
+					{Name: "Lunch", AmountMinor: 1000, Currency: "USD"},
 				}, nil
 			}
 			return []*models.Transaction{
-				{Name: "Coffee", Amount: 4, Currency: "USD"},
-				{Name: "Dinner", Amount: 8, Currency: "USD"},
+				{Name: "Coffee", AmountMinor: 400, Currency: "USD"},
+				{Name: "Dinner", AmountMinor: 800, Currency: "USD"},
 			}, nil
 		},
 	}
@@ -330,24 +330,24 @@ func TestGetPeriodComparisonWithGroupBy(t *testing.T) {
 	}
 
 	coffee := changeByKey["Coffee"]
-	if coffee.AbsoluteChange != 1 {
-		t.Fatalf("Coffee absolute change mismatch: %v", coffee.AbsoluteChange)
+	if coffee.AbsoluteChangeMinor != 100 {
+		t.Fatalf("Coffee absolute change mismatch: %v", coffee.AbsoluteChangeMinor)
 	}
 	if coffee.PercentageChange == nil || helpers.Value(coffee.PercentageChange) != 25 {
 		t.Fatalf("Coffee percentage change mismatch: %v", coffee.PercentageChange)
 	}
 
 	lunch := changeByKey["Lunch"]
-	if lunch.AbsoluteChange != 10 {
-		t.Fatalf("Lunch absolute change mismatch: %v", lunch.AbsoluteChange)
+	if lunch.AbsoluteChangeMinor != 1000 {
+		t.Fatalf("Lunch absolute change mismatch: %v", lunch.AbsoluteChangeMinor)
 	}
 	if lunch.PercentageChange != nil {
 		t.Fatalf("Lunch expected nil percentage (previous=0), got %v", *lunch.PercentageChange)
 	}
 
 	dinner := changeByKey["Dinner"]
-	if dinner.AbsoluteChange != -8 {
-		t.Fatalf("Dinner absolute change mismatch: %v", dinner.AbsoluteChange)
+	if dinner.AbsoluteChangeMinor != -800 {
+		t.Fatalf("Dinner absolute change mismatch: %v", dinner.AbsoluteChangeMinor)
 	}
 }
 
@@ -394,9 +394,9 @@ func TestGetPeriodComparisonStoreErrorPropagates(t *testing.T) {
 func TestGetRecurringTransactionsMonthly(t *testing.T) {
 	store := &fakeAnalyticsStore{
 		txs: []*models.Transaction{
-			{Name: "Netflix", Amount: 15.99, Currency: "USD", Date: "2025-01-15"},
-			{Name: "Netflix", Amount: 15.99, Currency: "USD", Date: "2025-02-14"},
-			{Name: "Netflix", Amount: 15.99, Currency: "USD", Date: "2025-03-15"},
+			{Name: "Netflix", AmountMinor: 1599, Currency: "USD", Date: "2025-01-15"},
+			{Name: "Netflix", AmountMinor: 1599, Currency: "USD", Date: "2025-02-14"},
+			{Name: "Netflix", AmountMinor: 1599, Currency: "USD", Date: "2025-03-15"},
 		},
 	}
 	svc := NewAnalyticsService(store)
@@ -418,8 +418,8 @@ func TestGetRecurringTransactionsMonthly(t *testing.T) {
 	if item.Frequency != "monthly" {
 		t.Fatalf("frequency mismatch: %q", item.Frequency)
 	}
-	if item.TypicalAmount != 15.99 {
-		t.Fatalf("typical amount mismatch: %v", item.TypicalAmount)
+	if item.TypicalAmountMinor != 1599 {
+		t.Fatalf("typical amount mismatch: %v", item.TypicalAmountMinor)
 	}
 	if item.AmountIsVariable {
 		t.Fatal("expected amount not variable")
@@ -430,11 +430,11 @@ func TestGetRecurringTransactionsMonthly(t *testing.T) {
 	if item.LastDate != "2025-03-15" {
 		t.Fatalf("last date mismatch: %q", item.LastDate)
 	}
-	if item.MonthlyEquivalent != 15.99 {
-		t.Fatalf("monthly equivalent mismatch: %v", item.MonthlyEquivalent)
+	if item.MonthlyEquivalentMinor != 1599 {
+		t.Fatalf("monthly equivalent mismatch: %v", item.MonthlyEquivalentMinor)
 	}
-	if got.TotalMonthlyEquivalent != 15.99 {
-		t.Fatalf("total monthly equivalent mismatch: %v", got.TotalMonthlyEquivalent)
+	if got.TotalMonthlyEquivalentMinor != 1599 {
+		t.Fatalf("total monthly equivalent mismatch: %v", got.TotalMonthlyEquivalentMinor)
 	}
 	if got.Currency != "USD" {
 		t.Fatalf("currency mismatch: %q", got.Currency)
@@ -444,9 +444,9 @@ func TestGetRecurringTransactionsMonthly(t *testing.T) {
 func TestGetRecurringTransactionsWeekly(t *testing.T) {
 	store := &fakeAnalyticsStore{
 		txs: []*models.Transaction{
-			{Name: "Gym", Amount: 10, Currency: "USD", Date: "2025-01-06"},
-			{Name: "Gym", Amount: 10, Currency: "USD", Date: "2025-01-13"},
-			{Name: "Gym", Amount: 10, Currency: "USD", Date: "2025-01-20"},
+			{Name: "Gym", AmountMinor: 1000, Currency: "USD", Date: "2025-01-06"},
+			{Name: "Gym", AmountMinor: 1000, Currency: "USD", Date: "2025-01-13"},
+			{Name: "Gym", AmountMinor: 1000, Currency: "USD", Date: "2025-01-20"},
 		},
 	}
 	svc := NewAnalyticsService(store)
@@ -464,16 +464,16 @@ func TestGetRecurringTransactionsWeekly(t *testing.T) {
 	if got.Items[0].Frequency != "weekly" {
 		t.Fatalf("frequency mismatch: %q", got.Items[0].Frequency)
 	}
-	// 10 * 4.33 = 43.3
-	if got.TotalMonthlyEquivalent != 43.3 {
-		t.Fatalf("total monthly equivalent mismatch: %v", got.TotalMonthlyEquivalent)
+	// 1000 * 4.33 = 4330 (minor units)
+	if got.TotalMonthlyEquivalentMinor != 4330 {
+		t.Fatalf("total monthly equivalent mismatch: %v", got.TotalMonthlyEquivalentMinor)
 	}
 }
 
 func TestGetRecurringTransactionsDropsInsufficientOccurrences(t *testing.T) {
 	store := &fakeAnalyticsStore{
 		txs: []*models.Transaction{
-			{Name: "One-off", Amount: 50, Currency: "USD", Date: "2025-01-10"},
+			{Name: "One-off", AmountMinor: 5000, Currency: "USD", Date: "2025-01-10"},
 		},
 	}
 	svc := NewAnalyticsService(store)
@@ -495,8 +495,8 @@ func TestGetRecurringTransactionsDropsIrregular(t *testing.T) {
 	// gaps that don't fit any bucket: 60 days between two transactions.
 	store := &fakeAnalyticsStore{
 		txs: []*models.Transaction{
-			{Name: "Irregular", Amount: 20, Currency: "USD", Date: "2025-01-01"},
-			{Name: "Irregular", Amount: 20, Currency: "USD", Date: "2025-03-02"}, // 60 day gap
+			{Name: "Irregular", AmountMinor: 2000, Currency: "USD", Date: "2025-01-01"},
+			{Name: "Irregular", AmountMinor: 2000, Currency: "USD", Date: "2025-03-02"}, // 60 day gap
 		},
 	}
 	svc := NewAnalyticsService(store)
@@ -516,9 +516,9 @@ func TestGetRecurringTransactionsDropsIrregular(t *testing.T) {
 func TestGetRecurringTransactionsVariableAmount(t *testing.T) {
 	store := &fakeAnalyticsStore{
 		txs: []*models.Transaction{
-			{Name: "Utility", Amount: 80, Currency: "USD", Date: "2025-01-15"},
-			{Name: "Utility", Amount: 110, Currency: "USD", Date: "2025-02-15"},
-			{Name: "Utility", Amount: 95, Currency: "USD", Date: "2025-03-15"},
+			{Name: "Utility", AmountMinor: 8000, Currency: "USD", Date: "2025-01-15"},
+			{Name: "Utility", AmountMinor: 11000, Currency: "USD", Date: "2025-02-15"},
+			{Name: "Utility", AmountMinor: 9500, Currency: "USD", Date: "2025-03-15"},
 		},
 	}
 	svc := NewAnalyticsService(store)
@@ -555,9 +555,9 @@ func TestGetMovingAverageOverallMonthly(t *testing.T) {
 	// 3 transactions across 3 months; 2025-01-01 to 2025-03-31 = 90 days → 3 monthly units.
 	store := &fakeAnalyticsStore{
 		txs: []*models.Transaction{
-			{Amount: 100, Currency: "USD", Date: "2025-01-15"},
-			{Amount: 80, Currency: "USD", Date: "2025-02-15"},
-			{Amount: 120, Currency: "USD", Date: "2025-03-15"},
+			{AmountMinor: 10000, Currency: "USD", Date: "2025-01-15"},
+			{AmountMinor: 8000, Currency: "USD", Date: "2025-02-15"},
+			{AmountMinor: 12000, Currency: "USD", Date: "2025-03-15"},
 		},
 	}
 	svc := NewAnalyticsService(store)
@@ -577,9 +577,9 @@ func TestGetMovingAverageOverallMonthly(t *testing.T) {
 	if got.TransactionCount != 3 {
 		t.Fatalf("transactionCount mismatch: got %d", got.TransactionCount)
 	}
-	// total=300, units=90/30=3 → average=100
-	if got.AveragePerUnit != 100 {
-		t.Fatalf("averagePerUnit mismatch: got %v", got.AveragePerUnit)
+	// total=30000, units=90/30=3 → average=10000
+	if got.AveragePerUnitMinor != 10000 {
+		t.Fatalf("averagePerUnit mismatch: got %v", got.AveragePerUnitMinor)
 	}
 	if got.Currency != "USD" {
 		t.Fatalf("currency mismatch: got %q", got.Currency)
@@ -591,7 +591,7 @@ func TestGetMovingAverageOverallMonthly(t *testing.T) {
 	if got.Series[0].Period != "2025-01" || got.Series[1].Period != "2025-02" || got.Series[2].Period != "2025-03" {
 		t.Fatalf("series periods mismatch: %+v", got.Series)
 	}
-	if got.Series[0].Total != 100 || got.Series[1].Total != 80 || got.Series[2].Total != 120 {
+	if got.Series[0].TotalMinor != 10000 || got.Series[1].TotalMinor != 8000 || got.Series[2].TotalMinor != 12000 {
 		t.Fatalf("series totals mismatch: %+v", got.Series)
 	}
 	if got.Items != nil {
@@ -604,8 +604,8 @@ func TestGetMovingAverageWeeklyPeriodKeys(t *testing.T) {
 	// Window: Jan 6–19 = 14 days → 2 weekly units.
 	store := &fakeAnalyticsStore{
 		txs: []*models.Transaction{
-			{Amount: 10, Currency: "USD", Date: "2025-01-06"},
-			{Amount: 20, Currency: "USD", Date: "2025-01-13"},
+			{AmountMinor: 1000, Currency: "USD", Date: "2025-01-06"},
+			{AmountMinor: 2000, Currency: "USD", Date: "2025-01-13"},
 		},
 	}
 	svc := NewAnalyticsService(store)
@@ -628,9 +628,9 @@ func TestGetMovingAverageWeeklyPeriodKeys(t *testing.T) {
 	if got.Series[0].Period != "2025-W02" || got.Series[1].Period != "2025-W03" {
 		t.Fatalf("week period keys mismatch: %+v", got.Series)
 	}
-	// total=30, units=14/7=2 → average=15
-	if got.AveragePerUnit != 15 {
-		t.Fatalf("averagePerUnit mismatch: got %v", got.AveragePerUnit)
+	// total=3000, units=14/7=2 → average=1500
+	if got.AveragePerUnitMinor != 1500 {
+		t.Fatalf("averagePerUnit mismatch: got %v", got.AveragePerUnitMinor)
 	}
 }
 
@@ -638,9 +638,9 @@ func TestGetMovingAverageScopeCategory(t *testing.T) {
 	// 2 categories across a 31-day window.
 	store := &fakeAnalyticsStore{
 		txs: []*models.Transaction{
-			{Amount: 50, Currency: "USD", Date: "2025-01-10", PFCPrimary: "Food"},
-			{Amount: 30, Currency: "USD", Date: "2025-01-15", PFCPrimary: "Food"},
-			{Amount: 20, Currency: "USD", Date: "2025-01-20", PFCPrimary: "Transport"},
+			{AmountMinor: 5000, Currency: "USD", Date: "2025-01-10", PFCPrimary: "Food"},
+			{AmountMinor: 3000, Currency: "USD", Date: "2025-01-15", PFCPrimary: "Food"},
+			{AmountMinor: 2000, Currency: "USD", Date: "2025-01-20", PFCPrimary: "Transport"},
 		},
 	}
 	svc := NewAnalyticsService(store)
@@ -696,8 +696,8 @@ func TestGetMovingAverageNoTransactions(t *testing.T) {
 	if got.TransactionCount != 0 {
 		t.Fatalf("expected transactionCount=0, got %d", got.TransactionCount)
 	}
-	if got.AveragePerUnit != 0 {
-		t.Fatalf("expected averagePerUnit=0, got %v", got.AveragePerUnit)
+	if got.AveragePerUnitMinor != 0 {
+		t.Fatalf("expected averagePerUnit=0, got %v", got.AveragePerUnitMinor)
 	}
 }
 
@@ -755,12 +755,12 @@ func TestGetMovingAverageStoreErrorPropagates(t *testing.T) {
 }
 
 func TestGetTopNByMerchantTop(t *testing.T) {
-	// Alpha=60, Beta=30, Gamma=10, total=100. Top 2: Alpha then Beta.
+	// Alpha=6000, Beta=3000, Gamma=1000, total=10000. Top 2: Alpha then Beta.
 	store := &fakeAnalyticsStore{
 		txs: []*models.Transaction{
-			{Name: "Alpha", Amount: 60, Currency: "USD", Date: "2025-01-10"},
-			{Name: "Beta", Amount: 30, Currency: "USD", Date: "2025-01-11"},
-			{Name: "Gamma", Amount: 10, Currency: "USD", Date: "2025-01-12"},
+			{Name: "Alpha", AmountMinor: 6000, Currency: "USD", Date: "2025-01-10"},
+			{Name: "Beta", AmountMinor: 3000, Currency: "USD", Date: "2025-01-11"},
+			{Name: "Gamma", AmountMinor: 1000, Currency: "USD", Date: "2025-01-12"},
 		},
 	}
 	svc := NewAnalyticsService(store)
@@ -775,8 +775,8 @@ func TestGetTopNByMerchantTop(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetTopN error: %v", err)
 	}
-	if got.TotalSpend != 100 {
-		t.Fatalf("totalSpend mismatch: got %v", got.TotalSpend)
+	if got.TotalSpendMinor != 10000 {
+		t.Fatalf("totalSpend mismatch: got %v", got.TotalSpendMinor)
 	}
 	if got.Currency != "USD" {
 		t.Fatalf("currency mismatch: got %q", got.Currency)
@@ -787,7 +787,7 @@ func TestGetTopNByMerchantTop(t *testing.T) {
 	if got.Items[0].Key != "Alpha" || got.Items[1].Key != "Beta" {
 		t.Fatalf("item order mismatch: %+v", got.Items)
 	}
-	if got.Items[0].Total != 60 || got.Items[1].Total != 30 {
+	if got.Items[0].TotalMinor != 6000 || got.Items[1].TotalMinor != 3000 {
 		t.Fatalf("item totals mismatch: %+v", got.Items)
 	}
 	if got.Items[0].Percentage != 60 || got.Items[1].Percentage != 30 {
@@ -799,9 +799,9 @@ func TestGetTopNByCategoryReturnsAll(t *testing.T) {
 	// 2 categories, limit=5 → returns both.
 	store := &fakeAnalyticsStore{
 		txs: []*models.Transaction{
-			{PFCPrimary: "Food", Amount: 80, Currency: "USD", Date: "2025-01-10"},
-			{PFCPrimary: "Food", Amount: 20, Currency: "USD", Date: "2025-01-15"},
-			{PFCPrimary: "Transport", Amount: 50, Currency: "USD", Date: "2025-01-12"},
+			{PFCPrimary: "Food", AmountMinor: 8000, Currency: "USD", Date: "2025-01-10"},
+			{PFCPrimary: "Food", AmountMinor: 2000, Currency: "USD", Date: "2025-01-15"},
+			{PFCPrimary: "Transport", AmountMinor: 5000, Currency: "USD", Date: "2025-01-12"},
 		},
 	}
 	svc := NewAnalyticsService(store)
@@ -819,7 +819,7 @@ func TestGetTopNByCategoryReturnsAll(t *testing.T) {
 	if len(got.Items) != 2 {
 		t.Fatalf("expected 2 items, got %d", len(got.Items))
 	}
-	// Food=100, Transport=50 → top order.
+	// Food=10000, Transport=5000 → top order.
 	if got.Items[0].Key != "Food" || got.Items[1].Key != "Transport" {
 		t.Fatalf("item order mismatch: %+v", got.Items)
 	}
@@ -829,12 +829,12 @@ func TestGetTopNByCategoryReturnsAll(t *testing.T) {
 }
 
 func TestGetTopNBottom(t *testing.T) {
-	// Alpha=60, Beta=30, Gamma=10, total=100. Bottom 2: Gamma then Beta.
+	// Alpha=6000, Beta=3000, Gamma=1000, total=10000. Bottom 2: Gamma then Beta.
 	store := &fakeAnalyticsStore{
 		txs: []*models.Transaction{
-			{Name: "Alpha", Amount: 60, Currency: "USD", Date: "2025-01-10"},
-			{Name: "Beta", Amount: 30, Currency: "USD", Date: "2025-01-11"},
-			{Name: "Gamma", Amount: 10, Currency: "USD", Date: "2025-01-12"},
+			{Name: "Alpha", AmountMinor: 6000, Currency: "USD", Date: "2025-01-10"},
+			{Name: "Beta", AmountMinor: 3000, Currency: "USD", Date: "2025-01-11"},
+			{Name: "Gamma", AmountMinor: 1000, Currency: "USD", Date: "2025-01-12"},
 		},
 	}
 	svc := NewAnalyticsService(store)
@@ -861,9 +861,9 @@ func TestGetTopNMinCountFilter(t *testing.T) {
 	// Alpha has 1 tx, Beta has 2. MinCount=2 → only Beta included.
 	store := &fakeAnalyticsStore{
 		txs: []*models.Transaction{
-			{Name: "Alpha", Amount: 60, Currency: "USD", Date: "2025-01-10"},
-			{Name: "Beta", Amount: 30, Currency: "USD", Date: "2025-01-11"},
-			{Name: "Beta", Amount: 20, Currency: "USD", Date: "2025-01-15"},
+			{Name: "Alpha", AmountMinor: 6000, Currency: "USD", Date: "2025-01-10"},
+			{Name: "Beta", AmountMinor: 3000, Currency: "USD", Date: "2025-01-11"},
+			{Name: "Beta", AmountMinor: 2000, Currency: "USD", Date: "2025-01-15"},
 		},
 	}
 	svc := NewAnalyticsService(store)
@@ -906,8 +906,8 @@ func TestGetTopNNoTransactions(t *testing.T) {
 	if len(got.Items) != 0 {
 		t.Fatalf("expected empty items, got %d", len(got.Items))
 	}
-	if got.TotalSpend != 0 {
-		t.Fatalf("expected totalSpend=0, got %v", got.TotalSpend)
+	if got.TotalSpendMinor != 0 {
+		t.Fatalf("expected totalSpend=0, got %v", got.TotalSpendMinor)
 	}
 }
 
@@ -946,12 +946,12 @@ func TestGetTopNStoreErrorPropagates(t *testing.T) {
 }
 
 func TestGetIncomeVsExpensesBasic(t *testing.T) {
-	// 5000 income, 200+100=300 expenses → net = 4700.
+	// 500000 income, 20000+10000=30000 expenses → net = 470000.
 	store := &fakeAnalyticsStore{
 		txs: []*models.Transaction{
-			{Amount: 5000, Currency: "USD", PFCPrimary: "INCOME"},
-			{Amount: 200, Currency: "USD", PFCPrimary: "DINING"},
-			{Amount: 100, Currency: "USD", PFCPrimary: "ENTERTAINMENT"},
+			{AmountMinor: 500000, Currency: "USD", PFCPrimary: "INCOME"},
+			{AmountMinor: 20000, Currency: "USD", PFCPrimary: "DINING"},
+			{AmountMinor: 10000, Currency: "USD", PFCPrimary: "ENTERTAINMENT"},
 		},
 	}
 	svc := NewAnalyticsService(store)
@@ -963,14 +963,14 @@ func TestGetIncomeVsExpensesBasic(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetIncomeVsExpenses error: %v", err)
 	}
-	if got.Income != 5000 {
-		t.Fatalf("income mismatch: got %v", got.Income)
+	if got.IncomeMinor != 500000 {
+		t.Fatalf("income mismatch: got %v", got.IncomeMinor)
 	}
-	if got.Expenses != 300 {
-		t.Fatalf("expenses mismatch: got %v", got.Expenses)
+	if got.ExpensesMinor != 30000 {
+		t.Fatalf("expenses mismatch: got %v", got.ExpensesMinor)
 	}
-	if got.Net != 4700 {
-		t.Fatalf("net mismatch: got %v", got.Net)
+	if got.NetMinor != 470000 {
+		t.Fatalf("net mismatch: got %v", got.NetMinor)
 	}
 	if got.Currency != "USD" {
 		t.Fatalf("currency mismatch: got %q", got.Currency)
@@ -981,11 +981,11 @@ func TestGetIncomeVsExpensesBasic(t *testing.T) {
 }
 
 func TestGetIncomeVsExpensesNoIncome(t *testing.T) {
-	// No income transactions → income=0, expenses=150, net=-150.
+	// No income transactions → income=0, expenses=15000, net=-15000.
 	store := &fakeAnalyticsStore{
 		txs: []*models.Transaction{
-			{Amount: 100, Currency: "USD", PFCPrimary: "DINING"},
-			{Amount: 50, Currency: "USD", PFCPrimary: "ENTERTAINMENT"},
+			{AmountMinor: 10000, Currency: "USD", PFCPrimary: "DINING"},
+			{AmountMinor: 5000, Currency: "USD", PFCPrimary: "ENTERTAINMENT"},
 		},
 	}
 	svc := NewAnalyticsService(store)
@@ -997,14 +997,14 @@ func TestGetIncomeVsExpensesNoIncome(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetIncomeVsExpenses error: %v", err)
 	}
-	if got.Income != 0 {
-		t.Fatalf("expected income=0, got %v", got.Income)
+	if got.IncomeMinor != 0 {
+		t.Fatalf("expected income=0, got %v", got.IncomeMinor)
 	}
-	if got.Expenses != 150 {
-		t.Fatalf("expenses mismatch: got %v", got.Expenses)
+	if got.ExpensesMinor != 15000 {
+		t.Fatalf("expenses mismatch: got %v", got.ExpensesMinor)
 	}
-	if got.Net != -150 {
-		t.Fatalf("net mismatch: got %v", got.Net)
+	if got.NetMinor != -15000 {
+		t.Fatalf("net mismatch: got %v", got.NetMinor)
 	}
 }
 
@@ -1019,8 +1019,8 @@ func TestGetIncomeVsExpensesNoTransactions(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetIncomeVsExpenses error: %v", err)
 	}
-	if got.Income != 0 || got.Expenses != 0 || got.Net != 0 {
-		t.Fatalf("expected all zeros, got income=%v expenses=%v net=%v", got.Income, got.Expenses, got.Net)
+	if got.IncomeMinor != 0 || got.ExpensesMinor != 0 || got.NetMinor != 0 {
+		t.Fatalf("expected all zeros, got income=%v expenses=%v net=%v", got.IncomeMinor, got.ExpensesMinor, got.NetMinor)
 	}
 }
 
