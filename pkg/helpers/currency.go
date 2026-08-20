@@ -49,17 +49,18 @@ func ToMajorUnits(minor int64, currency string) (float64, error) {
 	return float64(minor) / math.Pow10(exp), nil
 }
 
-// FormatCurrency formats an amount with its currency code (e.g. "USD 12.50").
-// If currency is empty, only the amount is returned.
-//
-// NOTE: this still takes a major-unit float. It is slated to flip to minor units
-// (int64) alongside the goal/snapshot migration, when its callers switch — see
-// the currency migration plan.
-func FormatCurrency(amount float64, currency string) string {
-	if currency != "" {
-		return fmt.Sprintf("%s %.2f", currency, amount)
+// FormatCurrency formats an integer minor-unit amount with its currency code
+// (e.g. 1250 USD -> "USD 12.50"). The decimal precision is derived from the
+// currency's minor-unit exponent, so it is correct for any supported currency
+// rather than assuming two places. Returns an error for unsupported currencies,
+// since the exponent is required to place the decimal point.
+func FormatCurrency(minor int64, currency string) (string, error) {
+	exp, err := minorUnitExponent(currency)
+	if err != nil {
+		return "", err
 	}
-	return fmt.Sprintf("%.2f", amount)
+	major := float64(minor) / math.Pow10(exp)
+	return fmt.Sprintf("%s %.*f", currency, exp, major), nil
 }
 
 // minorUnitExponent returns the number of decimal places in a currency's minor

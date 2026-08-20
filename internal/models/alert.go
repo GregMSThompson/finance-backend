@@ -35,7 +35,7 @@ type Alert struct {
 // AlertConfig holds all possible configuration fields for any alert type.
 // Not all fields are valid for all types; the service layer enforces per-type rules.
 type AlertConfig struct {
-	AmountMinor int    `firestore:"amountMinor,omitempty" json:"amountMinor,omitempty"`
+	AmountMinor int64  `firestore:"amountMinor,omitempty" json:"amountMinor,omitempty"`
 	Window      string `firestore:"window,omitempty" json:"window,omitempty"`
 	Dimension   string `firestore:"dimension,omitempty" json:"dimension,omitempty"` // "overall", "category", "merchant"
 	Category    string `firestore:"category,omitempty" json:"category,omitempty"`

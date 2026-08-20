@@ -158,7 +158,7 @@ func (s *alertEvaluatorService) evaluateSpendThreshold(ctx context.Context, uid 
 		return false, "", "", err
 	}
 
-	if int(result.Total*100) < alert.Config.AmountMinor {
+	if result.TotalMinor < alert.Config.AmountMinor {
 		return false, "", "", nil
 	}
 
@@ -170,8 +170,12 @@ func (s *alertEvaluatorService) evaluateSpendThreshold(ctx context.Context, uid 
 		subject = alert.Config.Merchant + " spending"
 	}
 
+	amount, err := helpers.FormatCurrency(result.TotalMinor, result.Currency)
+	if err != nil {
+		return false, "", "", err
+	}
 	title := "Spending Alert"
-	body := fmt.Sprintf("Your %s has reached %s in the last %s.", subject, helpers.FormatCurrency(result.Total, result.Currency), alert.Config.Window)
+	body := fmt.Sprintf("Your %s has reached %s in the last %s.", subject, amount, alert.Config.Window)
 	return true, title, body, nil
 }
 
@@ -194,12 +198,16 @@ func (s *alertEvaluatorService) evaluateLargeTransaction(ctx context.Context, ui
 	}
 
 	tx := result.Transactions[0]
-	if int(tx.Amount*100) < alert.Config.AmountMinor {
+	if tx.AmountMinor < alert.Config.AmountMinor {
 		return false, "", "", nil
 	}
 
+	amount, err := helpers.FormatCurrency(tx.AmountMinor, tx.Currency)
+	if err != nil {
+		return false, "", "", err
+	}
 	title := "Large Transaction Detected"
-	body := fmt.Sprintf("A transaction of %s was detected%s.", helpers.FormatCurrency(tx.Amount, tx.Currency), merchantSuffix(tx.Name))
+	body := fmt.Sprintf("A transaction of %s was detected%s.", amount, merchantSuffix(tx.Name))
 	return true, title, body, nil
 }
 
@@ -212,16 +220,20 @@ func (s *alertEvaluatorService) evaluateIncomeReceived(ctx context.Context, uid 
 		return false, "", "", err
 	}
 
-	if result.Income <= 0 {
+	if result.IncomeMinor <= 0 {
 		return false, "", "", nil
 	}
 
-	if alert.Config.AmountMinor > 0 && int(result.Income*100) < alert.Config.AmountMinor {
+	if alert.Config.AmountMinor > 0 && result.IncomeMinor < alert.Config.AmountMinor {
 		return false, "", "", nil
 	}
 
+	amount, err := helpers.FormatCurrency(result.IncomeMinor, result.Currency)
+	if err != nil {
+		return false, "", "", err
+	}
 	title := "Income Received"
-	body := fmt.Sprintf("You received %s.", helpers.FormatCurrency(result.Income, result.Currency))
+	body := fmt.Sprintf("You received %s.", amount)
 	return true, title, body, nil
 }
 
@@ -240,14 +252,22 @@ func (s *alertEvaluatorService) evaluateSubscriptionIncrease(ctx context.Context
 		if item.LastDate != period.yesterday {
 			continue
 		}
-		if item.LastAmount <= item.TypicalAmount {
+		if item.LastAmountMinor <= item.TypicalAmountMinor {
 			continue
+		}
+		last, err := helpers.FormatCurrency(item.LastAmountMinor, item.Currency)
+		if err != nil {
+			return false, "", "", err
+		}
+		typical, err := helpers.FormatCurrency(item.TypicalAmountMinor, item.Currency)
+		if err != nil {
+			return false, "", "", err
 		}
 		title := "Subscription Price Increase"
 		body := fmt.Sprintf("Your %s subscription increased to %s (was typically %s).",
 			item.Merchant,
-			helpers.FormatCurrency(item.LastAmount, item.Currency),
-			helpers.FormatCurrency(item.TypicalAmount, item.Currency),
+			last,
+			typical,
 		)
 		return true, title, body, nil
 	}

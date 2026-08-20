@@ -74,6 +74,35 @@ func TestConversionRoundTrip(t *testing.T) {
 	}
 }
 
+func TestFormatCurrency(t *testing.T) {
+	tests := []struct {
+		name  string
+		minor int64
+		want  string
+	}{
+		{"whole", 50000, "USD 500.00"},
+		{"cents", 1250, "USD 12.50"},
+		{"sub-dollar", 5, "USD 0.05"},
+		{"negative", -999, "USD -9.99"},
+		{"zero", 0, "USD 0.00"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := FormatCurrency(tt.minor, CurrencyUSD)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if got != tt.want {
+				t.Errorf("FormatCurrency(%d) = %q, want %q", tt.minor, got, tt.want)
+			}
+		})
+	}
+
+	if _, err := FormatCurrency(100, "GBP"); !errors.As(err, new(*UnsupportedCurrencyError)) {
+		t.Errorf("FormatCurrency GBP: got %v, want *UnsupportedCurrencyError", err)
+	}
+}
+
 func TestUnsupportedCurrency(t *testing.T) {
 	_, err := ToMinorUnits(1, "GBP")
 	var uce *UnsupportedCurrencyError
