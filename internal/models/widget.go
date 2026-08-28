@@ -16,7 +16,7 @@ type Widget struct {
 // WidgetConfig holds all possible configuration fields for any widget type.
 // Not all fields are valid for all types; the service layer enforces per-type rules.
 type WidgetConfig struct {
-	DateRange    *DateRangeConfig   `firestore:"dateRange,omitempty" json:"dateRange,omitempty"`
+	DateRange     *DateRangeConfig   `firestore:"dateRange,omitempty" json:"dateRange,omitempty"`
 	Window        string             `firestore:"window,omitempty" json:"window,omitempty"`
 	Preset        string             `firestore:"preset,omitempty" json:"preset,omitempty"`
 	CurrentRange  *ExplicitDateRange `firestore:"currentRange,omitempty" json:"currentRange,omitempty"`
@@ -24,7 +24,7 @@ type WidgetConfig struct {
 	Dimension     string             `firestore:"dimension,omitempty" json:"dimension,omitempty"`
 	Limit         int                `firestore:"limit,omitempty" json:"limit,omitempty"`
 	Category      string             `firestore:"category,omitempty" json:"category,omitempty"` // maps to PFCPrimary in the analytics layer
-	AccountID    string             `firestore:"accountId,omitempty" json:"accountId,omitempty"`
+	AccountID     string             `firestore:"accountId,omitempty" json:"accountId,omitempty"`
 }
 
 // DateRangeConfig represents either a named preset or an explicit custom range.

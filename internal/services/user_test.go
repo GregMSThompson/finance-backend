@@ -22,9 +22,9 @@ type stubUserStore struct {
 	getUser    *models.User
 	getUserErr error
 
-	updatedUser    *models.User
+	updatedUser     *models.User
 	updateUserCalls int
-	updateUserErr  error
+	updateUserErr   error
 }
 
 func (s *stubUserStore) CreateUser(_ context.Context, user *models.User) error {

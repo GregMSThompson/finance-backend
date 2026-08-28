@@ -46,11 +46,11 @@ const (
 // Goal is a user's goal definition (the structured primitive) stored under
 // users/{uid}/goals. The owning uid is carried by the path, not a field.
 type Goal struct {
-	GoalID      string         `firestore:"goalId" json:"goalId"`
-	Type        GoalType       `firestore:"type" json:"type"`
-	Name        string         `firestore:"name" json:"name"`
-	TargetValue float64        `firestore:"targetValue" json:"targetValue"`
-	TimeWindow  GoalTimeWindow `firestore:"timeWindow" json:"timeWindow"`
+	GoalID           string         `firestore:"goalId" json:"goalId"`
+	Type             GoalType       `firestore:"type" json:"type"`
+	Name             string         `firestore:"name" json:"name"`
+	TargetValueMinor int64          `firestore:"targetValueMinor" json:"targetValueMinor"` // integer minor units (e.g. cents)
+	TimeWindow       GoalTimeWindow `firestore:"timeWindow" json:"timeWindow"`
 	// EndDate (YYYY-MM-DD) bounds a fixed window or a one-off goal. Empty for
 	// recurring weekly/monthly goals.
 	EndDate         string              `firestore:"endDate,omitempty" json:"endDate,omitempty"`
@@ -58,9 +58,10 @@ type Goal struct {
 	Filters         GoalFilters         `firestore:"filters" json:"filters"`
 	AlertThresholds GoalAlertThresholds `firestore:"alertThresholds" json:"alertThresholds"`
 	Status          GoalStatus          `firestore:"status" json:"status"`
-	// BaselineValue is computed at creation for types measured against a prior
-	// period (Reduction, Emergency Fund). Unused for Spending Limit.
-	BaselineValue *float64 `firestore:"baselineValue,omitempty" json:"baselineValue,omitempty"`
+	// BaselineValueMinor is computed at creation for types measured against a
+	// prior period (Reduction, Emergency Fund), in integer minor units. Unused
+	// for Spending Limit.
+	BaselineValueMinor *int64 `firestore:"baselineValueMinor,omitempty" json:"baselineValueMinor,omitempty"`
 	// ConversationID links the goal to the chat session that created it, for the
 	// "view original conversation" affordance.
 	ConversationID string    `firestore:"conversationId,omitempty" json:"conversationId,omitempty"`

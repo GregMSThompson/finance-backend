@@ -22,6 +22,7 @@ import (
 
 	"github.com/GregMSThompson/finance-backend/internal/models"
 	"github.com/GregMSThompson/finance-backend/internal/store"
+	"github.com/GregMSThompson/finance-backend/pkg/helpers"
 )
 
 const fixtureDateLayout = "2006-01-02"
@@ -109,11 +110,15 @@ func main() {
 
 	modelTxs := make([]models.Transaction, 0, len(fx.Transactions))
 	for _, tx := range fx.Transactions {
+		amountMinor, err := helpers.ToMinorUnits(tx.Amount, tx.Currency)
+		if err != nil {
+			log.Fatalf("convert amount for %s: %v", tx.TransactionID, err)
+		}
 		modelTxs = append(modelTxs, models.Transaction{
 			TransactionID:  tx.TransactionID,
 			BankID:         tx.BankID,
 			Name:           tx.Name,
-			Amount:         tx.Amount,
+			AmountMinor:    amountMinor,
 			Currency:       tx.Currency,
 			Pending:        tx.Pending,
 			Date:           tx.Date,

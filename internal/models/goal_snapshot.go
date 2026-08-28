@@ -8,13 +8,13 @@ import "time"
 // and in the push notification. GoalID is a filter key (snapshots live in a
 // per-user collection, not nested under the goal).
 type GoalSnapshot struct {
-	SnapshotID      string    `firestore:"snapshotId" json:"snapshotId"`
-	GoalID          string    `firestore:"goalId" json:"goalId"`
-	CreatedAt       time.Time `firestore:"createdAt" json:"createdAt"`
-	CurrentValue    float64   `firestore:"currentValue" json:"currentValue"`
-	TargetValue     float64   `firestore:"targetValue" json:"targetValue"`
-	PercentComplete float64   `firestore:"percentComplete" json:"percentComplete"`
-	IsOnTrack       bool      `firestore:"isOnTrack" json:"isOnTrack"`
+	SnapshotID        string    `firestore:"snapshotId" json:"snapshotId"`
+	GoalID            string    `firestore:"goalId" json:"goalId"`
+	CreatedAt         time.Time `firestore:"createdAt" json:"createdAt"`
+	CurrentValueMinor int64     `firestore:"currentValueMinor" json:"currentValueMinor"` // integer minor units (e.g. cents)
+	TargetValueMinor  int64     `firestore:"targetValueMinor" json:"targetValueMinor"`   // integer minor units (e.g. cents)
+	PercentComplete   float64   `firestore:"percentComplete" json:"percentComplete"`
+	IsOnTrack         bool      `firestore:"isOnTrack" json:"isOnTrack"`
 	// AIInsight is the batch-generated 1-2 sentence insight, set only when a
 	// notification-worthy event occurred. Same text used for the push body.
 	AIInsight        string `firestore:"aiInsight,omitempty" json:"aiInsight,omitempty"`

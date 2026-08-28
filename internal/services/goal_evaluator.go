@@ -185,20 +185,20 @@ func (s *goalEvaluatorService) evaluateGoal(ctx context.Context, uid string, goa
 		return nil, fmt.Errorf("spend total: %w", err)
 	}
 
-	current := result.Total
+	current := result.TotalMinor
 	elapsed := goalElapsedFraction(start, queryTo, end)
-	percent := goalPercentComplete(current, goal.TargetValue)
+	percent := goalPercentComplete(current, goal.TargetValueMinor)
 
 	snap := &models.GoalSnapshot{
-		SnapshotID:      uuid.NewString(),
-		GoalID:          goal.GoalID,
-		CreatedAt:       now,
-		CurrentValue:    current,
-		TargetValue:     goal.TargetValue,
-		PercentComplete: percent,
+		SnapshotID:        uuid.NewString(),
+		GoalID:            goal.GoalID,
+		CreatedAt:         now,
+		CurrentValueMinor: current,
+		TargetValueMinor:  goal.TargetValueMinor,
+		PercentComplete:   percent,
 		// Pace-based: on track when spending hasn't outrun its share of the
 		// window elapsed so far.
-		IsOnTrack: current <= goal.TargetValue*elapsed,
+		IsOnTrack: float64(current) <= float64(goal.TargetValueMinor)*elapsed,
 	}
 
 	eval := &goalEvaluation{snapshot: snap}
@@ -209,10 +209,13 @@ func (s *goalEvaluatorService) evaluateGoal(ctx context.Context, uid string, goa
 	// the same regardless of which run past the end date observes it.
 	if goal.Recurrence == models.GoalRecurrenceOneOff && helpers.DateOf(now).After(end) {
 		eval.newStatus = models.GoalStatusFailed
-		if current <= goal.TargetValue {
+		if current <= goal.TargetValueMinor {
 			eval.newStatus = models.GoalStatusCompleted
 		}
-		body := goalTerminalText(goal, snap, result.Currency, eval.newStatus)
+		body, err := goalTerminalText(goal, snap, result.Currency, eval.newStatus)
+		if err != nil {
+			return nil, err
+		}
 		snap.AIInsight = body
 		snap.NotificationSent = true
 		eval.notification = buildGoalNotification(goal, body, now)
@@ -256,7 +259,10 @@ func (s *goalEvaluatorService) maybeNotify(ctx context.Context, uid string, goal
 		return nil, nil
 	}
 
-	insight := goalProgressText(goal, snap, currency, over)
+	insight, err := goalProgressText(goal, snap, currency, over)
+	if err != nil {
+		return nil, err
+	}
 	snap.AIInsight = insight
 	snap.NotificationSent = true
 
@@ -284,19 +290,21 @@ func buildGoalNotification(goal *models.Goal, body string, now time.Time) *model
 // goalTerminalText renders the body for a one-off goal's completed/failed
 // outcome. Deterministic, same as the progress placeholder — see the
 // TODO(goals) note on goalInsightText for the richer AI insight to come.
-func goalTerminalText(goal *models.Goal, snap *models.GoalSnapshot, currency string, status models.GoalStatus) string {
+func goalTerminalText(goal *models.Goal, snap *models.GoalSnapshot, currency string, status models.GoalStatus) (string, error) {
+	current, err := helpers.FormatCurrency(snap.CurrentValueMinor, currency)
+	if err != nil {
+		return "", err
+	}
+	target, err := helpers.FormatCurrency(snap.TargetValueMinor, currency)
+	if err != nil {
+		return "", err
+	}
 	if status == models.GoalStatusCompleted {
 		return fmt.Sprintf("You completed your %s goal — spent %s, within your %s limit.",
-			goal.Name,
-			helpers.FormatCurrency(snap.CurrentValue, currency),
-			helpers.FormatCurrency(snap.TargetValue, currency),
-		)
+			goal.Name, current, target), nil
 	}
 	return fmt.Sprintf("Your %s goal ended over budget — spent %s of your %s limit.",
-		goal.Name,
-		helpers.FormatCurrency(snap.CurrentValue, currency),
-		helpers.FormatCurrency(snap.TargetValue, currency),
-	)
+		goal.Name, current, target), nil
 }
 
 // goalProgressText renders the notification body for a threshold transition —
@@ -310,32 +318,28 @@ func goalTerminalText(goal *models.Goal, snap *models.GoalSnapshot, currency str
 // something specific and actionable. That deserves its own piece (deciding
 // which analytics to pull, prompt design, cost/latency); when we build it,
 // reintroduce a genai dependency on the evaluator and swap this call out.
-func goalProgressText(goal *models.Goal, snap *models.GoalSnapshot, currency string, over bool) string {
+func goalProgressText(goal *models.Goal, snap *models.GoalSnapshot, currency string, over bool) (string, error) {
+	current, err := helpers.FormatCurrency(snap.CurrentValueMinor, currency)
+	if err != nil {
+		return "", err
+	}
+	target, err := helpers.FormatCurrency(snap.TargetValueMinor, currency)
+	if err != nil {
+		return "", err
+	}
+	remaining, err := helpers.FormatCurrency(snap.TargetValueMinor-snap.CurrentValueMinor, currency)
+	if err != nil {
+		return "", err
+	}
 	if over {
 		return fmt.Sprintf("You've used %s of your %s budget — %s of %s, %s remaining.",
 			helpers.FormatPercent(snap.PercentComplete),
-			goal.Name,
-			helpers.FormatCurrency(snap.CurrentValue, currency),
-			helpers.FormatCurrency(snap.TargetValue, currency),
-			helpers.FormatCurrency(snap.TargetValue-snap.CurrentValue, currency),
-		)
+			goal.Name, current, target, remaining), nil
 	}
 	return fmt.Sprintf("Your %s spending is back down to %s — %s of %s, %s remaining.",
 		goal.Name,
 		helpers.FormatPercent(snap.PercentComplete),
-		helpers.FormatCurrency(snap.CurrentValue, currency),
-		helpers.FormatCurrency(snap.TargetValue, currency),
-		helpers.FormatCurrency(snap.TargetValue-snap.CurrentValue, currency),
-	)
-}
-
-func fallbackInsight(goal *models.Goal, snap *models.GoalSnapshot, currency string) string {
-	return fmt.Sprintf("You've used %s of your %s budget (%s of %s).",
-		helpers.FormatPercent(snap.PercentComplete),
-		goal.Name,
-		helpers.FormatCurrency(snap.CurrentValue, currency),
-		helpers.FormatCurrency(snap.TargetValue, currency),
-	)
+		current, target, remaining), nil
 }
 
 // goalElapsedFraction returns how far through the window queryTo sits, in whole
@@ -362,9 +366,9 @@ func daysInclusive(from, to time.Time) int {
 	return int(to.Sub(from).Hours()/24) + 1
 }
 
-func goalPercentComplete(current, target float64) float64 {
+func goalPercentComplete(current, target int64) float64 {
 	if target <= 0 {
 		return 0
 	}
-	return current / target * 100
+	return float64(current) / float64(target) * 100
 }

@@ -32,6 +32,7 @@ import (
 	"github.com/GregMSThompson/finance-backend/internal/services"
 	"github.com/GregMSThompson/finance-backend/internal/store"
 	"github.com/GregMSThompson/finance-backend/pkg/clock"
+	"github.com/GregMSThompson/finance-backend/pkg/helpers"
 	"github.com/GregMSThompson/finance-backend/pkg/logger"
 )
 
@@ -187,7 +188,9 @@ func printDay(date string, snap *models.GoalSnapshot, evaluated bool) {
 		fmt.Printf("%-12s %10s %8s %8s %8s  (not evaluated)\n", date, "—", "—", "—", "—")
 		return
 	}
-	fmt.Printf("%-12s %10.2f %7.1f%% %8v %8v\n", date, snap.CurrentValue, snap.PercentComplete, snap.IsOnTrack, snap.NotificationSent)
+	// Goals are USD-only, so the conversion can't fail; display in major units.
+	current, _ := helpers.ToMajorUnits(snap.CurrentValueMinor, helpers.CurrencyUSD)
+	fmt.Printf("%-12s %10.2f %7.1f%% %8v %8v\n", date, current, snap.PercentComplete, snap.IsOnTrack, snap.NotificationSent)
 }
 
 // assertStep checks a step's expectations against the day's snapshot and (for
@@ -208,8 +211,12 @@ func assertStep(ctx context.Context, goals goalGetter, uid, goalID, date string,
 	case wantsSnapshotFields && !evaluated:
 		fail("expected snapshot fields but the goal was not evaluated this day (terminal or paused?)")
 	case evaluated:
-		if exp.CurrentValue != nil && !approxEqual(snap.CurrentValue, *exp.CurrentValue) {
-			fail("currentValue = %.2f, want %.2f", snap.CurrentValue, *exp.CurrentValue)
+		if exp.CurrentValue != nil {
+			// Scenario expectations are in major units; convert the snapshot.
+			current, _ := helpers.ToMajorUnits(snap.CurrentValueMinor, helpers.CurrencyUSD)
+			if !approxEqual(current, *exp.CurrentValue) {
+				fail("currentValue = %.2f, want %.2f", current, *exp.CurrentValue)
+			}
 		}
 		if exp.PercentComplete != nil && !approxEqual(snap.PercentComplete, *exp.PercentComplete) {
 			fail("percentComplete = %.2f, want %.2f", snap.PercentComplete, *exp.PercentComplete)
@@ -240,12 +247,16 @@ func seedTransactions(ctx context.Context, txs txUpserter, uid, date string, add
 		if currency == "" {
 			currency = "USD"
 		}
+		amountMinor, err := helpers.ToMinorUnits(a.Amount, currency)
+		if err != nil {
+			return err
+		}
 		batch = append(batch, models.Transaction{
 			TransactionID: uuid.NewString(),
 			BankID:        "sim-bank",
 			AccountID:     a.AccountID,
 			Name:          a.Name,
-			Amount:        a.Amount,
+			AmountMinor:   amountMinor,
 			Currency:      currency,
 			Pending:       false,
 			Date:          date,

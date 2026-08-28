@@ -50,25 +50,26 @@ func newEvaluator(users *fakeEvalUserStore, goals *fakeGoalStore, snaps *fakeGoa
 	return NewGoalEvaluatorService(users, goals, snaps, analytics, &fakeNotificationStore{}, &fakeTasksClient{})
 }
 
-func monthlyGoal(id string, target float64) *models.Goal {
+// Targets and spend totals are in integer minor units (e.g. 30000 = $300.00).
+func monthlyGoal(id string, targetMinor int64) *models.Goal {
 	return &models.Goal{
-		GoalID:      id,
-		Type:        models.GoalTypeSpendingLimit,
-		TargetValue: target,
-		TimeWindow:  models.GoalWindowMonthly,
-		Recurrence:  models.GoalRecurrenceRecurring,
-		Status:      models.GoalStatusActive,
+		GoalID:           id,
+		Type:             models.GoalTypeSpendingLimit,
+		TargetValueMinor: targetMinor,
+		TimeWindow:       models.GoalWindowMonthly,
+		Recurrence:       models.GoalRecurrenceRecurring,
+		Status:           models.GoalStatusActive,
 	}
 }
 
 func TestGoalEvaluator_SnapshotPerActiveGoal(t *testing.T) {
 	users := &fakeEvalUserStore{users: []*models.User{{UID: "u1"}}}
 	goals := &fakeGoalStore{goals: map[string]*models.Goal{
-		"g1": monthlyGoal("g1", 300),
-		"g2": monthlyGoal("g2", 100),
+		"g1": monthlyGoal("g1", 30000),
+		"g2": monthlyGoal("g2", 10000),
 	}}
 	snaps := &fakeGoalSnapshotStore{}
-	analytics := &fakeEvalAnalytics{result: dto.AnalyticsSpendTotalResult{Total: 120, Currency: "USD"}}
+	analytics := &fakeEvalAnalytics{result: dto.AnalyticsSpendTotalResult{TotalMinor: 12000, Currency: "USD"}}
 
 	if err := newEvaluator(users, goals, snaps, analytics).Run(evalContext()); err != nil {
 		t.Fatalf("Run error: %v", err)
@@ -85,7 +86,7 @@ func TestGoalEvaluator_SnapshotPerActiveGoal(t *testing.T) {
 	for _, s := range snaps.created {
 		byGoal[s.GoalID] = s
 	}
-	if s := byGoal["g1"]; s == nil || s.CurrentValue != 120 || s.TargetValue != 300 || s.PercentComplete != 40 {
+	if s := byGoal["g1"]; s == nil || s.CurrentValueMinor != 12000 || s.TargetValueMinor != 30000 || s.PercentComplete != 40 {
 		t.Fatalf("g1 snapshot wrong: %+v", s)
 	}
 	if s := byGoal["g2"]; s == nil || s.PercentComplete != 120 {
@@ -97,12 +98,12 @@ func TestGoalEvaluator_SnapshotPerActiveGoal(t *testing.T) {
 }
 
 func TestGoalEvaluator_MapsFiltersAndWindow(t *testing.T) {
-	g := monthlyGoal("g1", 300)
+	g := monthlyGoal("g1", 30000)
 	g.Filters = models.GoalFilters{PFCPrimary: "FOOD_AND_DRINK", Merchant: "cafe", AccountID: "acc1"}
 
 	users := &fakeEvalUserStore{users: []*models.User{{UID: "u1"}}}
 	goals := &fakeGoalStore{goals: map[string]*models.Goal{"g1": g}}
-	analytics := &fakeEvalAnalytics{result: dto.AnalyticsSpendTotalResult{Total: 10}}
+	analytics := &fakeEvalAnalytics{result: dto.AnalyticsSpendTotalResult{TotalMinor: 1000}}
 
 	if err := newEvaluator(users, goals, &fakeGoalSnapshotStore{}, analytics).Run(evalContext()); err != nil {
 		t.Fatalf("Run error: %v", err)
@@ -124,21 +125,21 @@ func TestGoalEvaluator_MapsFiltersAndWindow(t *testing.T) {
 }
 
 func TestGoalEvaluator_PaceOnTrack(t *testing.T) {
-	// On 2026-08-15, 15 of 31 days elapsed ≈ 48.4%; target 300 → pace ≈ 145.
+	// On 2026-08-15, 15 of 31 days elapsed ≈ 48.4%; target 30000 → pace ≈ 14500.
 	cases := []struct {
-		name    string
-		spent   float64
-		onTrack bool
+		name       string
+		spentMinor int64
+		onTrack    bool
 	}{
-		{"under pace", 100, true},
-		{"over pace", 200, false},
+		{"under pace", 10000, true},
+		{"over pace", 20000, false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			users := &fakeEvalUserStore{users: []*models.User{{UID: "u1"}}}
-			goals := &fakeGoalStore{goals: map[string]*models.Goal{"g1": monthlyGoal("g1", 300)}}
+			goals := &fakeGoalStore{goals: map[string]*models.Goal{"g1": monthlyGoal("g1", 30000)}}
 			snaps := &fakeGoalSnapshotStore{}
-			analytics := &fakeEvalAnalytics{result: dto.AnalyticsSpendTotalResult{Total: tc.spent}}
+			analytics := &fakeEvalAnalytics{result: dto.AnalyticsSpendTotalResult{TotalMinor: tc.spentMinor}}
 
 			if err := newEvaluator(users, goals, snaps, analytics).Run(evalContext()); err != nil {
 				t.Fatalf("Run error: %v", err)
@@ -147,7 +148,7 @@ func TestGoalEvaluator_PaceOnTrack(t *testing.T) {
 				t.Fatalf("expected 1 snapshot, got %d", len(snaps.created))
 			}
 			if snaps.created[0].IsOnTrack != tc.onTrack {
-				t.Fatalf("spent %v: isOnTrack=%v, want %v", tc.spent, snaps.created[0].IsOnTrack, tc.onTrack)
+				t.Fatalf("spent %v: isOnTrack=%v, want %v", tc.spentMinor, snaps.created[0].IsOnTrack, tc.onTrack)
 			}
 		})
 	}
@@ -157,18 +158,18 @@ func TestGoalEvaluator_PerGoalErrorIsolation(t *testing.T) {
 	// g1 has a fixed window with an unparseable EndDate, so ResolveWindow errors;
 	// g2 is a normal monthly goal. The bad goal must not stop the good one.
 	bad := &models.Goal{
-		GoalID:      "g1",
-		Type:        models.GoalTypeSpendingLimit,
-		TargetValue: 100,
-		TimeWindow:  models.GoalWindowFixed,
-		Recurrence:  models.GoalRecurrenceOneOff,
-		EndDate:     "not-a-date",
-		Status:      models.GoalStatusActive,
+		GoalID:           "g1",
+		Type:             models.GoalTypeSpendingLimit,
+		TargetValueMinor: 10000,
+		TimeWindow:       models.GoalWindowFixed,
+		Recurrence:       models.GoalRecurrenceOneOff,
+		EndDate:          "not-a-date",
+		Status:           models.GoalStatusActive,
 	}
 	users := &fakeEvalUserStore{users: []*models.User{{UID: "u1"}}}
-	goals := &fakeGoalStore{goals: map[string]*models.Goal{"g1": bad, "g2": monthlyGoal("g2", 100)}}
+	goals := &fakeGoalStore{goals: map[string]*models.Goal{"g1": bad, "g2": monthlyGoal("g2", 10000)}}
 	snaps := &fakeGoalSnapshotStore{}
-	analytics := &fakeEvalAnalytics{result: dto.AnalyticsSpendTotalResult{Total: 50}}
+	analytics := &fakeEvalAnalytics{result: dto.AnalyticsSpendTotalResult{TotalMinor: 5000}}
 
 	if err := newEvaluator(users, goals, snaps, analytics).Run(evalContext()); err != nil {
 		t.Fatalf("Run should not fail on a single bad goal: %v", err)
@@ -189,8 +190,8 @@ func TestGoalEvaluator_UserListErrorPropagates(t *testing.T) {
 
 // goalWithThreshold builds a recurring monthly spending-limit goal that fires a
 // notification at the given progress percent.
-func goalWithThreshold(id string, target, thresholdPct float64) *models.Goal {
-	g := monthlyGoal(id, target)
+func goalWithThreshold(id string, targetMinor int64, thresholdPct float64) *models.Goal {
+	g := monthlyGoal(id, targetMinor)
 	g.Name = "Dining"
 	g.AlertThresholds = models.GoalAlertThresholds{ProgressPercent: helpers.Ptr(thresholdPct)}
 	return g
@@ -202,9 +203,9 @@ func newNotifyEvaluator(goals *fakeGoalStore, snaps *fakeGoalSnapshotStore, anal
 }
 
 func TestGoalEvaluator_FiresThresholdNotification(t *testing.T) {
-	goals := &fakeGoalStore{goals: map[string]*models.Goal{"g1": goalWithThreshold("g1", 300, 80)}}
-	snaps := &fakeGoalSnapshotStore{}                                                                   // no prior snapshots this period
-	analytics := &fakeEvalAnalytics{result: dto.AnalyticsSpendTotalResult{Total: 250, Currency: "USD"}} // 83.3% >= 80
+	goals := &fakeGoalStore{goals: map[string]*models.Goal{"g1": goalWithThreshold("g1", 30000, 80)}}
+	snaps := &fakeGoalSnapshotStore{}                                                                          // no prior snapshots this period
+	analytics := &fakeEvalAnalytics{result: dto.AnalyticsSpendTotalResult{TotalMinor: 25000, Currency: "USD"}} // 83.3% >= 80
 	notifs := &fakeNotificationStore{}
 	tasks := &fakeTasksClient{}
 
@@ -236,11 +237,11 @@ func TestGoalEvaluator_FiresThresholdNotification(t *testing.T) {
 func TestGoalEvaluator_NoNotificationWhileStayingOver(t *testing.T) {
 	// Previous snapshot this period was already over the threshold and we're still
 	// over: no state change, so no repeat notification.
-	goals := &fakeGoalStore{goals: map[string]*models.Goal{"g1": goalWithThreshold("g1", 300, 80)}}
+	goals := &fakeGoalStore{goals: map[string]*models.Goal{"g1": goalWithThreshold("g1", 30000, 80)}}
 	snaps := &fakeGoalSnapshotStore{sinceSnapshots: []*models.GoalSnapshot{
 		{GoalID: "g1", PercentComplete: 82},
 	}}
-	analytics := &fakeEvalAnalytics{result: dto.AnalyticsSpendTotalResult{Total: 246, Currency: "USD"}} // 82%, still over
+	analytics := &fakeEvalAnalytics{result: dto.AnalyticsSpendTotalResult{TotalMinor: 24600, Currency: "USD"}} // 82%, still over
 	notifs := &fakeNotificationStore{}
 	tasks := &fakeTasksClient{}
 
@@ -258,11 +259,11 @@ func TestGoalEvaluator_NoNotificationWhileStayingOver(t *testing.T) {
 func TestGoalEvaluator_NotifiesOnDroppingBackUnder(t *testing.T) {
 	// Previous snapshot this period was over the threshold; a refund drops us back
 	// under. That downward transition notifies (the "you recovered" signal).
-	goals := &fakeGoalStore{goals: map[string]*models.Goal{"g1": goalWithThreshold("g1", 300, 80)}}
+	goals := &fakeGoalStore{goals: map[string]*models.Goal{"g1": goalWithThreshold("g1", 30000, 80)}}
 	snaps := &fakeGoalSnapshotStore{sinceSnapshots: []*models.GoalSnapshot{
 		{GoalID: "g1", PercentComplete: 83},
 	}}
-	analytics := &fakeEvalAnalytics{result: dto.AnalyticsSpendTotalResult{Total: 210, Currency: "USD"}} // 70%, back under
+	analytics := &fakeEvalAnalytics{result: dto.AnalyticsSpendTotalResult{TotalMinor: 21000, Currency: "USD"}} // 70%, back under
 	notifs := &fakeNotificationStore{}
 	tasks := &fakeTasksClient{}
 
@@ -281,9 +282,9 @@ func TestGoalEvaluator_NotifiesOnDroppingBackUnder(t *testing.T) {
 }
 
 func TestGoalEvaluator_NoNotificationBelowThreshold(t *testing.T) {
-	goals := &fakeGoalStore{goals: map[string]*models.Goal{"g1": goalWithThreshold("g1", 300, 80)}}
+	goals := &fakeGoalStore{goals: map[string]*models.Goal{"g1": goalWithThreshold("g1", 30000, 80)}}
 	snaps := &fakeGoalSnapshotStore{}
-	analytics := &fakeEvalAnalytics{result: dto.AnalyticsSpendTotalResult{Total: 120}} // 40% < 80
+	analytics := &fakeEvalAnalytics{result: dto.AnalyticsSpendTotalResult{TotalMinor: 12000}} // 40% < 80
 	notifs := &fakeNotificationStore{}
 	tasks := &fakeTasksClient{}
 
@@ -296,25 +297,25 @@ func TestGoalEvaluator_NoNotificationBelowThreshold(t *testing.T) {
 }
 
 // oneOffFixedGoal builds a one-off fixed-window spending-limit goal.
-func oneOffFixedGoal(id string, target float64, created, endDate string) *models.Goal {
+func oneOffFixedGoal(id string, targetMinor int64, created, endDate string) *models.Goal {
 	return &models.Goal{
-		GoalID:      id,
-		Type:        models.GoalTypeSpendingLimit,
-		Name:        "Reno",
-		TargetValue: target,
-		TimeWindow:  models.GoalWindowFixed,
-		Recurrence:  models.GoalRecurrenceOneOff,
-		Status:      models.GoalStatusActive,
-		CreatedAt:   time.Date(2026, time.July, 1, 0, 0, 0, 0, time.UTC),
-		EndDate:     endDate,
+		GoalID:           id,
+		Type:             models.GoalTypeSpendingLimit,
+		Name:             "Reno",
+		TargetValueMinor: targetMinor,
+		TimeWindow:       models.GoalWindowFixed,
+		Recurrence:       models.GoalRecurrenceOneOff,
+		Status:           models.GoalStatusActive,
+		CreatedAt:        time.Date(2026, time.July, 1, 0, 0, 0, 0, time.UTC),
+		EndDate:          endDate,
 	}
 }
 
 func TestGoalEvaluator_OneOffUnderBudgetCompletes(t *testing.T) {
 	// EndDate is before the run clock (2026-08-15), so the window has closed.
-	goals := &fakeGoalStore{goals: map[string]*models.Goal{"g1": oneOffFixedGoal("g1", 300, "2026-07-01", "2026-07-31")}}
+	goals := &fakeGoalStore{goals: map[string]*models.Goal{"g1": oneOffFixedGoal("g1", 30000, "2026-07-01", "2026-07-31")}}
 	snaps := &fakeGoalSnapshotStore{}
-	analytics := &fakeEvalAnalytics{result: dto.AnalyticsSpendTotalResult{Total: 250, Currency: "USD"}} // under 300
+	analytics := &fakeEvalAnalytics{result: dto.AnalyticsSpendTotalResult{TotalMinor: 25000, Currency: "USD"}} // under 300
 	notifs := &fakeNotificationStore{}
 	tasks := &fakeTasksClient{}
 
@@ -338,9 +339,9 @@ func TestGoalEvaluator_OneOffUnderBudgetCompletes(t *testing.T) {
 }
 
 func TestGoalEvaluator_OneOffOverBudgetFails(t *testing.T) {
-	goals := &fakeGoalStore{goals: map[string]*models.Goal{"g1": oneOffFixedGoal("g1", 300, "2026-07-01", "2026-07-31")}}
+	goals := &fakeGoalStore{goals: map[string]*models.Goal{"g1": oneOffFixedGoal("g1", 30000, "2026-07-01", "2026-07-31")}}
 	snaps := &fakeGoalSnapshotStore{}
-	analytics := &fakeEvalAnalytics{result: dto.AnalyticsSpendTotalResult{Total: 350, Currency: "USD"}} // over 300
+	analytics := &fakeEvalAnalytics{result: dto.AnalyticsSpendTotalResult{TotalMinor: 35000, Currency: "USD"}} // over 300
 	notifs := &fakeNotificationStore{}
 	tasks := &fakeTasksClient{}
 
@@ -358,9 +359,9 @@ func TestGoalEvaluator_OneOffOverBudgetFails(t *testing.T) {
 
 func TestGoalEvaluator_OneOffNotYetEndedDoesNotTerminate(t *testing.T) {
 	// EndDate is in the future, so the goal stays active — no terminal transition.
-	goals := &fakeGoalStore{goals: map[string]*models.Goal{"g1": oneOffFixedGoal("g1", 300, "2026-07-01", "2026-12-31")}}
+	goals := &fakeGoalStore{goals: map[string]*models.Goal{"g1": oneOffFixedGoal("g1", 30000, "2026-07-01", "2026-12-31")}}
 	snaps := &fakeGoalSnapshotStore{}
-	analytics := &fakeEvalAnalytics{result: dto.AnalyticsSpendTotalResult{Total: 350, Currency: "USD"}} // over, but window still open
+	analytics := &fakeEvalAnalytics{result: dto.AnalyticsSpendTotalResult{TotalMinor: 35000, Currency: "USD"}} // over, but window still open
 	notifs := &fakeNotificationStore{}
 	tasks := &fakeTasksClient{}
 

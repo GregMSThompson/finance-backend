@@ -54,17 +54,17 @@ func NewGoalService(goals goalStore, snapshots goalSnapshotStore, jobs jobSubmit
 // the chat session that created it.
 func (s *goalService) Create(ctx context.Context, uid, sessionID string, def dto.GoalDefinition) (*models.Goal, error) {
 	g := &models.Goal{
-		GoalID:          uuid.NewString(),
-		Type:            def.Type,
-		Name:            def.Name,
-		TargetValue:     def.TargetValue,
-		TimeWindow:      def.TimeWindow,
-		EndDate:         def.EndDate,
-		Recurrence:      def.Recurrence,
-		Filters:         def.Filters,
-		AlertThresholds: def.AlertThresholds,
-		Status:          models.GoalStatusActive,
-		ConversationID:  sessionID,
+		GoalID:           uuid.NewString(),
+		Type:             def.Type,
+		Name:             def.Name,
+		TargetValueMinor: def.TargetValueMinor,
+		TimeWindow:       def.TimeWindow,
+		EndDate:          def.EndDate,
+		Recurrence:       def.Recurrence,
+		Filters:          def.Filters,
+		AlertThresholds:  def.AlertThresholds,
+		Status:           models.GoalStatusActive,
+		ConversationID:   sessionID,
 	}
 	if err := validateGoal(g); err != nil {
 		return nil, err
@@ -146,10 +146,10 @@ func (s *goalService) GetProgress(ctx context.Context, uid, goalID string) (dto.
 	}
 
 	prog := dto.GoalProgress{
-		GoalID:      g.GoalID,
-		Name:        g.Name,
-		Status:      g.Status,
-		TargetValue: g.TargetValue,
+		GoalID:           g.GoalID,
+		Name:             g.Name,
+		Status:           g.Status,
+		TargetValueMinor: g.TargetValueMinor,
 	}
 
 	snap, err := s.snapshots.Latest(ctx, uid, goalID)
@@ -157,13 +157,13 @@ func (s *goalService) GetProgress(ctx context.Context, uid, goalID string) (dto.
 		return dto.GoalProgress{}, err
 	}
 	if snap == nil {
-		prog.AmountRemaining = g.TargetValue
+		prog.AmountRemainingMinor = g.TargetValueMinor
 		prog.IsOnTrack = true
 		return prog, nil
 	}
 
-	prog.CurrentValue = snap.CurrentValue
-	prog.AmountRemaining = g.TargetValue - snap.CurrentValue
+	prog.CurrentValueMinor = snap.CurrentValueMinor
+	prog.AmountRemainingMinor = g.TargetValueMinor - snap.CurrentValueMinor
 	prog.PercentComplete = snap.PercentComplete
 	prog.IsOnTrack = snap.IsOnTrack
 	prog.AIInsight = snap.AIInsight
@@ -221,8 +221,8 @@ func applyGoalUpdate(g *models.Goal, upd dto.GoalUpdate) {
 	if upd.Name != nil {
 		g.Name = *upd.Name
 	}
-	if upd.TargetValue != nil {
-		g.TargetValue = *upd.TargetValue
+	if upd.TargetValueMinor != nil {
+		g.TargetValueMinor = *upd.TargetValueMinor
 	}
 	if upd.TimeWindow != nil {
 		g.TimeWindow = *upd.TimeWindow
@@ -265,7 +265,7 @@ func validateGoal(g *models.Goal) error {
 	if strings.TrimSpace(g.Name) == "" {
 		return errs.NewValidationError("name is required")
 	}
-	if g.TargetValue <= 0 {
+	if g.TargetValueMinor <= 0 {
 		return errs.NewValidationError("targetValue must be greater than 0")
 	}
 

@@ -358,11 +358,11 @@ func TestGetWidgetData_TopSpenders(t *testing.T) {
 	}
 	an := &fakeDashboardAnalytics{
 		topNResult: dto.AnalyticsTopNResult{
-			Dimension:  "category",
-			TotalSpend: 500.0,
-			Currency:   "USD",
+			Dimension:       "category",
+			TotalSpendMinor: 50000,
+			Currency:        "USD",
 			Items: []dto.TopNItem{
-				{Key: "Food", Total: 200.0, Percentage: 40.0, Count: 5},
+				{Key: "Food", TotalMinor: 20000, Percentage: 40.0, Count: 5},
 			},
 		},
 	}
@@ -432,9 +432,9 @@ func TestGetWidgetData_PeriodComparison(t *testing.T) {
 	pct := 10.5
 	an := &fakeDashboardAnalytics{
 		periodResult: dto.AnalyticsPeriodComparisonResult{
-			Current:  dto.PeriodSummary{Total: 1000, Count: 20, Currency: "USD"},
-			Previous: dto.PeriodSummary{Total: 900, Count: 18, Currency: "USD"},
-			Change:   dto.PeriodChange{AbsoluteChange: 100, PercentageChange: &pct, CountChange: 2},
+			Current:  dto.PeriodSummary{TotalMinor: 100000, Count: 20, Currency: "USD"},
+			Previous: dto.PeriodSummary{TotalMinor: 90000, Count: 18, Currency: "USD"},
+			Change:   dto.PeriodChange{AbsoluteChangeMinor: 10000, PercentageChange: &pct, CountChange: 2},
 		},
 	}
 	svc := NewDashboardService(store, an, &fakeTransactionsLister{})
@@ -447,8 +447,8 @@ func TestGetWidgetData_PeriodComparison(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected PeriodComparisonWidgetData, got %T", resp.Data)
 	}
-	if data.Current.Amount != 1000 {
-		t.Errorf("unexpected current amount: %f", data.Current.Amount)
+	if data.Current.AmountMinor != 100000 {
+		t.Errorf("unexpected current amount: %d", data.Current.AmountMinor)
 	}
 	if data.Change.Percent == nil || *data.Change.Percent != 10.5 {
 		t.Errorf("unexpected change percent: %v", data.Change.Percent)
@@ -473,7 +473,7 @@ func TestGetWidgetData_LargestTransactions(t *testing.T) {
 	txs := &fakeTransactionsLister{
 		resp: dto.TransactionListResult{
 			Transactions: []models.Transaction{
-				{TransactionID: "tx1", Name: "Amazon", Amount: 99.99, PFCPrimary: "Shopping", Date: "2026-01-15"},
+				{TransactionID: "tx1", Name: "Amazon", AmountMinor: 9999, PFCPrimary: "Shopping", Date: "2026-01-15"},
 			},
 		},
 	}
@@ -512,10 +512,10 @@ func TestGetWidgetData_RecurringSubscriptions(t *testing.T) {
 	an := &fakeDashboardAnalytics{
 		recurringResult: dto.RecurringTransactionsResult{
 			Items: []dto.RecurringItem{
-				{Merchant: "Netflix", TypicalAmount: 15.99, Frequency: "monthly", MonthlyEquivalent: 15.99},
+				{Merchant: "Netflix", TypicalAmountMinor: 1599, Frequency: "monthly", MonthlyEquivalentMinor: 1599},
 			},
-			TotalMonthlyEquivalent: 15.99,
-			Currency:               "USD",
+			TotalMonthlyEquivalentMinor: 1599,
+			Currency:                    "USD",
 		},
 	}
 	fixedNow := time.Date(2026, 3, 15, 12, 0, 0, 0, time.UTC)
@@ -532,8 +532,8 @@ func TestGetWidgetData_RecurringSubscriptions(t *testing.T) {
 	if len(data.Subscriptions) != 1 || data.Subscriptions[0].Merchant != "Netflix" {
 		t.Errorf("unexpected subscriptions: %+v", data.Subscriptions)
 	}
-	if data.TotalMonthly != 15.99 {
-		t.Errorf("unexpected totalMonthly: %f", data.TotalMonthly)
+	if data.TotalMonthlyMinor != 1599 {
+		t.Errorf("unexpected totalMonthly: %d", data.TotalMonthlyMinor)
 	}
 	// Verify 6-month default date range
 	if an.lastRecurringArgs.DateFrom != "2025-09-15" {

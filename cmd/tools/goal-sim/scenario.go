@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/GregMSThompson/finance-backend/internal/models"
+	"github.com/GregMSThompson/finance-backend/pkg/helpers"
 )
 
 // scenario is a self-contained goal simulation: the goal, a day-by-day data
@@ -82,14 +83,20 @@ func (sc *scenario) buildGoal() (*models.Goal, error) {
 	if err != nil {
 		return nil, fmt.Errorf("goal.createdAt: %w", err)
 	}
+	// Scenario YAML expresses money in major units for readability; convert to
+	// the minor units the model stores.
+	targetMinor, err := helpers.ToMinorUnits(sc.Goal.TargetValue, helpers.CurrencyUSD)
+	if err != nil {
+		return nil, fmt.Errorf("goal.targetValue: %w", err)
+	}
 	return &models.Goal{
-		GoalID:      sc.Goal.GoalID,
-		Type:        models.GoalType(sc.Goal.Type),
-		Name:        sc.Goal.Name,
-		TargetValue: sc.Goal.TargetValue,
-		TimeWindow:  models.GoalTimeWindow(sc.Goal.TimeWindow),
-		EndDate:     sc.Goal.EndDate,
-		Recurrence:  models.GoalRecurrence(sc.Goal.Recurrence),
+		GoalID:           sc.Goal.GoalID,
+		Type:             models.GoalType(sc.Goal.Type),
+		Name:             sc.Goal.Name,
+		TargetValueMinor: targetMinor,
+		TimeWindow:       models.GoalTimeWindow(sc.Goal.TimeWindow),
+		EndDate:          sc.Goal.EndDate,
+		Recurrence:       models.GoalRecurrence(sc.Goal.Recurrence),
 		Filters: models.GoalFilters{
 			PFCPrimary: sc.Goal.Filters.PFCPrimary,
 			Merchant:   sc.Goal.Filters.Merchant,

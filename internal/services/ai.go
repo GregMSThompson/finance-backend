@@ -61,11 +61,21 @@ type aiGoals interface {
 	GetProgress(ctx context.Context, uid, goalID string) (dto.GoalProgress, error)
 }
 
+// aiCreateGoalArgs decodes the create_goal tool call. The model works in major
+// units, so TargetValue arrives in dollars; the handler converts it into the
+// embedded GoalDefinition's TargetValueMinor before calling the goal service.
+type aiCreateGoalArgs struct {
+	TargetValue float64 `json:"targetValue"`
+	dto.GoalDefinition
+}
+
 // aiUpdateGoalArgs decodes the update_goal tool call. goalId identifies the
 // target; the embedded GoalUpdate carries the partial change set (nil fields
-// left untouched).
+// left untouched). TargetValue arrives in major units (dollars) and is converted
+// into GoalUpdate.TargetValueMinor by the handler.
 type aiUpdateGoalArgs struct {
-	GoalID string `json:"goalId"`
+	GoalID      string   `json:"goalId"`
+	TargetValue *float64 `json:"targetValue,omitempty"`
 	dto.GoalUpdate
 }
 
@@ -80,10 +90,35 @@ type aiGoalIDArgs struct {
 	GoalID string `json:"goalId"`
 }
 
-// goalListPayload wraps a goal slice so the list_goals result is a JSON object,
-// which the tool-response transport requires.
-type goalListPayload struct {
-	Goals []*models.Goal `json:"goals"`
+// aiGoalView is the major-unit projection of a goal returned to the model. Money
+// is stored internally in minor units; the model reasons in dollars, so money
+// fields are converted to major units at this tool boundary.
+type aiGoalView struct {
+	GoalID          string                     `json:"goalId"`
+	Type            models.GoalType            `json:"type"`
+	Name            string                     `json:"name"`
+	TargetValue     float64                    `json:"targetValue"`
+	TimeWindow      models.GoalTimeWindow      `json:"timeWindow"`
+	EndDate         string                     `json:"endDate,omitempty"`
+	Recurrence      models.GoalRecurrence      `json:"recurrence"`
+	Filters         models.GoalFilters         `json:"filters"`
+	AlertThresholds models.GoalAlertThresholds `json:"alertThresholds"`
+	Status          models.GoalStatus          `json:"status"`
+	ConversationID  string                     `json:"conversationId,omitempty"`
+}
+
+// aiGoalProgressView is the major-unit projection of goal progress for the model.
+type aiGoalProgressView struct {
+	GoalID          string            `json:"goalId"`
+	Name            string            `json:"name"`
+	Status          models.GoalStatus `json:"status"`
+	CurrentValue    float64           `json:"currentValue"`
+	TargetValue     float64           `json:"targetValue"`
+	AmountRemaining float64           `json:"amountRemaining"`
+	PercentComplete float64           `json:"percentComplete"`
+	IsOnTrack       bool              `json:"isOnTrack"`
+	AIInsight       string            `json:"aiInsight,omitempty"`
+	AsOf            time.Time         `json:"asOf"`
 }
 
 // aiGetTransactionsArgs decodes Vertex's get_transactions tool call. Vertex
@@ -555,7 +590,12 @@ func (s *aiService) executeTool(ctx context.Context, uid, sessionID string, call
 		}
 		return dto.VertexToolResult{Name: call.Name, Response: payload}, nil
 	case "create_goal":
-		def, err := decodeArgs[dto.GoalDefinition](call.Args)
+		args, err := decodeArgs[aiCreateGoalArgs](call.Args)
+		if err != nil {
+			return dto.VertexToolResult{}, err
+		}
+		def := args.GoalDefinition
+		def.TargetValueMinor, err = helpers.ToMinorUnits(args.TargetValue, helpers.CurrencyUSD)
 		if err != nil {
 			return dto.VertexToolResult{}, err
 		}
@@ -566,7 +606,7 @@ func (s *aiService) executeTool(ctx context.Context, uid, sessionID string, call
 		if err != nil {
 			return dto.VertexToolResult{}, err
 		}
-		payload, err := toMap(goal)
+		payload, err := aiGoalResponse(goal)
 		if err != nil {
 			return dto.VertexToolResult{}, err
 		}
@@ -579,11 +619,19 @@ func (s *aiService) executeTool(ctx context.Context, uid, sessionID string, call
 		if args.GoalID == "" {
 			return dto.VertexToolResult{}, errs.NewValidationError("goalId is required; call list_goals to find it")
 		}
-		goal, err := s.goals.Update(ctx, uid, args.GoalID, args.GoalUpdate)
+		upd := args.GoalUpdate
+		if args.TargetValue != nil {
+			minor, err := helpers.ToMinorUnits(*args.TargetValue, helpers.CurrencyUSD)
+			if err != nil {
+				return dto.VertexToolResult{}, err
+			}
+			upd.TargetValueMinor = &minor
+		}
+		goal, err := s.goals.Update(ctx, uid, args.GoalID, upd)
 		if err != nil {
 			return dto.VertexToolResult{}, err
 		}
-		payload, err := toMap(goal)
+		payload, err := aiGoalResponse(goal)
 		if err != nil {
 			return dto.VertexToolResult{}, err
 		}
@@ -601,7 +649,7 @@ func (s *aiService) executeTool(ctx context.Context, uid, sessionID string, call
 		if err != nil {
 			return dto.VertexToolResult{}, err
 		}
-		payload, err := toMap(goalListPayload{Goals: goals})
+		payload, err := aiGoalListResponse(goals)
 		if err != nil {
 			return dto.VertexToolResult{}, err
 		}
@@ -618,7 +666,7 @@ func (s *aiService) executeTool(ctx context.Context, uid, sessionID string, call
 		if err != nil {
 			return dto.VertexToolResult{}, err
 		}
-		payload, err := toMap(progress)
+		payload, err := aiGoalProgressResponse(progress)
 		if err != nil {
 			return dto.VertexToolResult{}, err
 		}
@@ -626,6 +674,82 @@ func (s *aiService) executeTool(ctx context.Context, uid, sessionID string, call
 	default:
 		return dto.VertexToolResult{}, errs.NewValidationError(fmt.Sprintf("unsupported tool: %s", call.Name))
 	}
+}
+
+// toGoalView converts a stored goal into the model-facing major-unit projection,
+// translating minor-unit money into dollars.
+func toGoalView(g *models.Goal) (aiGoalView, error) {
+	target, err := helpers.ToMajorUnits(g.TargetValueMinor, helpers.CurrencyUSD)
+	if err != nil {
+		return aiGoalView{}, err
+	}
+	return aiGoalView{
+		GoalID:          g.GoalID,
+		Type:            g.Type,
+		Name:            g.Name,
+		TargetValue:     target,
+		TimeWindow:      g.TimeWindow,
+		EndDate:         g.EndDate,
+		Recurrence:      g.Recurrence,
+		Filters:         g.Filters,
+		AlertThresholds: g.AlertThresholds,
+		Status:          g.Status,
+		ConversationID:  g.ConversationID,
+	}, nil
+}
+
+// aiGoalResponse builds the tool-result payload for a single goal.
+func aiGoalResponse(g *models.Goal) (map[string]any, error) {
+	view, err := toGoalView(g)
+	if err != nil {
+		return nil, err
+	}
+	return toMap(view)
+}
+
+// aiGoalListResponse builds the list_goals tool-result payload, wrapping the
+// goals in an object as the tool-response transport requires.
+func aiGoalListResponse(goals []*models.Goal) (map[string]any, error) {
+	views := make([]aiGoalView, 0, len(goals))
+	for _, g := range goals {
+		view, err := toGoalView(g)
+		if err != nil {
+			return nil, err
+		}
+		views = append(views, view)
+	}
+	return toMap(struct {
+		Goals []aiGoalView `json:"goals"`
+	}{Goals: views})
+}
+
+// aiGoalProgressResponse builds the get_goal_progress tool-result payload,
+// converting the minor-unit money fields to dollars for the model.
+func aiGoalProgressResponse(p dto.GoalProgress) (map[string]any, error) {
+	current, err := helpers.ToMajorUnits(p.CurrentValueMinor, helpers.CurrencyUSD)
+	if err != nil {
+		return nil, err
+	}
+	target, err := helpers.ToMajorUnits(p.TargetValueMinor, helpers.CurrencyUSD)
+	if err != nil {
+		return nil, err
+	}
+	remaining, err := helpers.ToMajorUnits(p.AmountRemainingMinor, helpers.CurrencyUSD)
+	if err != nil {
+		return nil, err
+	}
+	return toMap(aiGoalProgressView{
+		GoalID:          p.GoalID,
+		Name:            p.Name,
+		Status:          p.Status,
+		CurrentValue:    current,
+		TargetValue:     target,
+		AmountRemaining: remaining,
+		PercentComplete: p.PercentComplete,
+		IsOnTrack:       p.IsOnTrack,
+		AIInsight:       p.AIInsight,
+		AsOf:            p.AsOf,
+	})
 }
 
 func executeAnalyticsTool[T any, R any](

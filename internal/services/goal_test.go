@@ -116,24 +116,24 @@ func (f *fakeGoalSnapshotStore) DeleteForGoal(_ context.Context, _, goalID strin
 
 func validGoalDef() dto.GoalDefinition {
 	return dto.GoalDefinition{
-		Type:        models.GoalTypeSpendingLimit,
-		Name:        "Dining — Monthly",
-		TargetValue: 220,
-		TimeWindow:  models.GoalWindowMonthly,
-		Recurrence:  models.GoalRecurrenceRecurring,
-		Filters:     models.GoalFilters{PFCPrimary: "FOOD_AND_DRINK"},
+		Type:             models.GoalTypeSpendingLimit,
+		Name:             "Dining — Monthly",
+		TargetValueMinor: 22000,
+		TimeWindow:       models.GoalWindowMonthly,
+		Recurrence:       models.GoalRecurrenceRecurring,
+		Filters:          models.GoalFilters{PFCPrimary: "FOOD_AND_DRINK"},
 	}
 }
 
 func seedGoal(store *fakeGoalStore) *models.Goal {
 	g := &models.Goal{
-		GoalID:      "g1",
-		Type:        models.GoalTypeSpendingLimit,
-		Name:        "Dining — Monthly",
-		TargetValue: 220,
-		TimeWindow:  models.GoalWindowMonthly,
-		Recurrence:  models.GoalRecurrenceRecurring,
-		Status:      models.GoalStatusActive,
+		GoalID:           "g1",
+		Type:             models.GoalTypeSpendingLimit,
+		Name:             "Dining — Monthly",
+		TargetValueMinor: 22000,
+		TimeWindow:       models.GoalWindowMonthly,
+		Recurrence:       models.GoalRecurrenceRecurring,
+		Status:           models.GoalStatusActive,
 	}
 	store.goals[g.GoalID] = g
 	return g
@@ -163,7 +163,7 @@ func TestGoalCreate_Valid(t *testing.T) {
 func TestGoalCreate_ZeroTarget(t *testing.T) {
 	svc := NewGoalService(newFakeGoalStore(), &fakeGoalSnapshotStore{}, &fakeJobs{}, &fakeTransactionsLister{})
 	def := validGoalDef()
-	def.TargetValue = 0
+	def.TargetValueMinor = 0
 	_, err := svc.Create(context.Background(), "uid1", "s", def)
 	if !isValidationError(err) {
 		t.Fatalf("expected ValidationError, got %v", err)
@@ -212,13 +212,13 @@ func TestGoalUpdate_PartialMerge(t *testing.T) {
 	svc := NewGoalService(goals, &fakeGoalSnapshotStore{}, &fakeJobs{}, &fakeTransactionsLister{})
 
 	updated, err := svc.Update(context.Background(), "uid1", "g1", dto.GoalUpdate{
-		TargetValue: helpers.Ptr(300.0),
+		TargetValueMinor: helpers.Ptr(int64(30000)),
 	})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if updated.TargetValue != 300 {
-		t.Fatalf("expected target 300, got %v", updated.TargetValue)
+	if updated.TargetValueMinor != 30000 {
+		t.Fatalf("expected target 30000, got %v", updated.TargetValueMinor)
 	}
 	if updated.Name != "Dining — Monthly" {
 		t.Fatalf("name should be unchanged, got %q", updated.Name)
@@ -231,7 +231,7 @@ func TestGoalUpdate_RevalidatesMergedGoal(t *testing.T) {
 	svc := NewGoalService(goals, &fakeGoalSnapshotStore{}, &fakeJobs{}, &fakeTransactionsLister{})
 
 	_, err := svc.Update(context.Background(), "uid1", "g1", dto.GoalUpdate{
-		TargetValue: helpers.Ptr(-5.0),
+		TargetValueMinor: helpers.Ptr(int64(-500)),
 	})
 	if !isValidationError(err) {
 		t.Fatalf("expected ValidationError for negative target, got %v", err)
@@ -321,8 +321,8 @@ func TestGoalGetProgress_NoSnapshot(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if prog.CurrentValue != 0 || prog.AmountRemaining != 220 {
-		t.Fatalf("expected zero progress, remaining=220, got current=%v remaining=%v", prog.CurrentValue, prog.AmountRemaining)
+	if prog.CurrentValueMinor != 0 || prog.AmountRemainingMinor != 22000 {
+		t.Fatalf("expected zero progress, remaining=22000, got current=%v remaining=%v", prog.CurrentValueMinor, prog.AmountRemainingMinor)
 	}
 	if !prog.IsOnTrack {
 		t.Fatal("expected isOnTrack=true for un-evaluated goal")
@@ -337,11 +337,11 @@ func TestGoalGetProgress_WithSnapshot(t *testing.T) {
 	seedGoal(goals)
 	at := time.Date(2026, time.July, 21, 2, 0, 0, 0, time.UTC)
 	snaps := &fakeGoalSnapshotStore{latest: &models.GoalSnapshot{
-		CurrentValue:    150,
-		PercentComplete: 68.2,
-		IsOnTrack:       true,
-		AIInsight:       "You're on track.",
-		CreatedAt:       at,
+		CurrentValueMinor: 15000,
+		PercentComplete:   68.2,
+		IsOnTrack:         true,
+		AIInsight:         "You're on track.",
+		CreatedAt:         at,
 	}}
 	svc := NewGoalService(goals, snaps, &fakeJobs{}, &fakeTransactionsLister{})
 
@@ -349,8 +349,8 @@ func TestGoalGetProgress_WithSnapshot(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if prog.CurrentValue != 150 || prog.AmountRemaining != 70 {
-		t.Fatalf("expected current=150 remaining=70, got current=%v remaining=%v", prog.CurrentValue, prog.AmountRemaining)
+	if prog.CurrentValueMinor != 15000 || prog.AmountRemainingMinor != 7000 {
+		t.Fatalf("expected current=15000 remaining=7000, got current=%v remaining=%v", prog.CurrentValueMinor, prog.AmountRemainingMinor)
 	}
 	if prog.PercentComplete != 68.2 || prog.AIInsight != "You're on track." {
 		t.Fatalf("unexpected progress fields: %+v", prog)
@@ -362,13 +362,13 @@ func TestGoalGetProgress_WithSnapshot(t *testing.T) {
 
 func TestListGoalTransactions_ScopesToWindowAndFilters(t *testing.T) {
 	g := &models.Goal{
-		GoalID:      "g1",
-		Type:        models.GoalTypeSpendingLimit,
-		TargetValue: 300,
-		TimeWindow:  models.GoalWindowMonthly,
-		Recurrence:  models.GoalRecurrenceRecurring,
-		Status:      models.GoalStatusActive,
-		Filters:     models.GoalFilters{PFCPrimary: "FOOD_AND_DRINK", Merchant: "cafe", AccountID: "acc1"},
+		GoalID:           "g1",
+		Type:             models.GoalTypeSpendingLimit,
+		TargetValueMinor: 30000,
+		TimeWindow:       models.GoalWindowMonthly,
+		Recurrence:       models.GoalRecurrenceRecurring,
+		Status:           models.GoalStatusActive,
+		Filters:          models.GoalFilters{PFCPrimary: "FOOD_AND_DRINK", Merchant: "cafe", AccountID: "acc1"},
 	}
 	goals := &fakeGoalStore{goals: map[string]*models.Goal{"g1": g}}
 	tx := &fakeTransactionsLister{resp: dto.TransactionListResult{
@@ -409,14 +409,14 @@ func TestListGoalTransactions_ScopesToWindowAndFilters(t *testing.T) {
 func TestListGoalTransactions_CapsAtWindowEnd(t *testing.T) {
 	// A fixed window that closed in the past: DateTo must be the endDate, not today.
 	g := &models.Goal{
-		GoalID:      "g1",
-		Type:        models.GoalTypeSpendingLimit,
-		TargetValue: 2000,
-		TimeWindow:  models.GoalWindowFixed,
-		Recurrence:  models.GoalRecurrenceOneOff,
-		Status:      models.GoalStatusActive,
-		CreatedAt:   time.Date(2026, time.June, 1, 0, 0, 0, 0, time.UTC),
-		EndDate:     "2026-06-30",
+		GoalID:           "g1",
+		Type:             models.GoalTypeSpendingLimit,
+		TargetValueMinor: 200000,
+		TimeWindow:       models.GoalWindowFixed,
+		Recurrence:       models.GoalRecurrenceOneOff,
+		Status:           models.GoalStatusActive,
+		CreatedAt:        time.Date(2026, time.June, 1, 0, 0, 0, 0, time.UTC),
+		EndDate:          "2026-06-30",
 	}
 	goals := &fakeGoalStore{goals: map[string]*models.Goal{"g1": g}}
 	tx := &fakeTransactionsLister{}

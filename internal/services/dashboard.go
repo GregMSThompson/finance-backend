@@ -161,19 +161,19 @@ func (s *dashboardService) fetchTopSpenders(ctx context.Context, uid string, cfg
 	items := make([]dto.SpenderItem, len(result.Items))
 	for i, it := range result.Items {
 		items[i] = dto.SpenderItem{
-			Name:    it.Key,
-			Amount:  it.Total,
-			Percent: it.Percentage,
-			Count:   it.Count,
+			Name:        it.Key,
+			AmountMinor: it.TotalMinor,
+			Percent:     it.Percentage,
+			Count:       it.Count,
 		}
 	}
 	return dto.TopSpendersData{
-		Dimension:   result.Dimension,
-		TotalAmount: result.TotalSpend,
-		Currency:    result.Currency,
-		From:        result.From,
-		To:          result.To,
-		Items:       items,
+		Dimension:        result.Dimension,
+		TotalAmountMinor: result.TotalSpendMinor,
+		Currency:         result.Currency,
+		From:             result.From,
+		To:               result.To,
+		Items:            items,
 	}, nil
 }
 
@@ -222,23 +222,23 @@ func (s *dashboardService) fetchPeriodComparison(ctx context.Context, uid string
 	}
 	return dto.PeriodComparisonWidgetData{
 		Current: dto.PeriodDataItem{
-			Amount:   result.Current.Total,
-			Count:    result.Current.Count,
-			Currency: result.Current.Currency,
-			From:     result.Current.From,
-			To:       result.Current.To,
+			AmountMinor: result.Current.TotalMinor,
+			Count:       result.Current.Count,
+			Currency:    result.Current.Currency,
+			From:        result.Current.From,
+			To:          result.Current.To,
 		},
 		Previous: dto.PeriodDataItem{
-			Amount:   result.Previous.Total,
-			Count:    result.Previous.Count,
-			Currency: result.Previous.Currency,
-			From:     result.Previous.From,
-			To:       result.Previous.To,
+			AmountMinor: result.Previous.TotalMinor,
+			Count:       result.Previous.Count,
+			Currency:    result.Previous.Currency,
+			From:        result.Previous.From,
+			To:          result.Previous.To,
 		},
 		Change: dto.ChangeDataItem{
-			Amount:  result.Change.AbsoluteChange,
-			Percent: result.Change.PercentageChange,
-			Count:   result.Change.CountChange,
+			AmountMinor: result.Change.AbsoluteChangeMinor,
+			Percent:     result.Change.PercentageChange,
+			Count:       result.Change.CountChange,
 		},
 	}, nil
 }
@@ -267,7 +267,7 @@ func (s *dashboardService) fetchLargestTransactions(ctx context.Context, uid str
 			TransactionID: tx.TransactionID,
 			Date:          tx.Date,
 			Merchant:      tx.Name,
-			Amount:        tx.Amount,
+			AmountMinor:   tx.AmountMinor,
 			Category:      tx.PFCPrimary,
 		}
 	}
@@ -298,17 +298,17 @@ func (s *dashboardService) fetchRecurringSubscriptions(ctx context.Context, uid 
 	items := make([]dto.SubscriptionItem, len(result.Items))
 	for i, it := range result.Items {
 		items[i] = dto.SubscriptionItem{
-			Merchant:     it.Merchant,
-			Amount:       it.TypicalAmount,
-			Frequency:    it.Frequency,
-			MonthlyEquiv: it.MonthlyEquivalent,
-			Variable:     it.AmountIsVariable,
+			Merchant:          it.Merchant,
+			AmountMinor:       it.TypicalAmountMinor,
+			Frequency:         it.Frequency,
+			MonthlyEquivMinor: it.MonthlyEquivalentMinor,
+			Variable:          it.AmountIsVariable,
 		}
 	}
 	return dto.RecurringSubscriptionsData{
-		Subscriptions: items,
-		TotalMonthly:  result.TotalMonthlyEquivalent,
-		Currency:      result.Currency,
+		Subscriptions:     items,
+		TotalMonthlyMinor: result.TotalMonthlyEquivalentMinor,
+		Currency:          result.Currency,
 	}, nil
 }
 

@@ -141,9 +141,9 @@ func TestListTransactionsPassesCursor(t *testing.T) {
 func TestListTransactionsSortsByAmountDesc(t *testing.T) {
 	store := &fakeAnalyticsStore{
 		txs: []*models.Transaction{
-			{TransactionID: "a", Amount: 5, Date: "2025-01-03"},
-			{TransactionID: "b", Amount: 20, Date: "2025-01-01"},
-			{TransactionID: "c", Amount: 10, Date: "2025-01-02"},
+			{TransactionID: "a", AmountMinor: 5, Date: "2025-01-03"},
+			{TransactionID: "b", AmountMinor: 20, Date: "2025-01-01"},
+			{TransactionID: "c", AmountMinor: 10, Date: "2025-01-02"},
 		},
 	}
 	svc := NewTransactionsService(store)
@@ -157,7 +157,7 @@ func TestListTransactionsSortsByAmountDesc(t *testing.T) {
 	if store.lastQuery.Limit != 0 {
 		t.Fatalf("amount path should fetch unlimited, got %+v", store.lastQuery)
 	}
-	amounts := []float64{got.Transactions[0].Amount, got.Transactions[1].Amount, got.Transactions[2].Amount}
+	amounts := []int64{got.Transactions[0].AmountMinor, got.Transactions[1].AmountMinor, got.Transactions[2].AmountMinor}
 	if amounts[0] != 20 || amounts[1] != 10 || amounts[2] != 5 {
 		t.Fatalf("expected descending amounts [20 10 5], got %v", amounts)
 	}
@@ -169,9 +169,9 @@ func TestListTransactionsSortsByAmountDesc(t *testing.T) {
 func TestListTransactionsSortsByAmountAscWithLimit(t *testing.T) {
 	store := &fakeAnalyticsStore{
 		txs: []*models.Transaction{
-			{TransactionID: "a", Amount: 5},
-			{TransactionID: "b", Amount: 20},
-			{TransactionID: "c", Amount: 10},
+			{TransactionID: "a", AmountMinor: 5},
+			{TransactionID: "b", AmountMinor: 20},
+			{TransactionID: "c", AmountMinor: 10},
 		},
 	}
 	svc := NewTransactionsService(store)
@@ -183,17 +183,17 @@ func TestListTransactionsSortsByAmountAscWithLimit(t *testing.T) {
 	if len(got.Transactions) != 2 {
 		t.Fatalf("expected top 2 after sort, got %d", len(got.Transactions))
 	}
-	if got.Transactions[0].Amount != 5 || got.Transactions[1].Amount != 10 {
-		t.Fatalf("expected ascending [5 10], got [%v %v]", got.Transactions[0].Amount, got.Transactions[1].Amount)
+	if got.Transactions[0].AmountMinor != 5 || got.Transactions[1].AmountMinor != 10 {
+		t.Fatalf("expected ascending [5 10], got [%v %v]", got.Transactions[0].AmountMinor, got.Transactions[1].AmountMinor)
 	}
 }
 
 func TestListTransactionsAmountTiebreak(t *testing.T) {
 	store := &fakeAnalyticsStore{
 		txs: []*models.Transaction{
-			{TransactionID: "a", Amount: 10, Date: "2025-01-01"},
-			{TransactionID: "b", Amount: 10, Date: "2025-01-03"},
-			{TransactionID: "c", Amount: 10, Date: "2025-01-02"},
+			{TransactionID: "a", AmountMinor: 10, Date: "2025-01-01"},
+			{TransactionID: "b", AmountMinor: 10, Date: "2025-01-03"},
+			{TransactionID: "c", AmountMinor: 10, Date: "2025-01-02"},
 		},
 	}
 	svc := NewTransactionsService(store)

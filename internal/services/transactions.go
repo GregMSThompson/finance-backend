@@ -114,11 +114,11 @@ func (s *transactionsService) ListTransactions(ctx context.Context, uid string, 
 func sortTransactionsByAmount(txs []models.Transaction, desc bool) {
 	sort.Slice(txs, func(i, j int) bool {
 		a, b := txs[i], txs[j]
-		if a.Amount != b.Amount {
+		if a.AmountMinor != b.AmountMinor {
 			if desc {
-				return a.Amount > b.Amount
+				return a.AmountMinor > b.AmountMinor
 			}
-			return a.Amount < b.Amount
+			return a.AmountMinor < b.AmountMinor
 		}
 		if a.Date != b.Date {
 			return a.Date > b.Date

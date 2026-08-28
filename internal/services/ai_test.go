@@ -252,7 +252,7 @@ func TestAIQueryToolFlow(t *testing.T) {
 		},
 	}
 	analytics := &fakeAnalyticsClient{
-		totalResp: dto.AnalyticsSpendTotalResult{Total: 5, Currency: "USD"},
+		totalResp: dto.AnalyticsSpendTotalResult{TotalMinor: 5, Currency: "USD"},
 	}
 	store := &fakeAIStore{}
 	transactions := &fakeTransactionsLister{}
@@ -336,7 +336,7 @@ func TestAIQueryMultipleToolCallsUsesFirst(t *testing.T) {
 		},
 	}
 	analytics := &fakeAnalyticsClient{
-		totalResp: dto.AnalyticsSpendTotalResult{Total: 1, Currency: "USD"},
+		totalResp: dto.AnalyticsSpendTotalResult{TotalMinor: 1, Currency: "USD"},
 	}
 	store := &fakeAIStore{}
 	transactions := &fakeTransactionsLister{}
@@ -525,7 +525,7 @@ func TestAIQueryMultiToolLoop(t *testing.T) {
 		},
 	}
 	analytics := &fakeAnalyticsClient{
-		totalResp:     dto.AnalyticsSpendTotalResult{Total: 100, Currency: "USD"},
+		totalResp:     dto.AnalyticsSpendTotalResult{TotalMinor: 100, Currency: "USD"},
 		breakdownResp: dto.AnalyticsSpendBreakdownResult{},
 	}
 	store := &fakeAIStore{}
@@ -557,7 +557,7 @@ func TestAIQueryToolLoopExhausted(t *testing.T) {
 		},
 	}
 	analytics := &fakeAnalyticsClient{
-		totalResp: dto.AnalyticsSpendTotalResult{Total: 5, Currency: "USD"},
+		totalResp: dto.AnalyticsSpendTotalResult{TotalMinor: 5, Currency: "USD"},
 	}
 	store := &fakeAIStore{}
 	svc := NewAIService(vertex, analytics, &fakeTransactionsLister{}, &fakeGoalsService{}, store)
@@ -588,7 +588,7 @@ func TestAIQueryToolMessagesNotSavedToHistory(t *testing.T) {
 			{Text: "You spent $5."},
 		},
 	}
-	analytics := &fakeAnalyticsClient{totalResp: dto.AnalyticsSpendTotalResult{Total: 5, Currency: "USD"}}
+	analytics := &fakeAnalyticsClient{totalResp: dto.AnalyticsSpendTotalResult{TotalMinor: 5, Currency: "USD"}}
 	store := &fakeAIStore{}
 	svc := NewAIService(vertex, analytics, &fakeTransactionsLister{}, &fakeGoalsService{}, store)
 
@@ -638,7 +638,8 @@ func TestCreateGoalToolThreadsSessionAndDecodesDefinition(t *testing.T) {
 	if goals.createDef.Type != models.GoalTypeSpendingLimit {
 		t.Fatalf("expected type defaulted to spending_limit, got %q", goals.createDef.Type)
 	}
-	if goals.createDef.TargetValue != 300 || goals.createDef.Filters.PFCPrimary != "FOOD_AND_DRINK" {
+	// The model sends dollars (300.0); the tool converts to minor units (30000).
+	if goals.createDef.TargetValueMinor != 30000 || goals.createDef.Filters.PFCPrimary != "FOOD_AND_DRINK" {
 		t.Fatalf("definition not decoded: %+v", goals.createDef)
 	}
 	if goals.createDef.AlertThresholds.ProgressPercent == nil || *goals.createDef.AlertThresholds.ProgressPercent != 80 {
@@ -741,8 +742,9 @@ func TestUpdateGoalToolDecodesPartial(t *testing.T) {
 	if goals.updateGoalID != "g1" {
 		t.Fatalf("expected goalId g1, got %q", goals.updateGoalID)
 	}
-	if goals.updateUpd.TargetValue == nil || *goals.updateUpd.TargetValue != 500 {
-		t.Fatalf("targetValue not decoded: %+v", goals.updateUpd.TargetValue)
+	// The model sends dollars (500.0); the tool converts to minor units (50000).
+	if goals.updateUpd.TargetValueMinor == nil || *goals.updateUpd.TargetValueMinor != 50000 {
+		t.Fatalf("targetValue not decoded: %+v", goals.updateUpd.TargetValueMinor)
 	}
 	if goals.updateUpd.Status == nil || *goals.updateUpd.Status != models.GoalStatusPaused {
 		t.Fatalf("status not decoded: %+v", goals.updateUpd.Status)
@@ -753,7 +755,7 @@ func TestUpdateGoalToolDecodesPartial(t *testing.T) {
 }
 
 func TestGetGoalProgressTool(t *testing.T) {
-	goals := &fakeGoalsService{progressResp: dto.GoalProgress{GoalID: "g1", CurrentValue: 120, TargetValue: 300}}
+	goals := &fakeGoalsService{progressResp: dto.GoalProgress{GoalID: "g1", CurrentValueMinor: 12000, TargetValueMinor: 30000}}
 	svc := NewAIService(&fakeVertexClient{}, &fakeAnalyticsClient{}, &fakeTransactionsLister{}, goals, &fakeAIStore{})
 
 	ctx := helpers.TestCtx()

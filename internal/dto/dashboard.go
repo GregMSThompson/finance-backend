@@ -53,13 +53,13 @@ const (
 )
 
 type CreateWidgetRequest struct {
-	Type          string             `json:"type"`
-	Visualization string             `json:"visualization"`
+	Type          string              `json:"type"`
+	Visualization string              `json:"visualization"`
 	Config        models.WidgetConfig `json:"config"`
 }
 
 type UpdateWidgetConfigRequest struct {
-	Visualization string             `json:"visualization"`
+	Visualization string              `json:"visualization"`
 	Config        models.WidgetConfig `json:"config"`
 }
 
@@ -80,19 +80,19 @@ type WidgetDataResponse struct {
 
 // TopSpendersData is returned for topSpenders widgets (categories or merchants).
 type TopSpendersData struct {
-	Dimension   string        `json:"dimension"`
-	TotalAmount float64       `json:"totalAmount"`
-	Currency    string        `json:"currency"`
-	From        string        `json:"from"`
-	To          string        `json:"to"`
-	Items       []SpenderItem `json:"items"`
+	Dimension        string        `json:"dimension"`
+	TotalAmountMinor int64         `json:"totalAmountMinor"`
+	Currency         string        `json:"currency"`
+	From             string        `json:"from"`
+	To               string        `json:"to"`
+	Items            []SpenderItem `json:"items"`
 }
 
 type SpenderItem struct {
-	Name    string  `json:"name"`
-	Amount  float64 `json:"amount"`
-	Percent float64 `json:"percent"`
-	Count   int     `json:"count"`
+	Name        string  `json:"name"`
+	AmountMinor int64   `json:"amountMinor"`
+	Percent     float64 `json:"percent"`
+	Count       int     `json:"count"`
 }
 
 // PeriodComparisonWidgetData is returned for periodComparison widgets.
@@ -103,17 +103,17 @@ type PeriodComparisonWidgetData struct {
 }
 
 type PeriodDataItem struct {
-	Amount   float64 `json:"amount"`
-	Count    int     `json:"count"`
-	Currency string  `json:"currency"`
-	From     string  `json:"from"`
-	To       string  `json:"to"`
+	AmountMinor int64  `json:"amountMinor"`
+	Count       int    `json:"count"`
+	Currency    string `json:"currency"`
+	From        string `json:"from"`
+	To          string `json:"to"`
 }
 
 type ChangeDataItem struct {
-	Amount  float64  `json:"amount"`
-	Percent *float64 `json:"percent"`
-	Count   int      `json:"count"`
+	AmountMinor int64    `json:"amountMinor"`
+	Percent     *float64 `json:"percent"`
+	Count       int      `json:"count"`
 }
 
 // LargestTransactionsData is returned for largestTransactions widgets.
@@ -123,24 +123,24 @@ type LargestTransactionsData struct {
 }
 
 type TransactionWidgetItem struct {
-	TransactionID string  `json:"transactionId"`
-	Date          string  `json:"date"`
-	Merchant      string  `json:"merchant"`
-	Amount        float64 `json:"amount"`
-	Category      string  `json:"category"`
+	TransactionID string `json:"transactionId"`
+	Date          string `json:"date"`
+	Merchant      string `json:"merchant"`
+	AmountMinor   int64  `json:"amountMinor"`
+	Category      string `json:"category"`
 }
 
 // RecurringSubscriptionsData is returned for recurringSubscriptions widgets.
 type RecurringSubscriptionsData struct {
-	Subscriptions []SubscriptionItem `json:"subscriptions"`
-	TotalMonthly  float64            `json:"totalMonthly"`
-	Currency      string             `json:"currency"`
+	Subscriptions     []SubscriptionItem `json:"subscriptions"`
+	TotalMonthlyMinor int64              `json:"totalMonthlyMinor"`
+	Currency          string             `json:"currency"`
 }
 
 type SubscriptionItem struct {
-	Merchant     string  `json:"merchant"`
-	Amount       float64 `json:"amount"`
-	Frequency    string  `json:"frequency"`
-	MonthlyEquiv float64 `json:"monthlyEquiv"`
-	Variable     bool    `json:"variable"`
+	Merchant          string `json:"merchant"`
+	AmountMinor       int64  `json:"amountMinor"`
+	Frequency         string `json:"frequency"`
+	MonthlyEquivMinor int64  `json:"monthlyEquivMinor"`
+	Variable          bool   `json:"variable"`
 }

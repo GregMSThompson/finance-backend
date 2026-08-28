@@ -153,8 +153,8 @@ func TestPatchGoal_MapsNarrowFields(t *testing.T) {
 	if svc.lastUpdate.AlertThresholds == nil || svc.lastUpdate.AlertThresholds.ProgressPercent == nil {
 		t.Fatal("expected alertThresholds to be mapped")
 	}
-	if svc.lastUpdate.TargetValue != nil {
-		t.Fatalf("substantive field targetValue must not be settable via PATCH, got %v", *svc.lastUpdate.TargetValue)
+	if svc.lastUpdate.TargetValueMinor != nil {
+		t.Fatalf("substantive field targetValue must not be settable via PATCH, got %v", *svc.lastUpdate.TargetValueMinor)
 	}
 }
 

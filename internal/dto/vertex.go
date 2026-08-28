@@ -11,7 +11,7 @@ type VertexGenerateRequest struct {
 }
 
 type VertexContent struct {
-	Role  string       // "user" or "model"
+	Role  string // "user" or "model"
 	Parts []VertexPart
 }
 
