@@ -772,6 +772,82 @@ func TestGetGoalProgressTool(t *testing.T) {
 	if res.Response["currentValue"] != 120.0 {
 		t.Fatalf("expected currentValue 120 in response, got %v", res.Response["currentValue"])
 	}
+	if _, ok := res.Response["currentValueMinor"]; ok {
+		t.Fatalf("minor-unit key should be stripped from the model payload, got %v", res.Response)
+	}
+}
+
+func TestToMajorUnitsPayload(t *testing.T) {
+	src := struct {
+		TotalSpendMinor     int64   `json:"totalSpendMinor"`
+		AveragePerUnitMinor float64 `json:"averagePerUnitMinor"`
+		Percentage          float64 `json:"percentage"`
+		Currency            string  `json:"currency"`
+		Items               []struct {
+			Key        string `json:"key"`
+			TotalMinor int64  `json:"totalMinor"`
+		} `json:"items"`
+	}{
+		TotalSpendMinor:     12300,
+		AveragePerUnitMinor: 2000, // fractional minor units are still converted
+		Percentage:          40,
+		Currency:            "USD",
+		Items: []struct {
+			Key        string `json:"key"`
+			TotalMinor int64  `json:"totalMinor"`
+		}{{Key: "Food", TotalMinor: 500}},
+	}
+
+	out, err := toMajorUnitsPayload(src)
+	if err != nil {
+		t.Fatalf("toMajorUnitsPayload error: %v", err)
+	}
+
+	// Money keys are converted to major units and the "Minor" suffix is stripped.
+	if out["totalSpend"] != 123.0 {
+		t.Errorf("totalSpend = %v, want 123.0", out["totalSpend"])
+	}
+	if _, ok := out["totalSpendMinor"]; ok {
+		t.Error("totalSpendMinor should have been renamed")
+	}
+	if out["averagePerUnit"] != 20.0 {
+		t.Errorf("averagePerUnit = %v, want 20.0", out["averagePerUnit"])
+	}
+	// Non-money fields pass through untouched.
+	if out["percentage"] != 40.0 {
+		t.Errorf("percentage = %v, want 40.0", out["percentage"])
+	}
+	if out["currency"] != "USD" {
+		t.Errorf("currency = %v, want USD", out["currency"])
+	}
+	// Nested slices are walked too.
+	items, ok := out["items"].([]any)
+	if !ok || len(items) != 1 {
+		t.Fatalf("items not preserved: %v", out["items"])
+	}
+	first := items[0].(map[string]any)
+	if first["total"] != 5.0 || first["key"] != "Food" {
+		t.Errorf("nested item not converted: %v", first)
+	}
+}
+
+func TestGetSpendTotalToolConvertsToMajorUnits(t *testing.T) {
+	analytics := &fakeAnalyticsClient{totalResp: dto.AnalyticsSpendTotalResult{TotalMinor: 12345, Currency: "USD"}}
+	svc := NewAIService(&fakeVertexClient{}, analytics, &fakeTransactionsLister{}, &fakeGoalsService{}, &fakeAIStore{})
+
+	res, err := svc.executeTool(helpers.TestCtx(), "user", "s", dto.VertexToolCall{
+		Name: "get_spend_total",
+		Args: map[string]any{},
+	})
+	if err != nil {
+		t.Fatalf("executeTool error: %v", err)
+	}
+	if res.Response["total"] != 123.45 {
+		t.Fatalf("expected total 123.45 in dollars, got %v", res.Response["total"])
+	}
+	if _, ok := res.Response["totalMinor"]; ok {
+		t.Fatalf("minor-unit key leaked to the model: %v", res.Response)
+	}
 }
 
 func TestGetConversation(t *testing.T) {

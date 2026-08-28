@@ -49,6 +49,18 @@ func ToMajorUnits(minor int64, currency string) (float64, error) {
 	return float64(minor) / math.Pow10(exp), nil
 }
 
+// ToMajorUnitsFloat converts a minor-unit amount that may be fractional (e.g. a
+// per-period average) into major units for the given currency. It is like
+// ToMajorUnits but accepts and returns a float rather than requiring an integer
+// input, for callers converting already-decoded JSON numbers.
+func ToMajorUnitsFloat(minor float64, currency string) (float64, error) {
+	exp, err := minorUnitExponent(currency)
+	if err != nil {
+		return 0, err
+	}
+	return minor / math.Pow10(exp), nil
+}
+
 // FormatCurrency formats an integer minor-unit amount with its currency code
 // (e.g. 1250 USD -> "USD 12.50"). The decimal precision is derived from the
 // currency's minor-unit exponent, so it is correct for any supported currency
