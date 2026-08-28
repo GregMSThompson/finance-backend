@@ -106,27 +106,56 @@ func (a *Adapter) GetAccounts(ctx context.Context, accessToken string) ([]models
 	}
 
 	now := time.Now()
+	log := logger.FromContext(ctx)
 	accounts := make([]models.Account, 0, len(resp.GetAccounts()))
 	for _, acct := range resp.GetAccounts() {
 		bal := acct.GetBalances()
 		available, _ := bal.GetAvailableOk()
 		current, _ := bal.GetCurrentOk()
 		limit, _ := bal.GetLimitOk()
+		currency := bal.GetIsoCurrencyCode()
+
+		// Normalise balances to integer minor units at this ingestion boundary so
+		// no float amount is stored. All three share the account's currency; if
+		// it's unsupported we leave them unset and carry on rather than failing
+		// the whole accounts fetch.
+		availableMinor, err := balanceToMinor(available, currency)
+		if err != nil {
+			log.Warn("account balances left unset for unsupported currency",
+				"accountId", acct.GetAccountId(), "currency", currency)
+		}
+		currentMinor, _ := balanceToMinor(current, currency)
+		limitMinor, _ := balanceToMinor(limit, currency)
+
 		accounts = append(accounts, models.Account{
-			AccountID:        acct.GetAccountId(),
-			Name:             acct.GetName(),
-			OfficialName:     acct.GetOfficialName(),
-			Type:             string(acct.GetType()),
-			Subtype:          string(acct.GetSubtype()),
-			Mask:             acct.GetMask(),
-			BalanceAvailable: available,
-			BalanceCurrent:   current,
-			BalanceLimit:     limit,
-			CreatedAt:        now,
-			UpdatedAt:        now,
+			AccountID:             acct.GetAccountId(),
+			Name:                  acct.GetName(),
+			OfficialName:          acct.GetOfficialName(),
+			Type:                  string(acct.GetType()),
+			Subtype:               string(acct.GetSubtype()),
+			Mask:                  acct.GetMask(),
+			BalanceAvailableMinor: availableMinor,
+			BalanceCurrentMinor:   currentMinor,
+			BalanceLimitMinor:     limitMinor,
+			CreatedAt:             now,
+			UpdatedAt:             now,
 		})
 	}
 	return accounts, nil
+}
+
+// balanceToMinor converts an optional major-unit balance into integer minor
+// units, preserving nil (an absent balance stays absent). It returns an error
+// for unsupported currencies so the caller can log and skip.
+func balanceToMinor(major *float64, currency string) (*int64, error) {
+	if major == nil {
+		return nil, nil
+	}
+	minor, err := helpers.ToMinorUnits(*major, currency)
+	if err != nil {
+		return nil, err
+	}
+	return &minor, nil
 }
 
 func (a *Adapter) ExchangePublicToken(ctx context.Context, publicToken string) (itemID, accessToken string, err error) {
