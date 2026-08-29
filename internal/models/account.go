@@ -16,6 +16,7 @@ type Account struct {
 	BalanceAvailableMinor *int64    `firestore:"balanceAvailableMinor" json:"balanceAvailableMinor"`
 	BalanceCurrentMinor   *int64    `firestore:"balanceCurrentMinor" json:"balanceCurrentMinor"`
 	BalanceLimitMinor     *int64    `firestore:"balanceLimitMinor" json:"balanceLimitMinor"`
+	Currency              string    `firestore:"currency" json:"currency"`
 	CreatedAt             time.Time `firestore:"createdAt" json:"createdAt"`
 	UpdatedAt             time.Time `firestore:"updatedAt" json:"updatedAt"`
 }

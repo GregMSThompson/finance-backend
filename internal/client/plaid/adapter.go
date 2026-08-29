@@ -137,6 +137,7 @@ func (a *Adapter) GetAccounts(ctx context.Context, accessToken string) ([]models
 			BalanceAvailableMinor: availableMinor,
 			BalanceCurrentMinor:   currentMinor,
 			BalanceLimitMinor:     limitMinor,
+			Currency:              currency,
 			CreatedAt:             now,
 			UpdatedAt:             now,
 		})
