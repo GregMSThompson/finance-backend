@@ -35,9 +35,13 @@ type Alert struct {
 // AlertConfig holds all possible configuration fields for any alert type.
 // Not all fields are valid for all types; the service layer enforces per-type rules.
 type AlertConfig struct {
-	AmountMinor int64  `firestore:"amountMinor,omitempty" json:"amountMinor,omitempty"`
-	Window      string `firestore:"window,omitempty" json:"window,omitempty"`
-	Dimension   string `firestore:"dimension,omitempty" json:"dimension,omitempty"` // "overall", "category", "merchant"
-	Category    string `firestore:"category,omitempty" json:"category,omitempty"`
-	Merchant    string `firestore:"merchant,omitempty" json:"merchant,omitempty"`
+	AmountMinor int64 `firestore:"amountMinor,omitempty" json:"amountMinor,omitempty"`
+	// Currency is the ISO code AmountMinor is denominated in, so the client knows
+	// the minor-unit exponent. Set only when there's an amount threshold; pinned
+	// to USD today, multi-currency will source it per user.
+	Currency  string `firestore:"currency,omitempty" json:"currency,omitempty"`
+	Window    string `firestore:"window,omitempty" json:"window,omitempty"`
+	Dimension string `firestore:"dimension,omitempty" json:"dimension,omitempty"` // "overall", "category", "merchant"
+	Category  string `firestore:"category,omitempty" json:"category,omitempty"`
+	Merchant  string `firestore:"merchant,omitempty" json:"merchant,omitempty"`
 }

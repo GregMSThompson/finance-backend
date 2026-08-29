@@ -9,6 +9,7 @@ import (
 	"github.com/GregMSThompson/finance-backend/internal/dto"
 	"github.com/GregMSThompson/finance-backend/internal/errs"
 	"github.com/GregMSThompson/finance-backend/internal/models"
+	"github.com/GregMSThompson/finance-backend/pkg/helpers"
 )
 
 type alertStore interface {
@@ -55,7 +56,7 @@ func (s *alertService) CreateAlert(ctx context.Context, uid string, req dto.Crea
 		Type:     req.Type,
 		Enabled:  req.Enabled,
 		Delivery: req.Delivery,
-		Config:   req.Config,
+		Config:   pinAlertCurrency(req.Config),
 	}
 	if err := s.store.Create(ctx, uid, a); err != nil {
 		return nil, err
@@ -85,7 +86,7 @@ func (s *alertService) UpdateAlert(ctx context.Context, uid, alertID string, req
 	}
 	a.Enabled = req.Enabled
 	a.Delivery = req.Delivery
-	a.Config = req.Config
+	a.Config = pinAlertCurrency(req.Config)
 	if err := s.store.Update(ctx, uid, a); err != nil {
 		return nil, err
 	}
@@ -159,6 +160,17 @@ func validateAlertConfig(t models.AlertType, cfg models.AlertConfig) error {
 		// amountMinor is optional — no required fields
 	}
 	return nil
+}
+
+// pinAlertCurrency stamps the currency an amount threshold is denominated in.
+// It's set only when the config carries an amount, so types without a threshold
+// (subscription_increase, and income_received with no floor) carry no currency.
+// USD-only today; this is the single place an alert's currency is pinned.
+func pinAlertCurrency(cfg models.AlertConfig) models.AlertConfig {
+	if cfg.AmountMinor > 0 {
+		cfg.Currency = helpers.CurrencyUSD
+	}
+	return cfg
 }
 
 func normalizeAlertHistoryLimit(limit int) int {

@@ -8,6 +8,7 @@ import (
 	"github.com/GregMSThompson/finance-backend/internal/dto"
 	"github.com/GregMSThompson/finance-backend/internal/errs"
 	"github.com/GregMSThompson/finance-backend/internal/models"
+	"github.com/GregMSThompson/finance-backend/pkg/helpers"
 )
 
 // --- Fake store ---
@@ -152,6 +153,9 @@ func TestCreateAlert_SpendThreshold_Overall(t *testing.T) {
 	if a.Type != models.AlertTypeSpendThreshold {
 		t.Errorf("unexpected type: %s", a.Type)
 	}
+	if a.Config.Currency != helpers.CurrencyUSD {
+		t.Errorf("expected currency pinned to USD alongside the amount, got %q", a.Config.Currency)
+	}
 }
 
 func TestCreateAlert_SpendThreshold_CategoryDimension(t *testing.T) {
@@ -266,9 +270,12 @@ func TestCreateAlert_SubscriptionIncrease_Valid(t *testing.T) {
 		Delivery: []models.DeliveryMethod{models.DeliveryEmail},
 		Config:   models.AlertConfig{},
 	}
-	_, err := svc.CreateAlert(context.Background(), "uid1", req)
+	a, err := svc.CreateAlert(context.Background(), "uid1", req)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
+	}
+	if a.Config.Currency != "" {
+		t.Errorf("expected no currency without an amount threshold, got %q", a.Config.Currency)
 	}
 }
 
@@ -418,6 +425,9 @@ func TestUpdateAlert_OK(t *testing.T) {
 	}
 	if updated.Config.AmountMinor != 75000 {
 		t.Errorf("expected AmountMinor=75000, got %d", updated.Config.AmountMinor)
+	}
+	if updated.Config.Currency != helpers.CurrencyUSD {
+		t.Errorf("expected currency pinned to USD on update, got %q", updated.Config.Currency)
 	}
 }
 
