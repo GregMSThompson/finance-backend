@@ -195,6 +195,7 @@ func (s *goalEvaluatorService) evaluateGoal(ctx context.Context, uid string, goa
 		CreatedAt:         now,
 		CurrentValueMinor: current,
 		TargetValueMinor:  goal.TargetValueMinor,
+		Currency:          goal.Currency,
 		PercentComplete:   percent,
 		// Pace-based: on track when spending hasn't outrun its share of the
 		// window elapsed so far.
@@ -212,7 +213,7 @@ func (s *goalEvaluatorService) evaluateGoal(ctx context.Context, uid string, goa
 		if current <= goal.TargetValueMinor {
 			eval.newStatus = models.GoalStatusCompleted
 		}
-		body, err := goalTerminalText(goal, snap, result.Currency, eval.newStatus)
+		body, err := goalTerminalText(goal, snap, eval.newStatus)
 		if err != nil {
 			return nil, err
 		}
@@ -223,7 +224,7 @@ func (s *goalEvaluatorService) evaluateGoal(ctx context.Context, uid string, goa
 	}
 
 	// Otherwise, the progress-threshold notification (terminal supersedes it).
-	notification, err := s.maybeNotify(ctx, uid, goal, snap, result.Currency, start)
+	notification, err := s.maybeNotify(ctx, uid, goal, snap, start)
 	if err != nil {
 		return nil, err
 	}
@@ -240,7 +241,7 @@ func (s *goalEvaluatorService) evaluateGoal(ctx context.Context, uid string, goa
 // none, so it baselines to "under" (spend has reset) and a period rollover is
 // silent. Comparing to the previous snapshot rather than a fixed rule keeps this
 // independent of how often the evaluator runs.
-func (s *goalEvaluatorService) maybeNotify(ctx context.Context, uid string, goal *models.Goal, snap *models.GoalSnapshot, currency string, periodStart time.Time) (*models.Notification, error) {
+func (s *goalEvaluatorService) maybeNotify(ctx context.Context, uid string, goal *models.Goal, snap *models.GoalSnapshot, periodStart time.Time) (*models.Notification, error) {
 	threshold := goal.AlertThresholds.ProgressPercent
 	if threshold == nil {
 		return nil, nil
@@ -259,7 +260,7 @@ func (s *goalEvaluatorService) maybeNotify(ctx context.Context, uid string, goal
 		return nil, nil
 	}
 
-	insight, err := goalProgressText(goal, snap, currency, over)
+	insight, err := goalProgressText(goal, snap, over)
 	if err != nil {
 		return nil, err
 	}
@@ -290,12 +291,12 @@ func buildGoalNotification(goal *models.Goal, body string, now time.Time) *model
 // goalTerminalText renders the body for a one-off goal's completed/failed
 // outcome. Deterministic, same as the progress placeholder — see the
 // TODO(goals) note on goalInsightText for the richer AI insight to come.
-func goalTerminalText(goal *models.Goal, snap *models.GoalSnapshot, currency string, status models.GoalStatus) (string, error) {
-	current, err := helpers.FormatCurrency(snap.CurrentValueMinor, currency)
+func goalTerminalText(goal *models.Goal, snap *models.GoalSnapshot, status models.GoalStatus) (string, error) {
+	current, err := helpers.FormatCurrency(snap.CurrentValueMinor, goal.Currency)
 	if err != nil {
 		return "", err
 	}
-	target, err := helpers.FormatCurrency(snap.TargetValueMinor, currency)
+	target, err := helpers.FormatCurrency(snap.TargetValueMinor, goal.Currency)
 	if err != nil {
 		return "", err
 	}
@@ -318,16 +319,16 @@ func goalTerminalText(goal *models.Goal, snap *models.GoalSnapshot, currency str
 // something specific and actionable. That deserves its own piece (deciding
 // which analytics to pull, prompt design, cost/latency); when we build it,
 // reintroduce a genai dependency on the evaluator and swap this call out.
-func goalProgressText(goal *models.Goal, snap *models.GoalSnapshot, currency string, over bool) (string, error) {
-	current, err := helpers.FormatCurrency(snap.CurrentValueMinor, currency)
+func goalProgressText(goal *models.Goal, snap *models.GoalSnapshot, over bool) (string, error) {
+	current, err := helpers.FormatCurrency(snap.CurrentValueMinor, goal.Currency)
 	if err != nil {
 		return "", err
 	}
-	target, err := helpers.FormatCurrency(snap.TargetValueMinor, currency)
+	target, err := helpers.FormatCurrency(snap.TargetValueMinor, goal.Currency)
 	if err != nil {
 		return "", err
 	}
-	remaining, err := helpers.FormatCurrency(snap.TargetValueMinor-snap.CurrentValueMinor, currency)
+	remaining, err := helpers.FormatCurrency(snap.TargetValueMinor-snap.CurrentValueMinor, goal.Currency)
 	if err != nil {
 		return "", err
 	}

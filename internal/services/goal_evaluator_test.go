@@ -56,6 +56,7 @@ func monthlyGoal(id string, targetMinor int64) *models.Goal {
 		GoalID:           id,
 		Type:             models.GoalTypeSpendingLimit,
 		TargetValueMinor: targetMinor,
+		Currency:         helpers.CurrencyUSD,
 		TimeWindow:       models.GoalWindowMonthly,
 		Recurrence:       models.GoalRecurrenceRecurring,
 		Status:           models.GoalStatusActive,
@@ -88,6 +89,9 @@ func TestGoalEvaluator_SnapshotPerActiveGoal(t *testing.T) {
 	}
 	if s := byGoal["g1"]; s == nil || s.CurrentValueMinor != 12000 || s.TargetValueMinor != 30000 || s.PercentComplete != 40 {
 		t.Fatalf("g1 snapshot wrong: %+v", s)
+	}
+	if s := byGoal["g1"]; s.Currency != helpers.CurrencyUSD {
+		t.Fatalf("snapshot currency should be copied from the goal, got %q", s.Currency)
 	}
 	if s := byGoal["g2"]; s == nil || s.PercentComplete != 120 {
 		t.Fatalf("g2 snapshot wrong: %+v", s)
@@ -303,6 +307,7 @@ func oneOffFixedGoal(id string, targetMinor int64, created, endDate string) *mod
 		Type:             models.GoalTypeSpendingLimit,
 		Name:             "Reno",
 		TargetValueMinor: targetMinor,
+		Currency:         helpers.CurrencyUSD,
 		TimeWindow:       models.GoalWindowFixed,
 		Recurrence:       models.GoalRecurrenceOneOff,
 		Status:           models.GoalStatusActive,

@@ -66,9 +66,12 @@ type GoalProgress struct {
 	CurrentValueMinor    int64             `json:"currentValueMinor"`
 	TargetValueMinor     int64             `json:"targetValueMinor"`
 	AmountRemainingMinor int64             `json:"amountRemainingMinor"`
-	PercentComplete      float64           `json:"percentComplete"`
-	IsOnTrack            bool              `json:"isOnTrack"`
-	AIInsight            string            `json:"aiInsight,omitempty"`
+	// Currency is the ISO code the *Minor values are denominated in, so the client
+	// knows the minor-unit exponent.
+	Currency        string  `json:"currency"`
+	PercentComplete float64 `json:"percentComplete"`
+	IsOnTrack       bool    `json:"isOnTrack"`
+	AIInsight       string  `json:"aiInsight,omitempty"`
 	// AsOf is the snapshot's CreatedAt — when this progress was last measured,
 	// surfaced to the client as the staleness signal ("as of last night").
 	AsOf time.Time `json:"asOf"`

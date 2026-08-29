@@ -13,6 +13,7 @@ type GoalSnapshot struct {
 	CreatedAt         time.Time `firestore:"createdAt" json:"createdAt"`
 	CurrentValueMinor int64     `firestore:"currentValueMinor" json:"currentValueMinor"` // integer minor units (e.g. cents)
 	TargetValueMinor  int64     `firestore:"targetValueMinor" json:"targetValueMinor"`   // integer minor units (e.g. cents)
+	Currency          string    `firestore:"currency" json:"currency"`
 	PercentComplete   float64   `firestore:"percentComplete" json:"percentComplete"`
 	IsOnTrack         bool      `firestore:"isOnTrack" json:"isOnTrack"`
 	// AIInsight is the batch-generated 1-2 sentence insight, set only when a

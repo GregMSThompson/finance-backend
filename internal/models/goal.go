@@ -50,6 +50,7 @@ type Goal struct {
 	Type             GoalType       `firestore:"type" json:"type"`
 	Name             string         `firestore:"name" json:"name"`
 	TargetValueMinor int64          `firestore:"targetValueMinor" json:"targetValueMinor"` // integer minor units (e.g. cents)
+	Currency         string         `firestore:"currency" json:"currency"`
 	TimeWindow       GoalTimeWindow `firestore:"timeWindow" json:"timeWindow"`
 	// EndDate (YYYY-MM-DD) bounds a fixed window or a one-off goal. Empty for
 	// recurring weekly/monthly goals.

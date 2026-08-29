@@ -94,9 +94,11 @@ func (sc *scenario) buildGoal() (*models.Goal, error) {
 		Type:             models.GoalType(sc.Goal.Type),
 		Name:             sc.Goal.Name,
 		TargetValueMinor: targetMinor,
-		TimeWindow:       models.GoalTimeWindow(sc.Goal.TimeWindow),
-		EndDate:          sc.Goal.EndDate,
-		Recurrence:       models.GoalRecurrence(sc.Goal.Recurrence),
+		// Denominated in the same currency the target was converted with.
+		Currency:   helpers.CurrencyUSD,
+		TimeWindow: models.GoalTimeWindow(sc.Goal.TimeWindow),
+		EndDate:    sc.Goal.EndDate,
+		Recurrence: models.GoalRecurrence(sc.Goal.Recurrence),
 		Filters: models.GoalFilters{
 			PFCPrimary: sc.Goal.Filters.PFCPrimary,
 			Merchant:   sc.Goal.Filters.Merchant,

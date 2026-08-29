@@ -58,13 +58,16 @@ func (s *goalService) Create(ctx context.Context, uid, sessionID string, def dto
 		Type:             def.Type,
 		Name:             def.Name,
 		TargetValueMinor: def.TargetValueMinor,
-		TimeWindow:       def.TimeWindow,
-		EndDate:          def.EndDate,
-		Recurrence:       def.Recurrence,
-		Filters:          def.Filters,
-		AlertThresholds:  def.AlertThresholds,
-		Status:           models.GoalStatusActive,
-		ConversationID:   sessionID,
+		// USD-only today; this is the single place a goal's currency is pinned.
+		// Multi-currency will source it from the definition/user prefs.
+		Currency:        helpers.CurrencyUSD,
+		TimeWindow:      def.TimeWindow,
+		EndDate:         def.EndDate,
+		Recurrence:      def.Recurrence,
+		Filters:         def.Filters,
+		AlertThresholds: def.AlertThresholds,
+		Status:          models.GoalStatusActive,
+		ConversationID:  sessionID,
 	}
 	if err := validateGoal(g); err != nil {
 		return nil, err
@@ -150,6 +153,7 @@ func (s *goalService) GetProgress(ctx context.Context, uid, goalID string) (dto.
 		Name:             g.Name,
 		Status:           g.Status,
 		TargetValueMinor: g.TargetValueMinor,
+		Currency:         g.Currency,
 	}
 
 	snap, err := s.snapshots.Latest(ctx, uid, goalID)

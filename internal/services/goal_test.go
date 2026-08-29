@@ -131,6 +131,7 @@ func seedGoal(store *fakeGoalStore) *models.Goal {
 		Type:             models.GoalTypeSpendingLimit,
 		Name:             "Dining — Monthly",
 		TargetValueMinor: 22000,
+		Currency:         helpers.CurrencyUSD,
 		TimeWindow:       models.GoalWindowMonthly,
 		Recurrence:       models.GoalRecurrenceRecurring,
 		Status:           models.GoalStatusActive,
@@ -157,6 +158,9 @@ func TestGoalCreate_Valid(t *testing.T) {
 	}
 	if g.ConversationID != "session-1" {
 		t.Fatalf("expected conversationId=session-1, got %q", g.ConversationID)
+	}
+	if g.Currency != helpers.CurrencyUSD {
+		t.Fatalf("expected currency pinned to USD, got %q", g.Currency)
 	}
 }
 
@@ -354,6 +358,9 @@ func TestGoalGetProgress_WithSnapshot(t *testing.T) {
 	}
 	if prog.PercentComplete != 68.2 || prog.AIInsight != "You're on track." {
 		t.Fatalf("unexpected progress fields: %+v", prog)
+	}
+	if prog.Currency != helpers.CurrencyUSD {
+		t.Fatalf("expected progress currency copied from the goal, got %q", prog.Currency)
 	}
 	if !prog.AsOf.Equal(at) {
 		t.Fatalf("expected AsOf=%v, got %v", at, prog.AsOf)
