@@ -239,6 +239,7 @@ func (s *dashboardService) fetchPeriodComparison(ctx context.Context, uid string
 			AmountMinor: result.Change.AbsoluteChangeMinor,
 			Percent:     result.Change.PercentageChange,
 			Count:       result.Change.CountChange,
+			Currency:    result.Change.Currency,
 		},
 	}, nil
 }
@@ -268,6 +269,7 @@ func (s *dashboardService) fetchLargestTransactions(ctx context.Context, uid str
 			Date:          tx.Date,
 			Merchant:      tx.Name,
 			AmountMinor:   tx.AmountMinor,
+			Currency:      tx.Currency,
 			Category:      tx.PFCPrimary,
 		}
 	}

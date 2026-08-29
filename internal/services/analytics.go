@@ -204,11 +204,23 @@ func collectPeriod(ctx context.Context, store transactionAnalyticsStore, uid str
 	return data, err
 }
 
+// coalesceCurrency returns the first non-empty currency, used where a value
+// spans two periods and one may be empty (and so carry no currency of its own).
+func coalesceCurrency(a, b string) string {
+	if a != "" {
+		return a
+	}
+	return b
+}
+
 func buildChange(current, previous periodData, groupBy string) dto.PeriodChange {
 	change := dto.PeriodChange{
 		AbsoluteChangeMinor: current.total - previous.total,
 		PercentageChange:    percentageChange(current.total, previous.total),
 		CountChange:         current.count - previous.count,
+		// An empty current period has no currency of its own, so fall back to the
+		// previous period's — the change amount is meaningful in either case.
+		Currency: coalesceCurrency(current.currency, previous.currency),
 	}
 
 	if groupBy != "" {

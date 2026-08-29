@@ -249,8 +249,45 @@ func TestGetPeriodComparisonBasicTotal(t *testing.T) {
 	if got.Current.Currency != "USD" {
 		t.Fatalf("currency mismatch: %q", got.Current.Currency)
 	}
+	if got.Change.Currency != "USD" {
+		t.Fatalf("change currency mismatch: %q", got.Change.Currency)
+	}
 	if got.Current.Items != nil || got.Previous.Items != nil || got.Change.Items != nil {
 		t.Fatal("expected nil items when no groupBy")
+	}
+}
+
+func TestGetPeriodComparisonChangeCurrencyCoalescesFromPrevious(t *testing.T) {
+	// Current period has no transactions (and so no currency of its own); the
+	// change is still meaningful and must carry the previous period's currency.
+	store := &funcAnalyticsStore{
+		fn: func(q dto.TransactionQuery) ([]*models.Transaction, error) {
+			if helpers.Value(q.DateFrom) == "2025-02-01" {
+				return nil, nil
+			}
+			return []*models.Transaction{{AmountMinor: 4000, Currency: "USD"}}, nil
+		},
+	}
+	svc := NewAnalyticsService(store)
+
+	got, err := svc.GetPeriodComparison(context.Background(), "user", dto.AnalyticsPeriodComparisonArgs{
+		CurrentFrom:  "2025-02-01",
+		CurrentTo:    "2025-02-28",
+		PreviousFrom: "2025-01-01",
+		PreviousTo:   "2025-01-31",
+	})
+	if err != nil {
+		t.Fatalf("GetPeriodComparison error: %v", err)
+	}
+
+	if got.Current.Currency != "" {
+		t.Fatalf("expected empty current currency for an empty period, got %q", got.Current.Currency)
+	}
+	if got.Change.AbsoluteChangeMinor != -4000 {
+		t.Fatalf("absolute change mismatch: %v", got.Change.AbsoluteChangeMinor)
+	}
+	if got.Change.Currency != "USD" {
+		t.Fatalf("expected change currency coalesced to USD, got %q", got.Change.Currency)
 	}
 }
 

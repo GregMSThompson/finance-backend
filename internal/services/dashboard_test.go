@@ -434,7 +434,7 @@ func TestGetWidgetData_PeriodComparison(t *testing.T) {
 		periodResult: dto.AnalyticsPeriodComparisonResult{
 			Current:  dto.PeriodSummary{TotalMinor: 100000, Count: 20, Currency: "USD"},
 			Previous: dto.PeriodSummary{TotalMinor: 90000, Count: 18, Currency: "USD"},
-			Change:   dto.PeriodChange{AbsoluteChangeMinor: 10000, PercentageChange: &pct, CountChange: 2},
+			Change:   dto.PeriodChange{AbsoluteChangeMinor: 10000, PercentageChange: &pct, CountChange: 2, Currency: "USD"},
 		},
 	}
 	svc := NewDashboardService(store, an, &fakeTransactionsLister{})
@@ -452,6 +452,9 @@ func TestGetWidgetData_PeriodComparison(t *testing.T) {
 	}
 	if data.Change.Percent == nil || *data.Change.Percent != 10.5 {
 		t.Errorf("unexpected change percent: %v", data.Change.Percent)
+	}
+	if data.Change.Currency != "USD" {
+		t.Errorf("expected change currency USD, got %q", data.Change.Currency)
 	}
 	// Verify date args were resolved (non-empty)
 	if an.lastPeriodArgs.CurrentFrom == "" || an.lastPeriodArgs.PreviousFrom == "" {
@@ -473,7 +476,7 @@ func TestGetWidgetData_LargestTransactions(t *testing.T) {
 	txs := &fakeTransactionsLister{
 		resp: dto.TransactionListResult{
 			Transactions: []models.Transaction{
-				{TransactionID: "tx1", Name: "Amazon", AmountMinor: 9999, PFCPrimary: "Shopping", Date: "2026-01-15"},
+				{TransactionID: "tx1", Name: "Amazon", AmountMinor: 9999, Currency: "USD", PFCPrimary: "Shopping", Date: "2026-01-15"},
 			},
 		},
 	}
@@ -496,6 +499,9 @@ func TestGetWidgetData_LargestTransactions(t *testing.T) {
 	}
 	if tx.Category != "Shopping" {
 		t.Errorf("expected category=Shopping, got %s", tx.Category)
+	}
+	if tx.Currency != "USD" {
+		t.Errorf("expected per-item currency USD, got %q", tx.Currency)
 	}
 	if txs.args.OrderBy != "amount" || !txs.args.Desc {
 		t.Errorf("expected orderBy=amount desc, got %s desc=%v", txs.args.OrderBy, txs.args.Desc)

@@ -114,6 +114,7 @@ type ChangeDataItem struct {
 	AmountMinor int64    `json:"amountMinor"`
 	Percent     *float64 `json:"percent"`
 	Count       int      `json:"count"`
+	Currency    string   `json:"currency"`
 }
 
 // LargestTransactionsData is returned for largestTransactions widgets.
@@ -127,6 +128,7 @@ type TransactionWidgetItem struct {
 	Date          string `json:"date"`
 	Merchant      string `json:"merchant"`
 	AmountMinor   int64  `json:"amountMinor"`
+	Currency      string `json:"currency"`
 	Category      string `json:"category"`
 }
 

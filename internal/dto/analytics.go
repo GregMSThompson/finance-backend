@@ -68,10 +68,13 @@ type BreakdownItemChange struct {
 }
 
 type PeriodChange struct {
-	AbsoluteChangeMinor int64                 `json:"absoluteChangeMinor"`
-	PercentageChange    *float64              `json:"percentageChange,omitempty"`
-	CountChange         int                   `json:"countChange"`
-	Items               []BreakdownItemChange `json:"items,omitempty"`
+	AbsoluteChangeMinor int64    `json:"absoluteChangeMinor"`
+	PercentageChange    *float64 `json:"percentageChange,omitempty"`
+	CountChange         int      `json:"countChange"`
+	// Currency is coalesced from the current/previous periods so the change stands
+	// alone even when the current period is empty and has no currency of its own.
+	Currency string                `json:"currency"`
+	Items    []BreakdownItemChange `json:"items,omitempty"`
 }
 
 type AnalyticsPeriodComparisonResult struct {
