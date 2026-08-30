@@ -5,12 +5,9 @@ import (
 )
 
 type Bank struct {
-	BankID      string `firestore:"bankId" json:"bankId"`
-	Institution string `firestore:"institution" json:"institution"`
-	Status      string `firestore:"status" json:"status"` // e.g. "active", "inactive"
-	// PlaidAccessToken is the long-lived Plaid access token exchanged for the
-	// one-time public token at link. It authorizes every Plaid API call for this
-	// Item, so it is KMS-encrypted at rest and never serialized to clients.
+	BankID           string    `firestore:"bankId" json:"bankId"`
+	Institution      string    `firestore:"institution" json:"institution"`
+	Status           string    `firestore:"status" json:"status"` // e.g. "active", "inactive"
 	PlaidAccessToken string    `firestore:"plaidAccessToken" json:"-"`
 	NeedsReauth      bool      `firestore:"needsReauth,omitempty" json:"needsReauth,omitempty"`
 	CreatedAt        time.Time `firestore:"createdAt" json:"createdAt"`

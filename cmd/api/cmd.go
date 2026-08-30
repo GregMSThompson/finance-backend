@@ -30,6 +30,7 @@ func main() {
 	tstore := store.NewTransactionStore(bs.Firestore)
 	acstore := store.NewAccountStore(bs.Firestore)
 	bstore := store.NewBankStore(bs.Firestore, kmsHelper)
+	obstore := store.NewOrphanedBankStore(bs.Firestore, kmsHelper)
 	astore := store.NewAIStore(bs.Firestore)
 	dstore := store.NewDashboardStore(bs.Firestore)
 	alstore := store.NewAlertStore(bs.Firestore)
@@ -41,7 +42,7 @@ func main() {
 	// services
 	userv := services.NewUserService(ustore)
 	jobsvc := services.NewJobService(jstore, bs.CloudTasks)
-	bserv := services.NewBankService(bstore, tstore, acstore, jobsvc)
+	bserv := services.NewBankService(bstore, tstore, acstore, bs.PlaidAdapter, obstore, jobsvc)
 	accountsvc := services.NewAccountsService(bs.PlaidAdapter, bstore, acstore, jobsvc)
 	plserv := services.NewPlaidService(bs.PlaidAdapter, bstore, tstore, jobsvc, bserv, accountsvc)
 	anserv := services.NewAnalyticsService(tstore)

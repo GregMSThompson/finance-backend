@@ -145,6 +145,23 @@ func (a *Adapter) GetAccounts(ctx context.Context, accessToken string) ([]models
 	return accounts, nil
 }
 
+// RemoveItem removes the Plaid Item associated with accessToken, invalidating the
+// token and stopping all future webhooks for it. Called when a user deletes a
+// bank so the connection to their institution is actually severed. It is
+// idempotent: Plaid returns ITEM_NOT_FOUND for an already-removed Item, which we
+// treat as success since the desired end state is already reached.
+func (a *Adapter) RemoveItem(ctx context.Context, accessToken string) error {
+	req := plaid.NewItemRemoveRequest(accessToken)
+	_, _, err := a.client.PlaidApi.ItemRemove(ctx).ItemRemoveRequest(*req).Execute()
+	if err != nil {
+		if isItemNotFound(err) {
+			return nil
+		}
+		return errs.NewExternalServiceError("plaid", "failed to remove item", IsTransientError(err), err)
+	}
+	return nil
+}
+
 func (a *Adapter) ExchangePublicToken(ctx context.Context, publicToken string) (itemID, accessToken string, err error) {
 	req := plaid.NewItemPublicTokenExchangeRequest(publicToken)
 	resp, _, err := a.client.PlaidApi.ItemPublicTokenExchange(ctx).ItemPublicTokenExchangeRequest(*req).Execute()
@@ -252,6 +269,18 @@ func toPlaidEnv(env dto.PlaidEnvironment) plaid.Environment {
 	default: // dto.PlaidProduction:
 		return plaid.Production
 	}
+}
+
+// isItemNotFound reports whether err is a Plaid ITEM_NOT_FOUND error, meaning the
+// Item is already gone — so a removal request has effectively already succeeded.
+func isItemNotFound(err error) bool {
+	var apiErr plaid.GenericOpenAPIError
+	if errors.As(err, &apiErr) {
+		if plaidErr, ok := apiErr.Model().(plaid.PlaidError); ok {
+			return plaidErr.GetErrorCode() == "ITEM_NOT_FOUND"
+		}
+	}
+	return false
 }
 
 // IsTransientError checks if a Plaid error is transient (retryable).

@@ -24,19 +24,22 @@ func main() {
 
 	kmsHelper := crypto.NewKMS(bs.KMS, cfg.KMSKeyName)
 
+	// stores
 	userStore := store.NewUserStore(bs.Firestore)
 	notificationStore := store.NewNotificationStore(bs.Firestore)
 	bankStore := store.NewBankStore(bs.Firestore, kmsHelper)
+	orphanedBankStore := store.NewOrphanedBankStore(bs.Firestore, kmsHelper)
 	transactionStore := store.NewTransactionStore(bs.Firestore)
 	accountStore := store.NewAccountStore(bs.Firestore)
 	goalStore := store.NewGoalStore(bs.Firestore)
 	goalSnapshotStore := store.NewGoalSnapshotStore(bs.Firestore)
 	jobStore := store.NewJobStore(bs.Firestore)
 
+	// services
 	notificationSvc := services.NewNotificationService(userStore, notificationStore, bs.Messaging)
 	// Worker only consumes jobs; pass nil enqueuer since Submit is not called here.
 	jobSvc := services.NewJobService(jobStore, nil)
-	bankSvc := services.NewBankService(bankStore, transactionStore, accountStore, jobSvc)
+	bankSvc := services.NewBankService(bankStore, transactionStore, accountStore, bs.PlaidAdapter, orphanedBankStore, jobSvc)
 	accountsSvc := services.NewAccountsService(bs.PlaidAdapter, bankStore, accountStore, jobSvc)
 	plaidSvc := services.NewPlaidService(bs.PlaidAdapter, bankStore, transactionStore, jobSvc, bankSvc, accountsSvc)
 	txSvc := services.NewTransactionsService(transactionStore)
