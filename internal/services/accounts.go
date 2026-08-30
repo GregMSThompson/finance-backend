@@ -65,12 +65,12 @@ func (s *accountsService) RunSync(ctx context.Context, uid string, params dto.Ac
 		return result, err
 	}
 
-	if bank.PlaidPublicToken == "" {
+	if bank.PlaidAccessToken == "" {
 		log.Error("plaid access token missing for bank during account sync", "bank_id", params.BankID)
 		return result, fmt.Errorf("plaid access token missing for bank %s", params.BankID)
 	}
 
-	accounts, err := s.plaid.GetAccounts(ctx, bank.PlaidPublicToken)
+	accounts, err := s.plaid.GetAccounts(ctx, bank.PlaidAccessToken)
 	if err != nil {
 		return result, err
 	}

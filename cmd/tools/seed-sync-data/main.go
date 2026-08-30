@@ -98,7 +98,7 @@ func main() {
 		BankID:           fx.Bank.BankID,
 		Institution:      fx.Bank.Institution,
 		Status:           defaultBankStatus(fx.Bank.Status),
-		PlaidPublicToken: syntheticPlaidToken(fx.Bank.BankID),
+		PlaidAccessToken: syntheticPlaidToken(fx.Bank.BankID),
 	}
 	if err := banks.Create(ctx, fx.UserID, bank); err != nil {
 		log.Fatalf("create bank: %v", err)

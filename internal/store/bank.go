@@ -49,11 +49,11 @@ func (s *bankStore) Create(ctx context.Context, uid string, bank *models.Bank) e
 	bank.UpdatedAt = now
 
 	toStore := *bank
-	token, err := s.encryptToken(ctx, bank.PlaidPublicToken)
+	token, err := s.encryptToken(ctx, bank.PlaidAccessToken)
 	if err != nil {
 		return err
 	}
-	toStore.PlaidPublicToken = token
+	toStore.PlaidAccessToken = token
 
 	_, err = s.collection(uid).Doc(bank.BankID).Set(ctx, &toStore)
 	if err != nil {
@@ -159,13 +159,13 @@ func (s *bankStore) encryptToken(ctx context.Context, token string) (string, err
 }
 
 func (s *bankStore) decryptToken(ctx context.Context, bank *models.Bank) error {
-	if bank.PlaidPublicToken == "" || s.kms == nil {
+	if bank.PlaidAccessToken == "" || s.kms == nil {
 		return nil
 	}
-	plaintext, err := s.kms.KmsDecrypt(ctx, bank.PlaidPublicToken)
+	plaintext, err := s.kms.KmsDecrypt(ctx, bank.PlaidAccessToken)
 	if err != nil {
 		return errs.NewEncryptionError("failed to decrypt token", err)
 	}
-	bank.PlaidPublicToken = plaintext
+	bank.PlaidAccessToken = plaintext
 	return nil
 }

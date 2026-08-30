@@ -145,20 +145,6 @@ func (a *Adapter) GetAccounts(ctx context.Context, accessToken string) ([]models
 	return accounts, nil
 }
 
-// balanceToMinor converts an optional major-unit balance into integer minor
-// units, preserving nil (an absent balance stays absent). It returns an error
-// for unsupported currencies so the caller can log and skip.
-func balanceToMinor(major *float64, currency string) (*int64, error) {
-	if major == nil {
-		return nil, nil
-	}
-	minor, err := helpers.ToMinorUnits(*major, currency)
-	if err != nil {
-		return nil, err
-	}
-	return &minor, nil
-}
-
 func (a *Adapter) ExchangePublicToken(ctx context.Context, publicToken string) (itemID, accessToken string, err error) {
 	req := plaid.NewItemPublicTokenExchangeRequest(publicToken)
 	resp, _, err := a.client.PlaidApi.ItemPublicTokenExchange(ctx).ItemPublicTokenExchangeRequest(*req).Execute()
@@ -241,6 +227,20 @@ func (a *Adapter) SyncTransactions(ctx context.Context, bankID string, accessTok
 	page.HasMore = resp.GetHasMore()
 
 	return page, nil
+}
+
+// balanceToMinor converts an optional major-unit balance into integer minor
+// units, preserving nil (an absent balance stays absent). It returns an error
+// for unsupported currencies so the caller can log and skip.
+func balanceToMinor(major *float64, currency string) (*int64, error) {
+	if major == nil {
+		return nil, nil
+	}
+	minor, err := helpers.ToMinorUnits(*major, currency)
+	if err != nil {
+		return nil, err
+	}
+	return &minor, nil
 }
 
 func toPlaidEnv(env dto.PlaidEnvironment) plaid.Environment {

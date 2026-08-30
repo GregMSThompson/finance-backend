@@ -177,8 +177,8 @@ func TestExchangePublicTokenStoresBank(t *testing.T) {
 	if len(banks.created) != 1 || banks.created[0].Institution != "Chase" {
 		t.Fatalf("bank not created with institution, got %+v", banks.created)
 	}
-	if banks.created[0].PlaidPublicToken != "at-123" {
-		t.Fatalf("expected access token to be stored on bank, got %q", banks.created[0].PlaidPublicToken)
+	if banks.created[0].PlaidAccessToken != "at-123" {
+		t.Fatalf("expected access token to be stored on bank, got %q", banks.created[0].PlaidAccessToken)
 	}
 }
 
@@ -217,7 +217,7 @@ func TestRunSyncUsesCursorAndSetsNewCursor(t *testing.T) {
 			{Transactions: []models.Transaction{{TransactionID: "t2"}}, Cursor: "c2", HasMore: false},
 		},
 	}
-	banks := &fakeBankStore{list: []*models.Bank{{BankID: "item-1", PlaidPublicToken: "at-123"}}}
+	banks := &fakeBankStore{list: []*models.Bank{{BankID: "item-1", PlaidAccessToken: "at-123"}}}
 	txs := &fakeTxStore{cursor: "prev-cursor"}
 
 	svc := NewPlaidService(pl, banks, txs, &fakeJobs{}, &fakeBankSvc{}, &fakeAccountSyncer{})
@@ -283,7 +283,7 @@ func TestExchangePublicTokenPropagatesCreateError(t *testing.T) {
 
 func TestRunSyncMissingAccessToken(t *testing.T) {
 	pl := &fakePlaid{}
-	banks := &fakeBankStore{list: []*models.Bank{{BankID: "item-1", PlaidPublicToken: ""}}}
+	banks := &fakeBankStore{list: []*models.Bank{{BankID: "item-1", PlaidAccessToken: ""}}}
 	txs := &fakeTxStore{}
 
 	svc := NewPlaidService(pl, banks, txs, &fakeJobs{}, &fakeBankSvc{}, &fakeAccountSyncer{})
@@ -296,7 +296,7 @@ func TestRunSyncMissingAccessToken(t *testing.T) {
 
 func TestRunSyncGetCursorError(t *testing.T) {
 	pl := &fakePlaid{}
-	banks := &fakeBankStore{list: []*models.Bank{{BankID: "item-1", PlaidPublicToken: "at-123"}}}
+	banks := &fakeBankStore{list: []*models.Bank{{BankID: "item-1", PlaidAccessToken: "at-123"}}}
 	txs := &fakeTxStore{getErr: errors.New("get cursor failed")}
 
 	svc := NewPlaidService(pl, banks, txs, &fakeJobs{}, &fakeBankSvc{}, &fakeAccountSyncer{})
@@ -309,7 +309,7 @@ func TestRunSyncGetCursorError(t *testing.T) {
 
 func TestRunSyncPlaidError(t *testing.T) {
 	pl := &fakePlaid{syncErr: errors.New("plaid sync failed")}
-	banks := &fakeBankStore{list: []*models.Bank{{BankID: "item-1", PlaidPublicToken: "at-123"}}}
+	banks := &fakeBankStore{list: []*models.Bank{{BankID: "item-1", PlaidAccessToken: "at-123"}}}
 	txs := &fakeTxStore{}
 
 	svc := NewPlaidService(pl, banks, txs, &fakeJobs{}, &fakeBankSvc{}, &fakeAccountSyncer{})
@@ -326,7 +326,7 @@ func TestRunSyncUpsertError(t *testing.T) {
 			{Transactions: []models.Transaction{{TransactionID: "t1"}}, Cursor: "c1", HasMore: false},
 		},
 	}
-	banks := &fakeBankStore{list: []*models.Bank{{BankID: "item-1", PlaidPublicToken: "at-123"}}}
+	banks := &fakeBankStore{list: []*models.Bank{{BankID: "item-1", PlaidAccessToken: "at-123"}}}
 	txs := &fakeTxStore{upsertErr: errors.New("upsert failed")}
 
 	svc := NewPlaidService(pl, banks, txs, &fakeJobs{}, &fakeBankSvc{}, &fakeAccountSyncer{})
@@ -363,7 +363,7 @@ func TestRunSyncSetCursorError(t *testing.T) {
 			{Transactions: []models.Transaction{{TransactionID: "t1"}}, Cursor: "c1", HasMore: false},
 		},
 	}
-	banks := &fakeBankStore{list: []*models.Bank{{BankID: "item-1", PlaidPublicToken: "at-123"}}}
+	banks := &fakeBankStore{list: []*models.Bank{{BankID: "item-1", PlaidAccessToken: "at-123"}}}
 	txs := &fakeTxStore{setCurErr: errors.New("set cursor failed")}
 
 	svc := NewPlaidService(pl, banks, txs, &fakeJobs{}, &fakeBankSvc{}, &fakeAccountSyncer{})

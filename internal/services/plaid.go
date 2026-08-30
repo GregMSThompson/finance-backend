@@ -92,7 +92,7 @@ func (s *plaidService) ExchangePublicToken(ctx context.Context, uid string, req 
 		BankID:           itemID,
 		Institution:      req.InstitutionName,
 		Status:           "active",
-		PlaidPublicToken: accessToken,
+		PlaidAccessToken: accessToken,
 		CreatedAt:        clock.Now(ctx),
 		UpdatedAt:        clock.Now(ctx),
 	}
@@ -193,7 +193,7 @@ func (s *plaidService) RunSync(ctx context.Context, uid string, params dto.Plaid
 			continue
 		}
 
-		token := b.PlaidPublicToken
+		token := b.PlaidAccessToken
 		if token == "" {
 			return result, fmt.Errorf("plaid access token missing for bank %s", b.BankID)
 		}
