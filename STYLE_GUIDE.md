@@ -1,20 +1,21 @@
 # Style Guide
 
-## Function Ordering
+## File Ordering
 
-Goal: make files easy to scan by showing the public API first and implementation details second.
+Goal: make files easy to scan by keeping declarations in a predictable order.
 
 Rules:
 
-1. Place exported (public) functions and methods at the top of the file.
-2. Place unexported (private) helpers below exported functions.
-3. Keep helpers close to the public function they support when practical.
-4. If the file is large, group by feature/flow first; within each group, keep public functions above private helpers.
-5. Prefer readability over rigid ordering if strict ordering would make the file harder to follow.
+1. Order top-level declarations as: constants, interfaces, structs, exported (public) functions and methods, then unexported (private) functions and methods.
+2. Keep declarations of the same kind together where practical.
+3. Always group all constant and type declarations (constants, interfaces, structs) at the top of the file, ahead of any functions or methods — even in large files. Types and constants must never be sprinkled between functions, so the full set of names a file defines is visible in one place.
+4. Keep private helpers close to the public function they support when practical.
+5. If the file is large, group the functions and methods below the type block by feature/flow; within each group, keep exported before unexported.
+6. Prefer readability over rigid ordering of functions and methods if strict ordering would make the file harder to follow. This does not relax rule 3 — the type block stays at the top regardless.
 
 Notes:
 
-- Constructors like `NewX(...)` are exported API and should appear near the top.
+- Constructors like `NewX(...)` are exported API and should appear before private functions.
 - Interface implementations can stay together if splitting them harms readability.
 
 ## Validation Placement
