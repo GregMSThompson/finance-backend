@@ -48,7 +48,7 @@ func main() {
 	anserv := services.NewAnalyticsService(tstore)
 	txserv := services.NewTransactionsService(tstore)
 	alertsvc := services.NewAlertService(alstore, nstore)
-	goalsvc := services.NewGoalService(gstore, gsstore, jobsvc, txserv)
+	goalsvc := services.NewGoalService(gstore, gsstore, jobsvc, txserv, anserv)
 	aiserv := services.NewAIService(bs.GenAIAdapter, anserv, txserv, goalsvc, astore)
 	dashsvc := services.NewDashboardService(dstore, anserv, txserv)
 

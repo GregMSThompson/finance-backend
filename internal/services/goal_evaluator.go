@@ -3,11 +3,13 @@ package services
 import (
 	"context"
 	"fmt"
+	"math"
 	"time"
 
 	"github.com/google/uuid"
 
 	"github.com/GregMSThompson/finance-backend/internal/dto"
+	"github.com/GregMSThompson/finance-backend/internal/errs"
 	"github.com/GregMSThompson/finance-backend/internal/models"
 	"github.com/GregMSThompson/finance-backend/pkg/clock"
 	"github.com/GregMSThompson/finance-backend/pkg/helpers"
@@ -28,8 +30,23 @@ type goalEvaluatorSnapshotStore interface {
 	ListForGoalSince(ctx context.Context, uid, goalID string, since time.Time) ([]*models.GoalSnapshot, error)
 }
 
-type goalEvaluatorAnalytics interface {
+// goalStrategyAnalytics is the spend measurement a strategy needs, satisfied by
+// the analytics service and shared by the create and evaluate paths.
+type goalStrategyAnalytics interface {
 	GetSpendTotal(ctx context.Context, uid string, args dto.AnalyticsSpendTotalArgs) (dto.AnalyticsSpendTotalResult, error)
+}
+
+// goalStrategy encapsulates the type-specific parts of a goal: capturing any
+// baseline at creation, measuring current progress in a window, resolving the
+// effective target, and scoring a measurement. The evaluator owns the shared
+// scaffolding (windowing, snapshots, notification dedup, terminal detection);
+// a strategy supplies only what differs by type. The create path calls only
+// Initialize (baseline capture); the evaluator drives Measure/Target/Score.
+type goalStrategy interface {
+	Initialize(ctx context.Context, uid string, g *models.Goal) error
+	Measure(ctx context.Context, uid string, g *models.Goal, w goalWindow) (int64, error)
+	Target(g *models.Goal) int64
+	Score(g *models.Goal, w goalWindow, current int64) goalProgress
 }
 
 // goalEvaluatorService writes a daily progress snapshot for every active goal.
@@ -39,7 +56,7 @@ type goalEvaluatorService struct {
 	users         goalEvaluatorUserStore
 	goals         goalEvaluatorGoalStore
 	snapshots     goalEvaluatorSnapshotStore
-	analytics     goalEvaluatorAnalytics
+	strategies    map[models.GoalType]goalStrategy
 	notifications evaluatorNotificationStore
 	tasks         evaluatorTasksClient
 }
@@ -53,11 +70,44 @@ type goalEvaluation struct {
 	newStatus    models.GoalStatus
 }
 
+// goalWindow is the resolved measurement period for a single evaluation.
+// queryTo is the earlier of today and end — a fixed window can close before
+// today — and caps both the spend query and the pace clock.
+type goalWindow struct {
+	start   time.Time
+	end     time.Time
+	queryTo time.Time
+}
+
+// goalProgress is the scored outcome of a measurement. succeeded reports
+// whether the goal would be met if the window closed now; it is consulted only
+// on a one-off's terminal evaluation.
+type goalProgress struct {
+	percent   float64
+	isOnTrack bool
+	succeeded bool
+}
+
+// spendingLimitStrategy measures accumulated spend in the window against a fixed
+// ceiling: lower is better, on track while spend stays within its share of the
+// window elapsed, met while spend stays at or under target.
+type spendingLimitStrategy struct {
+	analytics goalStrategyAnalytics
+}
+
+// reductionStrategy is a spending limit whose ceiling is derived, at creation,
+// from a comparable prior period: target = baseline × (1 − percent). Once frozen
+// it behaves exactly like a spending limit — including across recurring periods,
+// which reuse the same frozen target rather than re-measuring the baseline.
+type reductionStrategy struct {
+	spendingLimitStrategy
+}
+
 func NewGoalEvaluatorService(
 	users goalEvaluatorUserStore,
 	goals goalEvaluatorGoalStore,
 	snapshots goalEvaluatorSnapshotStore,
-	analytics goalEvaluatorAnalytics,
+	analytics goalStrategyAnalytics,
 	notifications evaluatorNotificationStore,
 	tasks evaluatorTasksClient,
 ) *goalEvaluatorService {
@@ -65,7 +115,7 @@ func NewGoalEvaluatorService(
 		users:         users,
 		goals:         goals,
 		snapshots:     snapshots,
-		analytics:     analytics,
+		strategies:    newGoalStrategies(analytics),
 		notifications: notifications,
 		tasks:         tasks,
 	}
@@ -164,42 +214,28 @@ func (s *goalEvaluatorService) evaluateGoal(ctx context.Context, uid string, goa
 	if queryTo.After(end) {
 		queryTo = end
 	}
+	w := goalWindow{start: start, end: end, queryTo: queryTo}
 
-	args := dto.AnalyticsSpendTotalArgs{
-		Pending:  helpers.Ptr(false),
-		DateFrom: helpers.Ptr(helpers.FormatDate(start)),
-		DateTo:   helpers.Ptr(helpers.FormatDate(queryTo)),
-	}
-	if goal.Filters.PFCPrimary != "" {
-		args.PFCPrimary = helpers.Ptr(goal.Filters.PFCPrimary)
-	}
-	if goal.Filters.Merchant != "" {
-		args.Merchant = helpers.Ptr(goal.Filters.Merchant)
-	}
-	if goal.Filters.AccountID != "" {
-		args.AccountID = helpers.Ptr(goal.Filters.AccountID)
-	}
-
-	result, err := s.analytics.GetSpendTotal(ctx, uid, args)
+	strat, err := strategyFor(s.strategies, goal.Type)
 	if err != nil {
-		return nil, fmt.Errorf("spend total: %w", err)
+		return nil, err
 	}
 
-	current := result.TotalMinor
-	elapsed := goalElapsedFraction(start, queryTo, end)
-	percent := goalPercentComplete(current, goal.TargetValueMinor)
+	current, err := strat.Measure(ctx, uid, goal, w)
+	if err != nil {
+		return nil, err
+	}
+	prog := strat.Score(goal, w, current)
 
 	snap := &models.GoalSnapshot{
 		SnapshotID:        uuid.NewString(),
 		GoalID:            goal.GoalID,
 		CreatedAt:         now,
 		CurrentValueMinor: current,
-		TargetValueMinor:  goal.TargetValueMinor,
+		TargetValueMinor:  strat.Target(goal),
 		Currency:          goal.Currency,
-		PercentComplete:   percent,
-		// Pace-based: on track when spending hasn't outrun its share of the
-		// window elapsed so far.
-		IsOnTrack: float64(current) <= float64(goal.TargetValueMinor)*elapsed,
+		PercentComplete:   prog.percent,
+		IsOnTrack:         prog.isOnTrack,
 	}
 
 	eval := &goalEvaluation{snapshot: snap}
@@ -210,7 +246,7 @@ func (s *goalEvaluatorService) evaluateGoal(ctx context.Context, uid string, goa
 	// the same regardless of which run past the end date observes it.
 	if goal.Recurrence == models.GoalRecurrenceOneOff && helpers.DateOf(now).After(end) {
 		eval.newStatus = models.GoalStatusFailed
-		if current <= goal.TargetValueMinor {
+		if prog.succeeded {
 			eval.newStatus = models.GoalStatusCompleted
 		}
 		body, err := goalTerminalText(goal, snap, eval.newStatus)
@@ -372,4 +408,112 @@ func goalPercentComplete(current, target int64) float64 {
 		return 0
 	}
 	return float64(current) / float64(target) * 100
+}
+
+// --- Goal strategies -------------------------------------------------------
+
+func newGoalStrategies(analytics goalStrategyAnalytics) map[models.GoalType]goalStrategy {
+	sl := spendingLimitStrategy{analytics: analytics}
+	return map[models.GoalType]goalStrategy{
+		models.GoalTypeSpendingLimit: sl,
+		models.GoalTypeReduction:     reductionStrategy{spendingLimitStrategy: sl},
+	}
+}
+
+// strategyFor resolves a goal type to its strategy, rejecting unsupported types
+// the same way validation does.
+func strategyFor(strategies map[models.GoalType]goalStrategy, t models.GoalType) (goalStrategy, error) {
+	strat, ok := strategies[t]
+	if !ok {
+		return nil, errs.NewValidationError(fmt.Sprintf("unsupported goal type: %s", t))
+	}
+	return strat, nil
+}
+
+func (s spendingLimitStrategy) Initialize(ctx context.Context, uid string, g *models.Goal) error {
+	return nil // a literal target needs no baseline
+}
+
+func (s spendingLimitStrategy) Measure(ctx context.Context, uid string, g *models.Goal, w goalWindow) (int64, error) {
+	args := dto.AnalyticsSpendTotalArgs{
+		Pending:  helpers.Ptr(false),
+		DateFrom: helpers.Ptr(helpers.FormatDate(w.start)),
+		DateTo:   helpers.Ptr(helpers.FormatDate(w.queryTo)),
+	}
+	applyGoalFilters(&args, g.Filters)
+	result, err := s.analytics.GetSpendTotal(ctx, uid, args)
+	if err != nil {
+		return 0, fmt.Errorf("spend total: %w", err)
+	}
+	return result.TotalMinor, nil
+}
+
+func (s spendingLimitStrategy) Target(g *models.Goal) int64 {
+	return g.TargetValueMinor
+}
+
+func (s spendingLimitStrategy) Score(g *models.Goal, w goalWindow, current int64) goalProgress {
+	target := g.TargetValueMinor
+	elapsed := goalElapsedFraction(w.start, w.queryTo, w.end)
+	return goalProgress{
+		percent:   goalPercentComplete(current, target),
+		isOnTrack: float64(current) <= float64(target)*elapsed,
+		succeeded: current <= target,
+	}
+}
+
+func (s reductionStrategy) Initialize(ctx context.Context, uid string, g *models.Goal) error {
+	if g.ReductionPercent == nil {
+		return errs.NewValidationError("reductionPercent is required for a reduction goal")
+	}
+	start, end, err := priorComparableWindow(g)
+	if err != nil {
+		return err
+	}
+	args := dto.AnalyticsSpendTotalArgs{
+		Pending:  helpers.Ptr(false),
+		DateFrom: helpers.Ptr(helpers.FormatDate(start)),
+		DateTo:   helpers.Ptr(helpers.FormatDate(end)),
+	}
+	applyGoalFilters(&args, g.Filters)
+	result, err := s.analytics.GetSpendTotal(ctx, uid, args)
+	if err != nil {
+		return fmt.Errorf("reduction baseline spend total: %w", err)
+	}
+	baseline := result.TotalMinor
+	g.BaselineValueMinor = &baseline
+	g.TargetValueMinor = int64(math.Round(float64(baseline) * (100 - *g.ReductionPercent) / 100))
+	return nil
+}
+
+// priorComparableWindow returns the last complete period of the goal's shape
+// immediately before the period containing its creation — the baseline a
+// reduction goal measures against. Monthly → previous calendar month, weekly →
+// previous week, fixed → the equal-length window ending the day before.
+func priorComparableWindow(g *models.Goal) (start, end time.Time, err error) {
+	curStart, curEnd, err := g.ResolveWindow(g.CreatedAt)
+	if err != nil {
+		return time.Time{}, time.Time{}, err
+	}
+	switch g.TimeWindow {
+	case models.GoalWindowMonthly:
+		lastDayPrev := curStart.AddDate(0, 0, -1)
+		return helpers.FirstOfMonth(lastDayPrev), lastDayPrev, nil
+	case models.GoalWindowWeekly:
+		return curStart.AddDate(0, 0, -7), curStart.AddDate(0, 0, -1), nil
+	case models.GoalWindowFixed:
+		lengthDays := daysInclusive(curStart, curEnd)
+		end = curStart.AddDate(0, 0, -1)
+		return end.AddDate(0, 0, -(lengthDays - 1)), end, nil
+	default:
+		return time.Time{}, time.Time{}, fmt.Errorf("goal %s: cannot resolve prior window for timeWindow %q", g.GoalID, g.TimeWindow)
+	}
+}
+
+// applyGoalFilters maps a goal's filter set onto a spend-total query. OptString
+// leaves an unset filter nil so it doesn't constrain the query.
+func applyGoalFilters(args *dto.AnalyticsSpendTotalArgs, f models.GoalFilters) {
+	args.PFCPrimary = helpers.OptString(f.PFCPrimary)
+	args.Merchant = helpers.OptString(f.Merchant)
+	args.AccountID = helpers.OptString(f.AccountID)
 }

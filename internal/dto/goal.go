@@ -20,6 +20,10 @@ type GoalDefinition struct {
 	Recurrence       models.GoalRecurrence      `json:"recurrence"`
 	Filters          models.GoalFilters         `json:"filters,omitempty"`
 	AlertThresholds  models.GoalAlertThresholds `json:"alertThresholds,omitempty"`
+	// ReductionPercent is required for reduction goals (percent less than the
+	// baseline period) and ignored otherwise. The concrete TargetValueMinor is
+	// derived from the measured baseline at creation, so callers leave it zero.
+	ReductionPercent *float64 `json:"reductionPercent,omitempty"`
 }
 
 // GoalUpdate is a partial update to an existing goal — nil fields are left

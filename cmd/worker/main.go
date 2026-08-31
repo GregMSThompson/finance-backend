@@ -43,7 +43,8 @@ func main() {
 	accountsSvc := services.NewAccountsService(bs.PlaidAdapter, bankStore, accountStore, jobSvc)
 	plaidSvc := services.NewPlaidService(bs.PlaidAdapter, bankStore, transactionStore, jobSvc, bankSvc, accountsSvc)
 	txSvc := services.NewTransactionsService(transactionStore)
-	goalSvc := services.NewGoalService(goalStore, goalSnapshotStore, jobSvc, txSvc)
+	analyticsSvc := services.NewAnalyticsService(transactionStore)
+	goalSvc := services.NewGoalService(goalStore, goalSnapshotStore, jobSvc, txSvc, analyticsSvc)
 
 	deps := &taskhandlers.Deps{
 		Log:               bs.Log,

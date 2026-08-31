@@ -12,8 +12,9 @@ type GoalType string
 
 const (
 	GoalTypeSpendingLimit GoalType = "spending_limit"
-	// Further types (savings_target, pay_down, reduction, ...) are added as
-	// their evaluation logic lands.
+	GoalTypeReduction     GoalType = "reduction"
+	// Further types (savings_target, pay_down, ...) are added as their
+	// evaluation logic lands.
 )
 
 // GoalTimeWindow is the period a goal is measured over.
@@ -63,6 +64,13 @@ type Goal struct {
 	// prior period (Reduction, Emergency Fund), in integer minor units. Unused
 	// for Spending Limit.
 	BaselineValueMinor *int64 `firestore:"baselineValueMinor,omitempty" json:"baselineValueMinor,omitempty"`
+	// ReductionPercent is set only for reduction goals: how much less than the
+	// baseline period the user aims to spend (e.g. 10 → 10% less). The concrete
+	// TargetValueMinor is frozen from the baseline at creation and does NOT move
+	// as a recurring goal rolls over — every period is measured against that same
+	// frozen target. To retarget against a newer period, update or recreate the
+	// goal.
+	ReductionPercent *float64 `firestore:"reductionPercent,omitempty" json:"reductionPercent,omitempty"`
 	// ConversationID links the goal to the chat session that created it, for the
 	// "view original conversation" affordance.
 	ConversationID string    `firestore:"conversationId,omitempty" json:"conversationId,omitempty"`

@@ -39,14 +39,16 @@ type goalService struct {
 	snapshots    goalSnapshotStore
 	jobs         jobSubmitter
 	transactions goalTransactionLister
+	strategies   map[models.GoalType]goalStrategy
 }
 
-func NewGoalService(goals goalStore, snapshots goalSnapshotStore, jobs jobSubmitter, transactions goalTransactionLister) *goalService {
+func NewGoalService(goals goalStore, snapshots goalSnapshotStore, jobs jobSubmitter, transactions goalTransactionLister, analytics goalStrategyAnalytics) *goalService {
 	return &goalService{
 		goals:        goals,
 		snapshots:    snapshots,
 		jobs:         jobs,
 		transactions: transactions,
+		strategies:   newGoalStrategies(analytics),
 	}
 }
 
@@ -60,16 +62,27 @@ func (s *goalService) Create(ctx context.Context, uid, sessionID string, def dto
 		TargetValueMinor: def.TargetValueMinor,
 		// USD-only today; this is the single place a goal's currency is pinned.
 		// Multi-currency will source it from the definition/user prefs.
-		Currency:        helpers.CurrencyUSD,
-		TimeWindow:      def.TimeWindow,
-		EndDate:         def.EndDate,
-		Recurrence:      def.Recurrence,
-		Filters:         def.Filters,
-		AlertThresholds: def.AlertThresholds,
-		Status:          models.GoalStatusActive,
-		ConversationID:  sessionID,
+		Currency:         helpers.CurrencyUSD,
+		TimeWindow:       def.TimeWindow,
+		EndDate:          def.EndDate,
+		Recurrence:       def.Recurrence,
+		Filters:          def.Filters,
+		AlertThresholds:  def.AlertThresholds,
+		ReductionPercent: def.ReductionPercent,
+		Status:           models.GoalStatusActive,
+		ConversationID:   sessionID,
 	}
 	if err := validateGoal(g); err != nil {
+		return nil, err
+	}
+	strat, err := strategyFor(s.strategies, g.Type)
+	if err != nil {
+		return nil, err
+	}
+	// Pin the creation time before Initialize so a baseline-capturing strategy
+	// resolves its comparable prior period relative to now.
+	g.CreatedAt = clock.Now(ctx)
+	if err := strat.Initialize(ctx, uid, g); err != nil {
 		return nil, err
 	}
 	if err := s.goals.Create(ctx, uid, g); err != nil {
@@ -261,16 +274,28 @@ func validateStatusChange(status models.GoalStatus) error {
 	}
 }
 
-// validateGoal enforces the Spending Limit primitive rules.
+// validateGoal enforces the goal primitive rules. Target validation is
+// per-type: a spending limit carries a literal target, while a reduction goal
+// carries a percent and derives its target from the baseline at creation (so
+// its target is still zero at validation time).
 func validateGoal(g *models.Goal) error {
-	if g.Type != models.GoalTypeSpendingLimit {
+	switch g.Type {
+	case models.GoalTypeSpendingLimit:
+		if g.TargetValueMinor <= 0 {
+			return errs.NewValidationError("targetValue must be greater than 0")
+		}
+	case models.GoalTypeReduction:
+		if g.ReductionPercent == nil {
+			return errs.NewValidationError("reductionPercent is required for a reduction goal")
+		}
+		if *g.ReductionPercent <= 0 || *g.ReductionPercent >= 100 {
+			return errs.NewValidationError("reductionPercent must be between 0 and 100")
+		}
+	default:
 		return errs.NewValidationError(fmt.Sprintf("unsupported goal type: %s", g.Type))
 	}
 	if strings.TrimSpace(g.Name) == "" {
 		return errs.NewValidationError("name is required")
-	}
-	if g.TargetValueMinor <= 0 {
-		return errs.NewValidationError("targetValue must be greater than 0")
 	}
 
 	switch g.Recurrence {

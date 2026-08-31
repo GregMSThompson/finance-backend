@@ -362,6 +362,36 @@ func TestGoalEvaluator_OneOffOverBudgetFails(t *testing.T) {
 	}
 }
 
+func TestGoalEvaluator_ReductionEvaluatesAgainstFrozenTarget(t *testing.T) {
+	// A reduction goal behaves like a spending limit at eval time: its frozen
+	// target (baseline 20000, 10% less → 18000) drives percent and pace, and the
+	// evaluator never re-measures the baseline.
+	baseline := int64(20000)
+	g := monthlyGoal("g1", 18000)
+	g.Type = models.GoalTypeReduction
+	g.ReductionPercent = helpers.Ptr(10.0)
+	g.BaselineValueMinor = &baseline
+
+	users := &fakeEvalUserStore{users: []*models.User{{UID: "u1"}}}
+	goals := &fakeGoalStore{goals: map[string]*models.Goal{"g1": g}}
+	snaps := &fakeGoalSnapshotStore{}
+	analytics := &fakeEvalAnalytics{result: dto.AnalyticsSpendTotalResult{TotalMinor: 9000, Currency: "USD"}} // 50% of 18000
+
+	if err := newEvaluator(users, goals, snaps, analytics).Run(evalContext()); err != nil {
+		t.Fatalf("Run error: %v", err)
+	}
+	if len(snaps.created) != 1 {
+		t.Fatalf("expected 1 snapshot, got %d", len(snaps.created))
+	}
+	if s := snaps.created[0]; s.TargetValueMinor != 18000 || s.PercentComplete != 50 {
+		t.Fatalf("expected snapshot against frozen target 18000 at 50%%, got target=%d pct=%v", s.TargetValueMinor, s.PercentComplete)
+	}
+	// One spend query for the current window — no second call to re-measure a baseline.
+	if len(analytics.calls) != 1 {
+		t.Fatalf("expected exactly 1 spend query at eval, got %d", len(analytics.calls))
+	}
+}
+
 func TestGoalEvaluator_OneOffNotYetEndedDoesNotTerminate(t *testing.T) {
 	// EndDate is in the future, so the goal stays active — no terminal transition.
 	goals := &fakeGoalStore{goals: map[string]*models.Goal{"g1": oneOffFixedGoal("g1", 30000, "2026-07-01", "2026-12-31")}}
