@@ -258,6 +258,26 @@ func TestGoalCreate_ReductionRequiresPercent(t *testing.T) {
 	}
 }
 
+func seedReductionGoal(store *fakeGoalStore) *models.Goal {
+	baseline := int64(20000)
+	g := &models.Goal{
+		GoalID:             "r1",
+		Type:               models.GoalTypeReduction,
+		Name:               "Dining — 10% less",
+		TargetValueMinor:   18000,
+		BaselineValueMinor: &baseline,
+		ReductionPercent:   helpers.Ptr(10.0),
+		Currency:           helpers.CurrencyUSD,
+		TimeWindow:         models.GoalWindowMonthly,
+		Recurrence:         models.GoalRecurrenceRecurring,
+		Status:             models.GoalStatusActive,
+		// Created mid-August, so the comparable prior period is all of July.
+		CreatedAt: time.Date(2026, time.August, 15, 0, 0, 0, 0, time.UTC),
+	}
+	store.goals[g.GoalID] = g
+	return g
+}
+
 // --- Update ---
 
 func TestGoalUpdate_PartialMerge(t *testing.T) {
@@ -318,6 +338,93 @@ func TestGoalUpdate_CompletedRejected(t *testing.T) {
 	})
 	if !isValidationError(err) {
 		t.Fatalf("expected ValidationError for manual completed, got %v", err)
+	}
+}
+
+func TestGoalUpdate_ReductionPercentRederivesTarget(t *testing.T) {
+	goals := newFakeGoalStore()
+	seedReductionGoal(goals)
+	analytics := &fakeEvalAnalytics{result: dto.AnalyticsSpendTotalResult{TotalMinor: 20000, Currency: "USD"}}
+	svc := NewGoalService(goals, &fakeGoalSnapshotStore{}, &fakeJobs{}, &fakeTransactionsLister{}, analytics)
+
+	updated, err := svc.Update(context.Background(), "uid1", "r1", dto.GoalUpdate{
+		ReductionPercent: helpers.Ptr(25.0),
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// Baseline re-measured (20000) × (1 − 25%) = 15000.
+	if updated.TargetValueMinor != 15000 {
+		t.Fatalf("expected target re-derived to 15000, got %d", updated.TargetValueMinor)
+	}
+	if updated.BaselineValueMinor == nil || *updated.BaselineValueMinor != 20000 {
+		t.Fatalf("expected baseline refreshed to 20000, got %v", updated.BaselineValueMinor)
+	}
+	if len(analytics.calls) != 1 {
+		t.Fatalf("expected the baseline re-measured once, got %d calls", len(analytics.calls))
+	}
+}
+
+func TestGoalUpdate_ReductionFiltersRemeasureOriginalPeriod(t *testing.T) {
+	goals := newFakeGoalStore()
+	seedReductionGoal(goals)
+	analytics := &fakeEvalAnalytics{result: dto.AnalyticsSpendTotalResult{TotalMinor: 30000, Currency: "USD"}}
+	svc := NewGoalService(goals, &fakeGoalSnapshotStore{}, &fakeJobs{}, &fakeTransactionsLister{}, analytics)
+
+	updated, err := svc.Update(context.Background(), "uid1", "r1", dto.GoalUpdate{
+		Filters: &models.GoalFilters{PFCPrimary: "GENERAL_MERCHANDISE"},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// New scope baseline 30000 × (1 − 10%) = 27000.
+	if updated.TargetValueMinor != 27000 {
+		t.Fatalf("expected target re-derived to 27000, got %d", updated.TargetValueMinor)
+	}
+	if len(analytics.calls) != 1 || helpers.Value(analytics.calls[0].PFCPrimary) != "GENERAL_MERCHANDISE" {
+		t.Fatalf("expected baseline re-measured for the new scope, got %+v", analytics.calls)
+	}
+	// The reference period stays the goal's original creation month (July).
+	if helpers.Value(analytics.calls[0].DateFrom) != "2026-07-01" || helpers.Value(analytics.calls[0].DateTo) != "2026-07-31" {
+		t.Fatalf("expected the original creation period re-measured, got from=%q to=%q", helpers.Value(analytics.calls[0].DateFrom), helpers.Value(analytics.calls[0].DateTo))
+	}
+}
+
+func TestGoalUpdate_ReductionTargetValueRejected(t *testing.T) {
+	goals := newFakeGoalStore()
+	seedReductionGoal(goals)
+	analytics := &fakeEvalAnalytics{}
+	svc := NewGoalService(goals, &fakeGoalSnapshotStore{}, &fakeJobs{}, &fakeTransactionsLister{}, analytics)
+
+	_, err := svc.Update(context.Background(), "uid1", "r1", dto.GoalUpdate{
+		TargetValueMinor: helpers.Ptr(int64(12345)),
+	})
+	if !isValidationError(err) {
+		t.Fatalf("expected ValidationError setting target on a reduction goal, got %v", err)
+	}
+	if len(analytics.calls) != 0 {
+		t.Fatalf("expected no baseline measurement on a rejected update, got %d", len(analytics.calls))
+	}
+}
+
+func TestGoalUpdate_ReductionCosmeticDoesNotRemeasure(t *testing.T) {
+	goals := newFakeGoalStore()
+	g := seedReductionGoal(goals)
+	originalTarget := g.TargetValueMinor
+	analytics := &fakeEvalAnalytics{result: dto.AnalyticsSpendTotalResult{TotalMinor: 99999}}
+	svc := NewGoalService(goals, &fakeGoalSnapshotStore{}, &fakeJobs{}, &fakeTransactionsLister{}, analytics)
+
+	updated, err := svc.Update(context.Background(), "uid1", "r1", dto.GoalUpdate{
+		Name: helpers.Ptr("Dining — trimmed"),
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if updated.TargetValueMinor != originalTarget {
+		t.Fatalf("expected target unchanged on a name-only update, got %d", updated.TargetValueMinor)
+	}
+	if len(analytics.calls) != 0 {
+		t.Fatalf("expected no baseline re-measurement on a cosmetic update, got %d", len(analytics.calls))
 	}
 }
 

@@ -39,6 +39,10 @@ type GoalUpdate struct {
 	Filters          *models.GoalFilters         `json:"filters,omitempty"`
 	AlertThresholds  *models.GoalAlertThresholds `json:"alertThresholds,omitempty"`
 	Status           *models.GoalStatus          `json:"status,omitempty"`
+	// ReductionPercent retargets a reduction goal. Changing it — or the filters
+	// or window it derives from — re-measures the baseline and recomputes the
+	// frozen target; it does not apply to other goal types.
+	ReductionPercent *float64 `json:"reductionPercent,omitempty"`
 }
 
 // PatchGoalRequest is the REST body for direct (non-chat) goal edits — status

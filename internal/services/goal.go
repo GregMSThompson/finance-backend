@@ -120,10 +120,30 @@ func (s *goalService) Update(ctx context.Context, uid, goalID string, upd dto.Go
 		return nil, err
 	}
 
+	// A reduction goal's target is derived from its baseline, never set directly.
+	if g.Type == models.GoalTypeReduction && upd.TargetValueMinor != nil {
+		return nil, errs.NewValidationError("a reduction goal's target is derived from reductionPercent; set reductionPercent instead")
+	}
+
 	applyGoalUpdate(g, upd)
 	if err := validateGoal(g); err != nil {
 		return nil, err
 	}
+
+	// Re-derive a reduction goal's frozen target whenever an input it's derived
+	// from changes (percent, scope, or window). The baseline is re-measured
+	// against the goal's original creation period, so the reference stays fixed
+	// and only the scope/percent move.
+	if g.Type == models.GoalTypeReduction && reductionBaselineChanged(upd) {
+		strat, err := strategyFor(s.strategies, g.Type)
+		if err != nil {
+			return nil, err
+		}
+		if err := strat.Initialize(ctx, uid, g); err != nil {
+			return nil, err
+		}
+	}
+
 	if err := s.goals.Update(ctx, uid, g); err != nil {
 		return nil, err
 	}
@@ -259,6 +279,16 @@ func applyGoalUpdate(g *models.Goal, upd dto.GoalUpdate) {
 	if upd.Status != nil {
 		g.Status = *upd.Status
 	}
+	if upd.ReductionPercent != nil {
+		g.ReductionPercent = upd.ReductionPercent
+	}
+}
+
+// reductionBaselineChanged reports whether an update touches an input a reduction
+// goal derives its target from — its percent, filter scope, or window — and so
+// requires the target to be re-derived from a freshly measured baseline.
+func reductionBaselineChanged(upd dto.GoalUpdate) bool {
+	return upd.ReductionPercent != nil || upd.Filters != nil || upd.TimeWindow != nil || upd.EndDate != nil
 }
 
 // validateStatusChange guards the statuses a caller may set. completed and
@@ -283,6 +313,9 @@ func validateGoal(g *models.Goal) error {
 	case models.GoalTypeSpendingLimit:
 		if g.TargetValueMinor <= 0 {
 			return errs.NewValidationError("targetValue must be greater than 0")
+		}
+		if g.ReductionPercent != nil {
+			return errs.NewValidationError("reductionPercent applies only to reduction goals")
 		}
 	case models.GoalTypeReduction:
 		if g.ReductionPercent == nil {

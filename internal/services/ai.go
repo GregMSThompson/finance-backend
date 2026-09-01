@@ -974,14 +974,16 @@ func toolSchemas() []dto.VertexTool {
 			Description: "Change an existing goal. Call list_goals first to get the goalId. " +
 				"Only the fields you provide change; omit the rest. " +
 				"Providing filters or alertThresholds replaces the whole object, so include every value you want to keep. " +
+				"A goal's type can't be changed. For a spending_limit goal, set targetValue. For a reduction goal, set reductionPercent (not targetValue) — its target is re-derived from the baseline; changing reductionPercent, filters, or the window re-measures that baseline. " +
 				"Summarise substantive changes and confirm with the user before calling.",
 			Parameters: &dto.VertexSchema{
 				Type: "object",
 				Properties: map[string]*dto.VertexSchema{
-					"goalId":      {Type: "string", Description: "Id of the goal to change. Required."},
-					"name":        {Type: "string", Description: "New name."},
-					"targetValue": {Type: "number", Description: "New spending limit, must be greater than 0."},
-					"timeWindow":  {Type: "string", Enum: []string{"weekly", "monthly", "fixed"}, Description: "New period."},
+					"goalId":           {Type: "string", Description: "Id of the goal to change. Required."},
+					"name":             {Type: "string", Description: "New name."},
+					"targetValue":      {Type: "number", Description: "New spending limit for a spending_limit goal, must be greater than 0. Not valid for reduction goals."},
+					"reductionPercent": {Type: "number", Description: "New percent less than the baseline for a reduction goal (0-100). Re-derives the target. Not valid for spending_limit goals."},
+					"timeWindow":       {Type: "string", Enum: []string{"weekly", "monthly", "fixed"}, Description: "New period."},
 					"recurrence":  {Type: "string", Enum: []string{"recurring", "one_off"}, Description: "New recurrence."},
 					"endDate":     {Type: "string", Description: "YYYY-MM-DD end date for a fixed window."},
 					"status":      {Type: "string", Enum: []string{"active", "paused"}, Description: "Pause or resume the goal. completed and failed are set by evaluation, not here."},

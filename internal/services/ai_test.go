@@ -842,6 +842,22 @@ func TestUpdateGoalToolDecodesPartial(t *testing.T) {
 	}
 }
 
+func TestUpdateGoalToolDecodesReductionPercent(t *testing.T) {
+	goals := &fakeGoalsService{updateResp: &models.Goal{GoalID: "r1"}}
+	svc := NewAIService(&fakeVertexClient{}, &fakeAnalyticsClient{}, &fakeTransactionsLister{}, goals, &fakeAIStore{})
+
+	_, err := svc.executeTool(helpers.TestCtx(), "user", "s", dto.VertexToolCall{
+		Name: "update_goal",
+		Args: map[string]any{"goalId": "r1", "reductionPercent": 15.0},
+	})
+	if err != nil {
+		t.Fatalf("executeTool error: %v", err)
+	}
+	if goals.updateUpd.ReductionPercent == nil || *goals.updateUpd.ReductionPercent != 15 {
+		t.Fatalf("reductionPercent not decoded into the update: %+v", goals.updateUpd.ReductionPercent)
+	}
+}
+
 func TestGetGoalProgressTool(t *testing.T) {
 	goals := &fakeGoalsService{progressResp: dto.GoalProgress{GoalID: "g1", CurrentValueMinor: 12000, TargetValueMinor: 30000}}
 	svc := NewAIService(&fakeVertexClient{}, &fakeAnalyticsClient{}, &fakeTransactionsLister{}, goals, &fakeAIStore{})
