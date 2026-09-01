@@ -105,6 +105,15 @@ type aiGetTransactionsArgs struct {
 	Limit      int     `json:"limit,omitempty"`
 }
 
+// aiPeriodComparisonArgs decodes the get_period_comparison tool call. Preset is
+// an AI-only convenience: when set, the handler derives the four period dates
+// from it so the model doesn't have to populate them for common comparisons.
+// The embedded args carry everything the analytics service consumes.
+type aiPeriodComparisonArgs struct {
+	Preset string `json:"preset,omitempty"`
+	dto.AnalyticsPeriodComparisonArgs
+}
+
 type aiStore interface {
 	SaveMessage(ctx context.Context, uid, sessionID string, msg models.AIMessage) error
 	ListMessages(ctx context.Context, uid, sessionID string, limit int) ([]models.AIMessage, error)
@@ -453,9 +462,15 @@ func (s *aiService) executeTool(ctx context.Context, uid, sessionID string, call
 		payload["hasMore"] = result.NextCursor != nil
 		return dto.VertexToolResult{Name: call.Name, Response: payload}, nil
 	case "get_period_comparison":
-		args, err := decodeArgs[dto.AnalyticsPeriodComparisonArgs](call.Args)
+		raw, err := decodeArgs[aiPeriodComparisonArgs](call.Args)
 		if err != nil {
 			return dto.VertexToolResult{}, err
+		}
+		args := raw.AnalyticsPeriodComparisonArgs
+		if raw.Preset != "" {
+			if err := applyPeriodComparisonPreset(clock.Now(ctx), raw.Preset, &args); err != nil {
+				return dto.VertexToolResult{}, err
+			}
 		}
 		if args.Pending == nil {
 			args.Pending = helpers.Ptr(false)
@@ -464,7 +479,7 @@ func (s *aiService) executeTool(ctx context.Context, uid, sessionID string, call
 			return dto.VertexToolResult{}, err
 		}
 		if args.CurrentFrom == "" || args.CurrentTo == "" || args.PreviousFrom == "" || args.PreviousTo == "" {
-			return dto.VertexToolResult{}, errs.NewValidationError("currentFrom, currentTo, previousFrom, and previousTo are all required")
+			return dto.VertexToolResult{}, errs.NewValidationError("provide a preset, or all of currentFrom, currentTo, previousFrom, and previousTo")
 		}
 		result, err := s.analysis.GetPeriodComparison(ctx, uid, args)
 		if err != nil {
@@ -888,15 +903,21 @@ func toolSchemas() []dto.VertexTool {
 			},
 		},
 		{
-			Name:        "get_period_comparison",
-			Description: "Compare spending totals between two explicit time periods with optional grouping.",
+			Name: "get_period_comparison",
+			Description: "Compare spending totals between two time periods with optional grouping. " +
+				"For common comparisons pass a preset instead of dates. Otherwise provide all four explicit dates. " +
+				"Always tell the user which two periods were compared.",
 			Parameters: &dto.VertexSchema{
 				Type: "object",
 				Properties: map[string]*dto.VertexSchema{
-					"currentFrom":  {Type: "string", Description: "YYYY-MM-DD start date of the current period. Required."},
-					"currentTo":    {Type: "string", Description: "YYYY-MM-DD end date of the current period. Required."},
-					"previousFrom": {Type: "string", Description: "YYYY-MM-DD start date of the previous period. Required."},
-					"previousTo":   {Type: "string", Description: "YYYY-MM-DD end date of the previous period. Required."},
+					"preset": {Type: "string", Enum: []string{
+						"this_month_vs_last",
+						"last_30_vs_prior_30",
+					}, Description: "Convenience shortcut that sets the two periods. this_month_vs_last: this month so far vs the same span of last month. last_30_vs_prior_30: the last 30 days vs the 30 before that. Omit if providing explicit dates."},
+					"currentFrom":  {Type: "string", Description: "YYYY-MM-DD start date of the current period. Required unless preset is set."},
+					"currentTo":    {Type: "string", Description: "YYYY-MM-DD end date of the current period. Required unless preset is set."},
+					"previousFrom": {Type: "string", Description: "YYYY-MM-DD start date of the previous period. Required unless preset is set."},
+					"previousTo":   {Type: "string", Description: "YYYY-MM-DD end date of the previous period. Required unless preset is set."},
 					"groupBy": {Type: "string", Enum: []string{
 						"pfcPrimary",
 						"merchant",
@@ -907,28 +928,30 @@ func toolSchemas() []dto.VertexTool {
 					"accountId":  {Type: "string", Description: "Filter by account id."},
 					"merchant":   {Type: "string", Description: "Partial, case-insensitive merchant name filter."},
 				},
-				Required: []string{"currentFrom", "currentTo", "previousFrom", "previousTo"},
 			},
 		},
 		{
 			Name: "create_goal",
-			Description: "Create a spending-limit goal after the user has confirmed the details. " +
-				"Summarise the goal (limit, period, category, alerts) and get explicit confirmation before calling this. " +
+			Description: "Create a goal after the user has confirmed the details. " +
+				"Summarise the goal (target, period, category, alerts) and get explicit confirmation before calling this. " +
+				"Supported types: spending_limit (spend at most targetValue in the period) and reduction (spend reductionPercent less than the previous comparable period). " +
+				"For spending_limit provide targetValue (dollars, > 0). For reduction provide reductionPercent instead — the concrete target is computed from the previous period at creation and then stays fixed, even for a recurring goal. " +
 				"A recurring goal resets each period and must use a weekly or monthly window (no endDate). " +
 				"A one_off goal runs once; a fixed window requires an endDate (YYYY-MM-DD). " +
 				"If the call is rejected, explain what needs to change and try again.",
 			Parameters: &dto.VertexSchema{
 				Type: "object",
 				Properties: map[string]*dto.VertexSchema{
-					"name":        {Type: "string", Description: "Short user-facing name, e.g. 'Dining out budget'. Required."},
-					"targetValue": {Type: "number", Description: "The spending limit for the period, in dollars. Required, must be greater than 0."},
-					"timeWindow":  {Type: "string", Enum: []string{"weekly", "monthly", "fixed"}, Description: "Period the limit is measured over. Required."},
-					"recurrence":  {Type: "string", Enum: []string{"recurring", "one_off"}, Description: "recurring resets each period; one_off runs once. Required."},
-					"endDate":     {Type: "string", Description: "YYYY-MM-DD end date. Required when timeWindow is fixed; omit for weekly/monthly."},
-					"type":        {Type: "string", Enum: []string{string(models.GoalTypeSpendingLimit)}, Description: "Defaults to spending_limit."},
+					"name":             {Type: "string", Description: "Short user-facing name, e.g. 'Dining out budget'. Required."},
+					"type":             {Type: "string", Enum: []string{string(models.GoalTypeSpendingLimit), string(models.GoalTypeReduction)}, Description: "Goal type. Defaults to spending_limit."},
+					"targetValue":      {Type: "number", Description: "The spending limit for the period, in dollars. Required for spending_limit, must be greater than 0. Omit for reduction."},
+					"reductionPercent": {Type: "number", Description: "For reduction goals: how much less to spend than the previous comparable period, as a percent between 0 and 100 (e.g. 10 = 10% less). Required for reduction; omit for spending_limit."},
+					"timeWindow":       {Type: "string", Enum: []string{"weekly", "monthly", "fixed"}, Description: "Period the target is measured over. Required."},
+					"recurrence":       {Type: "string", Enum: []string{"recurring", "one_off"}, Description: "recurring resets each period; one_off runs once. Required."},
+					"endDate":          {Type: "string", Description: "YYYY-MM-DD end date. Required when timeWindow is fixed; omit for weekly/monthly."},
 					"filters": {
 						Type:        "object",
-						Description: "Optional scope. Omit to count all spending toward the limit.",
+						Description: "Optional scope. Omit to count all spending toward the target.",
 						Properties: map[string]*dto.VertexSchema{
 							"pfcPrimary": {Type: "string", Enum: taxonomy.PFCPrimaryList, Description: "Only count this category."},
 							"merchant":   {Type: "string", Description: "Only count this merchant (partial, case-insensitive)."},
@@ -939,11 +962,11 @@ func toolSchemas() []dto.VertexTool {
 						Type:        "object",
 						Description: "Optional notification triggers.",
 						Properties: map[string]*dto.VertexSchema{
-							"progressPercent": {Type: "number", Description: "Notify when spending reaches this percent (0-100) of the limit."},
+							"progressPercent": {Type: "number", Description: "Notify when spending reaches this percent (0-100) of the target."},
 						},
 					},
 				},
-				Required: []string{"name", "targetValue", "timeWindow", "recurrence"},
+				Required: []string{"name", "timeWindow", "recurrence"},
 			},
 		},
 		{
@@ -1055,6 +1078,38 @@ func (s *aiService) applyDefaults(ctx context.Context, pending **bool, dateFrom 
 		*dateTo = helpers.Ptr(helpers.FormatDate(now))
 	}
 
+	return nil
+}
+
+// applyPeriodComparisonPreset fills the four period dates from a named preset so
+// the model doesn't have to compute them for common comparisons. Presets are
+// apples-to-apples: this_month_vs_last compares this month so far against the
+// same span of last month (not the full month), so an early-month comparison
+// isn't skewed by the shorter current period.
+func applyPeriodComparisonPreset(now time.Time, preset string, args *dto.AnalyticsPeriodComparisonArgs) error {
+	today := helpers.DateOf(now)
+	switch preset {
+	case "this_month_vs_last":
+		curStart := helpers.FirstOfMonth(today)
+		prevStart := helpers.FirstOfMonth(curStart.AddDate(0, 0, -1))
+		prevMonthEnd := curStart.AddDate(0, 0, -1) // last day of the previous month
+		// Match the number of elapsed days, clamped to the previous month's length.
+		prevTo := prevStart.AddDate(0, 0, today.Day()-1)
+		if prevTo.After(prevMonthEnd) {
+			prevTo = prevMonthEnd
+		}
+		args.CurrentFrom = helpers.FormatDate(curStart)
+		args.CurrentTo = helpers.FormatDate(today)
+		args.PreviousFrom = helpers.FormatDate(prevStart)
+		args.PreviousTo = helpers.FormatDate(prevTo)
+	case "last_30_vs_prior_30":
+		args.CurrentFrom = helpers.FormatDate(today.AddDate(0, 0, -29))
+		args.CurrentTo = helpers.FormatDate(today)
+		args.PreviousFrom = helpers.FormatDate(today.AddDate(0, 0, -59))
+		args.PreviousTo = helpers.FormatDate(today.AddDate(0, 0, -30))
+	default:
+		return errs.NewValidationError(fmt.Sprintf("unknown preset: %s", preset))
+	}
 	return nil
 }
 

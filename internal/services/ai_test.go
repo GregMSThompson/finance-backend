@@ -650,6 +650,37 @@ func TestCreateGoalToolThreadsSessionAndDecodesDefinition(t *testing.T) {
 	}
 }
 
+func TestCreateGoalToolDecodesReductionDefinition(t *testing.T) {
+	goals := &fakeGoalsService{createResp: &models.Goal{GoalID: "g2", Name: "Dining — 10% less"}}
+	svc := NewAIService(&fakeVertexClient{}, &fakeAnalyticsClient{}, &fakeTransactionsLister{}, goals, &fakeAIStore{})
+
+	ctx := helpers.TestCtx()
+	_, err := svc.executeTool(ctx, "user", "s", dto.VertexToolCall{
+		Name: "create_goal",
+		Args: map[string]any{
+			"name":             "Dining — 10% less",
+			"type":             "reduction",
+			"reductionPercent": 10.0,
+			"timeWindow":       "monthly",
+			"recurrence":       "recurring",
+			"filters":          map[string]any{"pfcPrimary": "FOOD_AND_DRINK"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("executeTool error: %v", err)
+	}
+	if goals.createDef.Type != models.GoalTypeReduction {
+		t.Fatalf("expected reduction type, got %q", goals.createDef.Type)
+	}
+	if goals.createDef.ReductionPercent == nil || *goals.createDef.ReductionPercent != 10 {
+		t.Fatalf("reductionPercent not decoded: %+v", goals.createDef.ReductionPercent)
+	}
+	// Reduction carries no caller target — it's derived from the baseline at creation.
+	if goals.createDef.TargetValueMinor != 0 {
+		t.Fatalf("expected no target from the tool for reduction, got %d", goals.createDef.TargetValueMinor)
+	}
+}
+
 func TestCreateGoalToolReflectsValidationError(t *testing.T) {
 	goals := &fakeGoalsService{createErr: errs.NewValidationError("targetValue must be greater than 0")}
 	vertex := &fakeVertexClient{
@@ -672,6 +703,63 @@ func TestCreateGoalToolReflectsValidationError(t *testing.T) {
 	}
 	if resp.Answer != "That target needs to be positive — how much would you like to cap it at?" {
 		t.Fatalf("unexpected answer: %q", resp.Answer)
+	}
+}
+
+func TestPeriodComparisonPresetThisMonthVsLast(t *testing.T) {
+	analytics := &fakeAnalyticsClient{}
+	svc := NewAIService(&fakeVertexClient{}, analytics, &fakeTransactionsLister{}, &fakeGoalsService{}, &fakeAIStore{})
+
+	// Mid-month: this month so far vs the equivalent span of last month.
+	ctx := clock.WithClock(helpers.TestCtx(), func() time.Time {
+		return time.Date(2026, time.August, 15, 12, 0, 0, 0, time.UTC)
+	})
+	if _, err := svc.executeTool(ctx, "user", "s", dto.VertexToolCall{
+		Name: "get_period_comparison",
+		Args: map[string]any{"preset": "this_month_vs_last"},
+	}); err != nil {
+		t.Fatalf("executeTool error: %v", err)
+	}
+	got := analytics.comparisonArgs
+	if got.CurrentFrom != "2026-08-01" || got.CurrentTo != "2026-08-15" ||
+		got.PreviousFrom != "2026-07-01" || got.PreviousTo != "2026-07-15" {
+		t.Fatalf("unexpected periods: %+v", got)
+	}
+}
+
+func TestPeriodComparisonPresetLast30VsPrior30(t *testing.T) {
+	analytics := &fakeAnalyticsClient{}
+	svc := NewAIService(&fakeVertexClient{}, analytics, &fakeTransactionsLister{}, &fakeGoalsService{}, &fakeAIStore{})
+
+	ctx := clock.WithClock(helpers.TestCtx(), func() time.Time {
+		return time.Date(2026, time.August, 15, 12, 0, 0, 0, time.UTC)
+	})
+	if _, err := svc.executeTool(ctx, "user", "s", dto.VertexToolCall{
+		Name: "get_period_comparison",
+		Args: map[string]any{"preset": "last_30_vs_prior_30"},
+	}); err != nil {
+		t.Fatalf("executeTool error: %v", err)
+	}
+	got := analytics.comparisonArgs
+	if got.CurrentFrom != "2026-07-17" || got.CurrentTo != "2026-08-15" ||
+		got.PreviousFrom != "2026-06-17" || got.PreviousTo != "2026-07-16" {
+		t.Fatalf("unexpected periods: %+v", got)
+	}
+}
+
+func TestPeriodComparisonRequiresPresetOrDates(t *testing.T) {
+	analytics := &fakeAnalyticsClient{}
+	svc := NewAIService(&fakeVertexClient{}, analytics, &fakeTransactionsLister{}, &fakeGoalsService{}, &fakeAIStore{})
+
+	_, err := svc.executeTool(helpers.TestCtx(), "user", "s", dto.VertexToolCall{
+		Name: "get_period_comparison",
+		Args: map[string]any{"pfcPrimary": "FOOD_AND_DRINK"},
+	})
+	if !isValidationError(err) {
+		t.Fatalf("expected ValidationError when neither preset nor dates given, got %v", err)
+	}
+	if analytics.comparisonCalls != 0 {
+		t.Fatalf("expected no analytics call, got %d", analytics.comparisonCalls)
 	}
 }
 
