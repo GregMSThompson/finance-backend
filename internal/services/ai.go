@@ -813,7 +813,8 @@ func toolSchemas() []dto.VertexTool {
 			Name: "get_transactions",
 			Description: "Return a filtered list of transactions. Call with no date range to get this month's transactions. " +
 				"To find the most recent transaction, set orderBy=date, desc=true, limit=1 — no date range needed. " +
-				"For the largest/smallest transactions, set orderBy=amount (desc=true for largest). " +
+				"For the largest/smallest transactions, set orderBy=amount (desc=true for largest spends). " +
+				"Amounts are signed with the ledger convention: positive is money out (spending), negative is money in (income, refunds, transfers received). Present an inflow to the user as a positive amount and say what it is. " +
 				"The date range must span at most one year. " +
 				"If the result is empty, retry with a wider date range before asking the user.",
 			Parameters: &dto.VertexSchema{
@@ -1044,6 +1045,7 @@ func systemPrompt(now time.Time) string {
 		"You may make up to 3 tool calls per turn to gather the data you need. " +
 		"Calculate date ranges from natural language (e.g., 'last week', 'this month'). A week is defined as Monday to Sunday. " +
 		"All financial data (transactions, amounts, categories) must come from tool results - never fabricate these. " +
+		"Amount signs: transaction lists (get_transactions) use the ledger convention — positive is money out (spending), negative is money in (income, refunds, transfers in); when you show an inflow, present it as a positive amount and name it (income, refund, etc.). Aggregate results (spend totals, income totals, breakdowns, comparisons) are already positive magnitudes — use them as given and never flip their sign. " +
 		"If a query is ambiguous (e.g., which category?), ask for clarification. " +
 		"If a tool returns empty results, automatically retry with a wider date range before responding. Always tell the user what period you searched. " +
 		"Defaults: pending=false. Tools with a default date range will apply it automatically when you omit the dates — do not ask the user for a date range you can default. " +
