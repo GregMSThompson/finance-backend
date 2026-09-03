@@ -9,6 +9,7 @@ import (
 	"github.com/GregMSThompson/finance-backend/internal/dto"
 	"github.com/GregMSThompson/finance-backend/internal/errs"
 	"github.com/GregMSThompson/finance-backend/internal/models"
+	"github.com/GregMSThompson/finance-backend/internal/taxonomy"
 	"github.com/GregMSThompson/finance-backend/pkg/clock"
 )
 
@@ -505,6 +506,53 @@ func TestGetWidgetData_LargestTransactions(t *testing.T) {
 	}
 	if txs.args.OrderBy != "amount" || !txs.args.Desc {
 		t.Errorf("expected orderBy=amount desc, got %s desc=%v", txs.args.OrderBy, txs.args.Desc)
+	}
+}
+
+func TestGetWidgetData_LargestTransactionsExcludesIncomeAndTransfers(t *testing.T) {
+	store := newFakeStore()
+	store.widgets["w1"] = &models.Widget{
+		WidgetID: "w1",
+		Type:     dto.WidgetTypeLargestTransactions,
+		Config: models.WidgetConfig{
+			DateRange: &models.DateRangeConfig{Preset: dto.DateRangeThisMonth},
+			Limit:     2,
+		},
+	}
+	// Seeded in amount-desc order among spends; income (negative) and the transfer
+	// sit in between and must be dropped, leaving the top-2 spends after trimming.
+	txs := &fakeTransactionsLister{
+		resp: dto.TransactionListResult{
+			Transactions: []models.Transaction{
+				{TransactionID: "xfer", Name: "To savings", AmountMinor: 300000, Currency: "USD", PFCPrimary: "TRANSFER_OUT", Date: "2026-01-02"},
+				{TransactionID: "shopping", Name: "Furniture", AmountMinor: 200000, Currency: "USD", PFCPrimary: "GENERAL_MERCHANDISE", Date: "2026-01-03"},
+				{TransactionID: "food", Name: "Grocer", AmountMinor: 8000, Currency: "USD", PFCPrimary: "FOOD_AND_DRINK", Date: "2026-01-04"},
+				{TransactionID: "salary", Name: "Employer", AmountMinor: -500000, Currency: "USD", PFCPrimary: "INCOME", Date: "2026-01-01"},
+				{TransactionID: "coffee", Name: "Cafe", AmountMinor: 500, Currency: "USD", PFCPrimary: "FOOD_AND_DRINK", Date: "2026-01-05"},
+			},
+		},
+	}
+	svc := NewDashboardService(store, &fakeDashboardAnalytics{}, txs)
+
+	resp, err := svc.GetWidgetData(context.Background(), "uid1", "w1")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	data := resp.Data.(dto.LargestTransactionsData)
+	if len(data.Transactions) != 2 {
+		t.Fatalf("expected 2 spend transactions after filtering, got %d: %+v", len(data.Transactions), data.Transactions)
+	}
+	for _, tx := range data.Transactions {
+		if taxonomy.IsNonSpendCategory(tx.Category) {
+			t.Fatalf("non-spend leaked into largest transactions: %+v", tx)
+		}
+	}
+	if data.Transactions[0].TransactionID != "shopping" || data.Transactions[1].TransactionID != "food" {
+		t.Fatalf("expected the two largest spends (shopping, food), got %s, %s", data.Transactions[0].TransactionID, data.Transactions[1].TransactionID)
+	}
+	// The full window is fetched (no store-side limit) so filtering precedes trimming.
+	if txs.args.Limit != 0 {
+		t.Fatalf("expected Limit 0 passed to the lister, got %d", txs.args.Limit)
 	}
 }
 

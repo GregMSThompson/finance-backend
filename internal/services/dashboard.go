@@ -249,6 +249,10 @@ func (s *dashboardService) fetchLargestTransactions(ctx context.Context, uid str
 	if err != nil {
 		return dto.LargestTransactionsData{}, err
 	}
+	// Fetch the full amount-sorted window (Limit 0) so income and transfers can be
+	// dropped before trimming — otherwise excluding a row would leave fewer than
+	// the configured limit. The amount ordering already reads the whole window, so
+	// this adds no extra cost.
 	result, err := s.transactions.ListTransactions(ctx, uid, dto.TransactionListArgs{
 		Pending:      helpers.Ptr(false),
 		PFCPrimaries: helpers.PrimarySlice(helpers.OptString(cfg.Category)),
@@ -257,20 +261,29 @@ func (s *dashboardService) fetchLargestTransactions(ctx context.Context, uid str
 		DateTo:       &to,
 		OrderBy:      "amount",
 		Desc:         true,
-		Limit:        cfg.Limit,
 	})
 	if err != nil {
 		return dto.LargestTransactionsData{}, err
 	}
-	items := make([]dto.TransactionWidgetItem, len(result.Transactions))
-	for i, tx := range result.Transactions {
-		items[i] = dto.TransactionWidgetItem{
+	// "Largest transactions" means largest spend, so income and transfers are
+	// excluded — unless the widget is explicitly scoped to such a category. Spend
+	// and refunds keep their real sign (no abs), so a refund reads as money back.
+	explicitCategory := cfg.Category != ""
+	items := make([]dto.TransactionWidgetItem, 0, cfg.Limit)
+	for _, tx := range result.Transactions {
+		if !countsAsSpend(tx.PFCPrimary, explicitCategory) {
+			continue
+		}
+		items = append(items, dto.TransactionWidgetItem{
 			TransactionID: tx.TransactionID,
 			Date:          tx.Date,
 			Merchant:      tx.Name,
 			AmountMinor:   tx.AmountMinor,
 			Currency:      tx.Currency,
 			Category:      tx.PFCPrimary,
+		})
+		if len(items) == cfg.Limit {
+			break
 		}
 	}
 	return dto.LargestTransactionsData{Transactions: items}, nil
