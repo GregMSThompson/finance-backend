@@ -1,0 +1,63 @@
+name: monthly-dining-reduction
+userId: sim-dining-reduction-user
+
+# A recurring monthly reduction goal: spend 10% less on dining than the previous
+# comparable period. The July baseline below totals $200, so at creation the
+# strategy freezes the target at $200 - 10% = $180. Every percentComplete below
+# is measured against that derived $180 — a broken baseline (wrong or zero
+# target) would fail these assertions.
+goal:
+  goalId: g-dining-reduction
+  name: Dining reduction
+  type: reduction
+  reductionPercent: 10
+  timeWindow: monthly
+  recurrence: recurring
+  createdAt: 2026-08-01
+  filters:
+    pfcPrimary: FOOD_AND_DRINK
+  alertThresholds:
+    progressPercent: 80
+
+# Prior comparable period (all of July, for an August monthly goal). Measured by
+# Initialize at creation: 120 + 80 = $200 baseline → $180 derived target.
+baseline:
+  - { date: 2026-07-05, name: Cafe, amount: 120, pfcPrimary: FOOD_AND_DRINK }
+  - { date: 2026-07-18, name: Restaurant, amount: 80, pfcPrimary: FOOD_AND_DRINK }
+
+# Replay through mid-September so the recurring reset is exercised too.
+replay:
+  from: 2026-08-01
+  to: 2026-09-15
+
+steps:
+  # 100 of the derived 180 → 55.56% (not 50% — proves the 10% reduction was
+  # applied). Early over-pace, so not on track.
+  - date: 2026-08-06
+    add:
+      - { name: Cafe, amount: 100, pfcPrimary: FOOD_AND_DRINK }
+    expect: { currentValue: 100, percentComplete: 55.56, isOnTrack: false, notified: false }
+
+  # Cumulative 150 → 83.33%, crosses the 80% threshold: one notification.
+  - date: 2026-08-15
+    add:
+      - { name: Restaurant, amount: 50, pfcPrimary: FOOD_AND_DRINK }
+    expect: { currentValue: 150, percentComplete: 83.33, notified: true }
+
+  # A refund drops spend back under the threshold — a downward transition, so it
+  # notifies ("you're back under").
+  - date: 2026-08-22
+    add:
+      - { name: Restaurant refund, amount: -20, pfcPrimary: FOOD_AND_DRINK }
+    expect: { currentValue: 130, percentComplete: 72.22, notified: true }
+
+  # New period (September): spend resets, but the frozen target stays $180 — 90
+  # of 180 is 50%, confirming the target did not re-derive from August's spend.
+  - date: 2026-09-05
+    add:
+      - { name: Cafe, amount: 90, pfcPrimary: FOOD_AND_DRINK }
+    expect: { currentValue: 90, percentComplete: 50, notified: false }
+
+# Recurring goals never terminate — they reset next period.
+finalExpect:
+  status: active

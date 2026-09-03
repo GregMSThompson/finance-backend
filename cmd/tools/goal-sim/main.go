@@ -105,12 +105,30 @@ func run(ctx context.Context, client *firestore.Client, sc *scenario) error {
 		return fmt.Errorf("reset sim user: %w", err)
 	}
 
-	goal, err := sc.buildGoal()
+	// Seed any baseline-period transactions before creating the goal, so a
+	// reduction goal's Initialize measures them when deriving its target.
+	if err := seedBaselineTransactions(ctx, transactionStore, sc.UserID, sc.Baseline); err != nil {
+		return fmt.Errorf("seed baseline transactions: %w", err)
+	}
+
+	createdAt, err := time.Parse(dateLayout, sc.Goal.CreatedAt)
+	if err != nil {
+		return fmt.Errorf("goal.createdAt: %w", err)
+	}
+	def, err := sc.buildGoalDefinition()
 	if err != nil {
 		return err
 	}
-	if err := goalStore.Create(ctx, sc.UserID, goal); err != nil {
-		return fmt.Errorf("seed goal: %w", err)
+	// Create through the goal service so the sim exercises the real create path —
+	// validation plus the strategy's Initialize (baseline capture for reduction).
+	// Pin the clock to the creation date so CreatedAt and any baseline window are
+	// resolved as of the scenario date, not wall-clock now. Delete/list deps are
+	// unused by Create, so they're left nil.
+	goalSvc := services.NewGoalService(goalStore, snapshotStore, nil, nil, analyticsSvc)
+	createCtx := clock.WithClock(ctx, func() time.Time { return createdAt })
+	goal, err := goalSvc.Create(createCtx, sc.UserID, "sim-session", def)
+	if err != nil {
+		return fmt.Errorf("create goal: %w", err)
 	}
 
 	from, err := time.Parse(dateLayout, sc.Replay.From)
@@ -264,6 +282,21 @@ func seedTransactions(ctx context.Context, txs txUpserter, uid, date string, add
 		})
 	}
 	return txs.UpsertBatch(ctx, uid, batch)
+}
+
+// seedBaselineTransactions writes the prior-period transactions a derived-target
+// goal (e.g. reduction) measures its baseline from. Each row carries its own
+// date since these aren't tied to a replay step.
+func seedBaselineTransactions(ctx context.Context, txs txUpserter, uid string, baseline []scenarioTx) error {
+	for _, a := range baseline {
+		if a.Date == "" {
+			return fmt.Errorf("baseline transaction %q needs a date", a.Name)
+		}
+		if err := seedTransactions(ctx, txs, uid, a.Date, []scenarioTx{a}); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // resetUser clears the sim user's goal-related subcollections so a rerun starts
