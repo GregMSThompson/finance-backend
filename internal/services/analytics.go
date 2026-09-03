@@ -44,9 +44,9 @@ func (s *analyticsService) GetSpendTotal(ctx context.Context, uid string, args d
 		DateTo:       args.DateTo,
 	}, func(tx *models.Transaction) error {
 		// Income and transfers aren't spending, so they're left out of the total.
-		// A caller that explicitly filtered to one of those categories (non-nil
-		// PFCPrimary) gets exactly what they asked for.
-		if args.PFCPrimary == nil && taxonomy.IsNonSpendCategory(tx.PFCPrimary) {
+		// A caller that explicitly filtered to a category gets exactly what they
+		// asked for.
+		if !countsAsSpend(tx.PFCPrimary, args.PFCPrimary != nil) {
 			return nil
 		}
 		total += tx.AmountMinor
@@ -181,7 +181,11 @@ func collectPeriod(ctx context.Context, store transactionAnalyticsStore, uid str
 	data := periodData{
 		items: map[string]*dto.AnalyticsBreakdownItem{},
 	}
+	explicitCategory := len(q.PFCPrimaries) > 0
 	err := store.Query(ctx, uid, q, func(tx *models.Transaction) error {
+		if !countsAsSpend(tx.PFCPrimary, explicitCategory) {
+			return nil
+		}
 		data.total += tx.AmountMinor
 		data.count++
 		if data.currency == "" && tx.Currency != "" {
@@ -283,6 +287,11 @@ func (s *analyticsService) GetRecurringTransactions(ctx context.Context, uid str
 		DateFrom:  &args.DateFrom,
 		DateTo:    &args.DateTo,
 	}, func(tx *models.Transaction) error {
+		// Recurring detection is for bills and subscriptions, so income and
+		// transfers are excluded — a recurring salary isn't a recurring charge.
+		if !countsAsSpend(tx.PFCPrimary, false) {
+			return nil
+		}
 		g, ok := groups[tx.Name]
 		if !ok {
 			g = &merchantGroup{}
@@ -439,7 +448,10 @@ func (s *analyticsService) GetIncomeVsExpenses(ctx context.Context, uid string, 
 	}
 
 	pending := false
-	var total, income int64
+	// incomeSigned accumulates INCOME with its raw (inflow-negative) sign; expenses
+	// accumulates spend with its raw sign so refunds net down. Transfers belong to
+	// neither bucket and are ignored so moving money between accounts is a no-op.
+	var incomeSigned, expenses int64
 	var currency string
 
 	if err := s.txs.Query(ctx, uid, dto.TransactionQuery{
@@ -448,9 +460,11 @@ func (s *analyticsService) GetIncomeVsExpenses(ctx context.Context, uid string, 
 		DateFrom:  &args.DateFrom,
 		DateTo:    &args.DateTo,
 	}, func(tx *models.Transaction) error {
-		total += tx.AmountMinor
-		if tx.PFCPrimary == "INCOME" {
-			income += tx.AmountMinor
+		switch {
+		case tx.PFCPrimary == "INCOME":
+			incomeSigned += tx.AmountMinor
+		case countsAsSpend(tx.PFCPrimary, false):
+			expenses += tx.AmountMinor
 		}
 		if currency == "" && tx.Currency != "" {
 			currency = tx.Currency
@@ -460,9 +474,11 @@ func (s *analyticsService) GetIncomeVsExpenses(ctx context.Context, uid string, 
 		return result, err
 	}
 
+	// Report income as a positive magnitude: Plaid signs inflow negative.
+	income := -incomeSigned
 	result.IncomeMinor = income
-	result.ExpensesMinor = total - income
-	result.NetMinor = income - result.ExpensesMinor
+	result.ExpensesMinor = expenses
+	result.NetMinor = income - expenses
 	result.Currency = currency
 	return result, nil
 }
@@ -609,6 +625,9 @@ func (s *analyticsService) GetMovingAverage(ctx context.Context, uid string, arg
 		DateFrom:     &args.DateFrom,
 		DateTo:       &args.DateTo,
 	}, func(tx *models.Transaction) error {
+		if !countsAsSpend(tx.PFCPrimary, args.PFCPrimary != nil) {
+			return nil
+		}
 		pk, err := maPeriodKey(tx.Date, args.Granularity)
 		if err != nil {
 			return err
@@ -795,4 +814,13 @@ func validateGroupBy(groupBy string) error {
 	default:
 		return errs.NewUnsupportedGroupByError()
 	}
+}
+
+// countsAsSpend reports whether a transaction belongs in a spend aggregation.
+// Income and transfers are excluded so they don't pollute spend totals — unless
+// the caller explicitly filtered to a category, in which case they asked for
+// exactly that category (income or transfers included) and get it. Amounts keep
+// their raw sign so refunds (negatives in a spend category) net down the total.
+func countsAsSpend(primary string, explicitCategory bool) bool {
+	return explicitCategory || !taxonomy.IsNonSpendCategory(primary)
 }

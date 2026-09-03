@@ -8,6 +8,7 @@ import (
 	"github.com/GregMSThompson/finance-backend/internal/dto"
 	"github.com/GregMSThompson/finance-backend/internal/errs"
 	"github.com/GregMSThompson/finance-backend/internal/models"
+	"github.com/GregMSThompson/finance-backend/internal/taxonomy"
 	"github.com/GregMSThompson/finance-backend/pkg/helpers"
 )
 
@@ -55,8 +56,9 @@ func TestAnalyticsSpendTotalExcludesIncomeAndTransfers(t *testing.T) {
 	store := &fakeAnalyticsStore{
 		txs: []*models.Transaction{
 			{AmountMinor: 4000, Currency: "USD", PFCPrimary: "FOOD_AND_DRINK"},
-			{AmountMinor: 500000, Currency: "USD", PFCPrimary: "INCOME"},
-			{AmountMinor: 30000, Currency: "USD", PFCPrimary: "TRANSFER_IN"},
+			// Inflows carry Plaid's negative sign; they're excluded regardless.
+			{AmountMinor: -500000, Currency: "USD", PFCPrimary: "INCOME"},
+			{AmountMinor: -30000, Currency: "USD", PFCPrimary: "TRANSFER_IN"},
 			{AmountMinor: 20000, Currency: "USD", PFCPrimary: "TRANSFER_OUT"},
 			{AmountMinor: 1000, Currency: "USD", PFCPrimary: "ENTERTAINMENT"},
 		},
@@ -75,7 +77,7 @@ func TestAnalyticsSpendTotalExcludesIncomeAndTransfers(t *testing.T) {
 func TestAnalyticsSpendTotalHonorsExplicitIncomeFilter(t *testing.T) {
 	store := &fakeAnalyticsStore{
 		txs: []*models.Transaction{
-			{AmountMinor: 500000, Currency: "USD", PFCPrimary: "INCOME"},
+			{AmountMinor: -500000, Currency: "USD", PFCPrimary: "INCOME"},
 		},
 	}
 	svc := NewAnalyticsService(store)
@@ -86,8 +88,11 @@ func TestAnalyticsSpendTotalHonorsExplicitIncomeFilter(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetSpendTotal error: %v", err)
 	}
-	if got.TotalMinor != 500000 {
-		t.Fatalf("explicit INCOME filter should return income (500000), got %v", got.TotalMinor)
+	// An explicit filter returns the category's raw signed sum — income keeps its
+	// inflow-negative sign here. Normalizing it to a positive magnitude is the job
+	// of a dedicated income accessor, not GetSpendTotal.
+	if got.TotalMinor != -500000 {
+		t.Fatalf("explicit INCOME filter should return the raw income sum (-500000), got %v", got.TotalMinor)
 	}
 }
 
@@ -983,10 +988,11 @@ func TestGetTopNStoreErrorPropagates(t *testing.T) {
 }
 
 func TestGetIncomeVsExpensesBasic(t *testing.T) {
-	// 500000 income, 20000+10000=30000 expenses → net = 470000.
+	// Income arrives with Plaid's negative sign (-500000) but is reported as a
+	// positive magnitude: 500000 income, 20000+10000=30000 expenses → net 470000.
 	store := &fakeAnalyticsStore{
 		txs: []*models.Transaction{
-			{AmountMinor: 500000, Currency: "USD", PFCPrimary: "INCOME"},
+			{AmountMinor: -500000, Currency: "USD", PFCPrimary: "INCOME"},
 			{AmountMinor: 20000, Currency: "USD", PFCPrimary: "DINING"},
 			{AmountMinor: 10000, Currency: "USD", PFCPrimary: "ENTERTAINMENT"},
 		},
@@ -1014,6 +1020,71 @@ func TestGetIncomeVsExpensesBasic(t *testing.T) {
 	}
 	if got.From != "2025-01-01" || got.To != "2025-01-31" {
 		t.Fatalf("date range mismatch: from=%q to=%q", got.From, got.To)
+	}
+}
+
+func TestGetIncomeVsExpensesNormalizesSignAndExcludesTransfers(t *testing.T) {
+	// Income inflow is negative; a refund nets its spend category down; both
+	// transfer legs are ignored entirely.
+	store := &fakeAnalyticsStore{
+		txs: []*models.Transaction{
+			{AmountMinor: -500000, Currency: "USD", PFCPrimary: "INCOME"},
+			{AmountMinor: 20000, Currency: "USD", PFCPrimary: "FOOD_AND_DRINK"},
+			{AmountMinor: 5000, Currency: "USD", PFCPrimary: "GENERAL_MERCHANDISE"},
+			{AmountMinor: -2000, Currency: "USD", PFCPrimary: "GENERAL_MERCHANDISE"}, // refund
+			{AmountMinor: -100000, Currency: "USD", PFCPrimary: "TRANSFER_IN"},
+			{AmountMinor: 100000, Currency: "USD", PFCPrimary: "TRANSFER_OUT"},
+		},
+	}
+	svc := NewAnalyticsService(store)
+
+	got, err := svc.GetIncomeVsExpenses(context.Background(), "user", dto.AnalyticsIncomeVsExpensesArgs{
+		DateFrom: "2026-01-01",
+		DateTo:   "2026-01-31",
+	})
+	if err != nil {
+		t.Fatalf("GetIncomeVsExpenses error: %v", err)
+	}
+	// income 500000; expenses = 20000 + 5000 - 2000 = 23000; net = 477000.
+	if got.IncomeMinor != 500000 {
+		t.Fatalf("income should be a positive magnitude (500000), got %d", got.IncomeMinor)
+	}
+	if got.ExpensesMinor != 23000 {
+		t.Fatalf("expenses should net the refund and exclude transfers (23000), got %d", got.ExpensesMinor)
+	}
+	if got.NetMinor != 477000 {
+		t.Fatalf("net mismatch: got %d", got.NetMinor)
+	}
+}
+
+func TestGetSpendBreakdownExcludesIncomeAndTransfers(t *testing.T) {
+	// collectPeriod (shared by breakdown, period-comparison, top-N) must drop
+	// non-spend categories, so income/transfers never appear as a spend group.
+	store := &fakeAnalyticsStore{
+		txs: []*models.Transaction{
+			{AmountMinor: 4000, Currency: "USD", PFCPrimary: "FOOD_AND_DRINK"},
+			{AmountMinor: -500000, Currency: "USD", PFCPrimary: "INCOME"},
+			{AmountMinor: -30000, Currency: "USD", PFCPrimary: "TRANSFER_IN"},
+			{AmountMinor: 1000, Currency: "USD", PFCPrimary: "ENTERTAINMENT"},
+		},
+	}
+	svc := NewAnalyticsService(store)
+
+	got, err := svc.GetSpendBreakdown(context.Background(), "user", dto.AnalyticsSpendBreakdownArgs{
+		GroupBy:  "pfcPrimary",
+		DateFrom: helpers.Ptr("2026-01-01"),
+		DateTo:   helpers.Ptr("2026-01-31"),
+	})
+	if err != nil {
+		t.Fatalf("GetSpendBreakdown error: %v", err)
+	}
+	if len(got.Items) != 2 {
+		t.Fatalf("expected only the two spend categories, got %d: %+v", len(got.Items), got.Items)
+	}
+	for _, item := range got.Items {
+		if taxonomy.IsNonSpendCategory(item.Key) {
+			t.Fatalf("non-spend category leaked into the breakdown: %q", item.Key)
+		}
 	}
 }
 
