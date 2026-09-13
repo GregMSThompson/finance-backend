@@ -34,6 +34,7 @@ type goalEvaluatorSnapshotStore interface {
 // the analytics service and shared by the create and evaluate paths.
 type goalStrategyAnalytics interface {
 	GetSpendTotal(ctx context.Context, uid string, args dto.AnalyticsSpendTotalArgs) (dto.AnalyticsSpendTotalResult, error)
+	GetIncomeTotal(ctx context.Context, uid string, args dto.AnalyticsIncomeTotalArgs) (dto.AnalyticsIncomeTotalResult, error)
 }
 
 // goalStrategy encapsulates the type-specific parts of a goal: capturing any
@@ -101,6 +102,21 @@ type spendingLimitStrategy struct {
 // which reuse the same frozen target rather than re-measuring the baseline.
 type reductionStrategy struct {
 	spendingLimitStrategy
+}
+
+// atLeastStrategy is the shared base for goals where reaching or exceeding a
+// literal target is success (income, net savings). It supplies the direction:
+// no baseline, a literal target, and pace/success measured upward. Concrete
+// types embed it and provide only Measure. It is not registered on its own.
+type atLeastStrategy struct{}
+
+// netSavingsStrategy measures net cash flow — income minus spend — over the
+// window against a floor: saving at least the target across all accounts. Both
+// sides come from transfer-safe totals, so moving money between accounts is a
+// no-op.
+type netSavingsStrategy struct {
+	atLeastStrategy
+	analytics goalStrategyAnalytics
 }
 
 func NewGoalEvaluatorService(
@@ -417,6 +433,7 @@ func newGoalStrategies(analytics goalStrategyAnalytics) map[models.GoalType]goal
 	return map[models.GoalType]goalStrategy{
 		models.GoalTypeSpendingLimit: sl,
 		models.GoalTypeReduction:     reductionStrategy{spendingLimitStrategy: sl},
+		models.GoalTypeNetSavings:    netSavingsStrategy{analytics: analytics},
 	}
 }
 
@@ -516,4 +533,47 @@ func applyGoalFilters(args *dto.AnalyticsSpendTotalArgs, f models.GoalFilters) {
 	args.PFCPrimary = helpers.OptString(f.PFCPrimary)
 	args.Merchant = helpers.OptString(f.Merchant)
 	args.AccountID = helpers.OptString(f.AccountID)
+}
+
+func (atLeastStrategy) Initialize(ctx context.Context, uid string, g *models.Goal) error {
+	return nil // a literal target needs no baseline
+}
+
+func (atLeastStrategy) Target(g *models.Goal) int64 {
+	return g.TargetValueMinor
+}
+
+func (atLeastStrategy) Score(g *models.Goal, w goalWindow, current int64) goalProgress {
+	target := g.TargetValueMinor
+	elapsed := goalElapsedFraction(w.start, w.queryTo, w.end)
+	return goalProgress{
+		percent:   goalPercentComplete(current, target),
+		isOnTrack: float64(current) >= float64(target)*elapsed,
+		succeeded: current >= target,
+	}
+}
+
+// Measure returns net cash flow — income minus spend — for the window. Filters
+// are intentionally ignored: net savings is a whole-finances figure (scoping to
+// an account is a separate savings-contributions goal).
+func (s netSavingsStrategy) Measure(ctx context.Context, uid string, g *models.Goal, w goalWindow) (int64, error) {
+	from := helpers.Ptr(helpers.FormatDate(w.start))
+	to := helpers.Ptr(helpers.FormatDate(w.queryTo))
+	income, err := s.analytics.GetIncomeTotal(ctx, uid, dto.AnalyticsIncomeTotalArgs{
+		Pending:  helpers.Ptr(false),
+		DateFrom: from,
+		DateTo:   to,
+	})
+	if err != nil {
+		return 0, fmt.Errorf("income total: %w", err)
+	}
+	spend, err := s.analytics.GetSpendTotal(ctx, uid, dto.AnalyticsSpendTotalArgs{
+		Pending:  helpers.Ptr(false),
+		DateFrom: from,
+		DateTo:   to,
+	})
+	if err != nil {
+		return 0, fmt.Errorf("spend total: %w", err)
+	}
+	return income.TotalMinor - spend.TotalMinor, nil
 }

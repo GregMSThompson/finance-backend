@@ -63,6 +63,39 @@ func (s *analyticsService) GetSpendTotal(ctx context.Context, uid string, args d
 	return result, nil
 }
 
+// GetIncomeTotal sums the INCOME category over the window and reports it as a
+// positive magnitude — inflows are stored with Plaid's negative sign, so the
+// raw sum is negated here so callers get an intuitive figure.
+func (s *analyticsService) GetIncomeTotal(ctx context.Context, uid string, args dto.AnalyticsIncomeTotalArgs) (dto.AnalyticsIncomeTotalResult, error) {
+	result := dto.AnalyticsIncomeTotalResult{
+		From: helpers.Value(args.DateFrom),
+		To:   helpers.Value(args.DateTo),
+	}
+
+	var signed int64
+	var currency string
+	if err := s.txs.Query(ctx, uid, dto.TransactionQuery{
+		Pending:      args.Pending,
+		PFCPrimaries: []string{"INCOME"},
+		AccountID:    args.AccountID,
+		Merchant:     args.Merchant,
+		DateFrom:     args.DateFrom,
+		DateTo:       args.DateTo,
+	}, func(tx *models.Transaction) error {
+		signed += tx.AmountMinor
+		if currency == "" && tx.Currency != "" {
+			currency = tx.Currency
+		}
+		return nil
+	}); err != nil {
+		return result, err
+	}
+
+	result.TotalMinor = -signed
+	result.Currency = currency
+	return result, nil
+}
+
 func (s *analyticsService) GetSpendBreakdown(ctx context.Context, uid string, args dto.AnalyticsSpendBreakdownArgs) (dto.AnalyticsSpendBreakdownResult, error) {
 	result := dto.AnalyticsSpendBreakdownResult{
 		GroupBy: args.GroupBy,

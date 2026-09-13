@@ -16,6 +16,25 @@ type AnalyticsSpendTotalResult struct {
 	To         string `json:"to,omitempty"`
 }
 
+// AnalyticsIncomeTotalArgs mirrors the spend-total args minus a category filter:
+// income is always the INCOME category, so PFCPrimary would be meaningless.
+type AnalyticsIncomeTotalArgs struct {
+	Pending   *bool
+	AccountID *string
+	Merchant  *string
+	DateFrom  *string
+	DateTo    *string
+}
+
+// AnalyticsIncomeTotalResult reports income as a positive magnitude even though
+// inflows are stored with Plaid's negative sign.
+type AnalyticsIncomeTotalResult struct {
+	TotalMinor int64  `json:"totalMinor"`
+	Currency   string `json:"currency"`
+	From       string `json:"from,omitempty"`
+	To         string `json:"to,omitempty"`
+}
+
 type AnalyticsSpendBreakdownArgs struct {
 	Pending    *bool
 	PFCPrimary *string

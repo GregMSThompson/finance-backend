@@ -324,6 +324,18 @@ func validateGoal(g *models.Goal) error {
 		if *g.ReductionPercent <= 0 || *g.ReductionPercent >= 100 {
 			return errs.NewValidationError("reductionPercent must be between 0 and 100")
 		}
+	case models.GoalTypeNetSavings:
+		if g.TargetValueMinor <= 0 {
+			return errs.NewValidationError("targetValue must be greater than 0")
+		}
+		if g.ReductionPercent != nil {
+			return errs.NewValidationError("reductionPercent applies only to reduction goals")
+		}
+		// Net savings is measured across all accounts, so it takes no filters —
+		// scoping to an account is a separate savings-contributions goal.
+		if g.Filters != (models.GoalFilters{}) {
+			return errs.NewValidationError("net savings goals take no filters")
+		}
 	default:
 		return errs.NewValidationError(fmt.Sprintf("unsupported goal type: %s", g.Type))
 	}

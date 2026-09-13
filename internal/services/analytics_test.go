@@ -1057,6 +1057,37 @@ func TestGetIncomeVsExpensesNormalizesSignAndExcludesTransfers(t *testing.T) {
 	}
 }
 
+func TestGetIncomeTotalNormalizesSign(t *testing.T) {
+	// The store filters to the INCOME category (asserted below), so it yields only
+	// income rows — which carry Plaid's negative sign. The total is reported as a
+	// positive magnitude.
+	store := &fakeAnalyticsStore{
+		txs: []*models.Transaction{
+			{AmountMinor: -500000, Currency: "USD", PFCPrimary: "INCOME"},
+			{AmountMinor: -20000, Currency: "USD", PFCPrimary: "INCOME"},
+		},
+	}
+	svc := NewAnalyticsService(store)
+
+	got, err := svc.GetIncomeTotal(context.Background(), "user", dto.AnalyticsIncomeTotalArgs{
+		DateFrom: helpers.Ptr("2026-01-01"),
+		DateTo:   helpers.Ptr("2026-01-31"),
+	})
+	if err != nil {
+		t.Fatalf("GetIncomeTotal error: %v", err)
+	}
+	if got.TotalMinor != 520000 {
+		t.Fatalf("expected positive income magnitude 520000, got %d", got.TotalMinor)
+	}
+	if got.Currency != "USD" {
+		t.Fatalf("currency mismatch: got %q", got.Currency)
+	}
+	// The query must scope to INCOME so the store returns only income rows.
+	if len(store.lastQuery.PFCPrimaries) != 1 || store.lastQuery.PFCPrimaries[0] != "INCOME" {
+		t.Fatalf("expected the query filtered to INCOME, got %v", store.lastQuery.PFCPrimaries)
+	}
+}
+
 func TestGetSpendBreakdownExcludesIncomeAndTransfers(t *testing.T) {
 	// collectPeriod (shared by breakdown, period-comparison, top-N) must drop
 	// non-spend categories, so income/transfers never appear as a spend group.

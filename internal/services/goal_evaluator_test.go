@@ -26,6 +26,10 @@ type fakeEvalAnalytics struct {
 	fn     func(dto.AnalyticsSpendTotalArgs) (dto.AnalyticsSpendTotalResult, error)
 	result dto.AnalyticsSpendTotalResult
 	err    error
+
+	incomeCalls  []dto.AnalyticsIncomeTotalArgs
+	incomeResult dto.AnalyticsIncomeTotalResult
+	incomeErr    error
 }
 
 func (f *fakeEvalAnalytics) GetSpendTotal(_ context.Context, _ string, args dto.AnalyticsSpendTotalArgs) (dto.AnalyticsSpendTotalResult, error) {
@@ -34,6 +38,11 @@ func (f *fakeEvalAnalytics) GetSpendTotal(_ context.Context, _ string, args dto.
 		return f.fn(args)
 	}
 	return f.result, f.err
+}
+
+func (f *fakeEvalAnalytics) GetIncomeTotal(_ context.Context, _ string, args dto.AnalyticsIncomeTotalArgs) (dto.AnalyticsIncomeTotalResult, error) {
+	f.incomeCalls = append(f.incomeCalls, args)
+	return f.incomeResult, f.incomeErr
 }
 
 // clock is a mid-August run time used across the evaluator tests: the 15th of a
@@ -389,6 +398,64 @@ func TestGoalEvaluator_ReductionEvaluatesAgainstFrozenTarget(t *testing.T) {
 	// One spend query for the current window — no second call to re-measure a baseline.
 	if len(analytics.calls) != 1 {
 		t.Fatalf("expected exactly 1 spend query at eval, got %d", len(analytics.calls))
+	}
+}
+
+func TestGoalEvaluator_NetSavingsMetScoresAtLeast(t *testing.T) {
+	// Net = income 200000 − spend 130000 = 70000 against a 50000 target → 140%,
+	// and already met, so on track.
+	g := monthlyGoal("g1", 50000)
+	g.Type = models.GoalTypeNetSavings
+
+	users := &fakeEvalUserStore{users: []*models.User{{UID: "u1"}}}
+	goals := &fakeGoalStore{goals: map[string]*models.Goal{"g1": g}}
+	snaps := &fakeGoalSnapshotStore{}
+	analytics := &fakeEvalAnalytics{
+		incomeResult: dto.AnalyticsIncomeTotalResult{TotalMinor: 200000, Currency: "USD"},
+		result:       dto.AnalyticsSpendTotalResult{TotalMinor: 130000, Currency: "USD"},
+	}
+
+	if err := newEvaluator(users, goals, snaps, analytics).Run(evalContext()); err != nil {
+		t.Fatalf("Run error: %v", err)
+	}
+	if len(snaps.created) != 1 {
+		t.Fatalf("expected 1 snapshot, got %d", len(snaps.created))
+	}
+	s := snaps.created[0]
+	if s.CurrentValueMinor != 70000 || s.TargetValueMinor != 50000 || s.PercentComplete != 140 {
+		t.Fatalf("expected net 70000 at 140%% of 50000, got current=%d target=%d pct=%v", s.CurrentValueMinor, s.TargetValueMinor, s.PercentComplete)
+	}
+	if !s.IsOnTrack {
+		t.Fatal("expected on track: net already exceeds the target")
+	}
+	if len(analytics.incomeCalls) != 1 || len(analytics.calls) != 1 {
+		t.Fatalf("expected one income and one spend query, got income=%d spend=%d", len(analytics.incomeCalls), len(analytics.calls))
+	}
+}
+
+func TestGoalEvaluator_NetSavingsBehindPaceNotOnTrack(t *testing.T) {
+	// Net = 60000 − 58000 = 2000. On 2026-08-15 the pace line is ~24193
+	// (50000 × 15/31), so a thin surplus is behind pace — the at-least direction.
+	g := monthlyGoal("g1", 50000)
+	g.Type = models.GoalTypeNetSavings
+
+	users := &fakeEvalUserStore{users: []*models.User{{UID: "u1"}}}
+	goals := &fakeGoalStore{goals: map[string]*models.Goal{"g1": g}}
+	snaps := &fakeGoalSnapshotStore{}
+	analytics := &fakeEvalAnalytics{
+		incomeResult: dto.AnalyticsIncomeTotalResult{TotalMinor: 60000, Currency: "USD"},
+		result:       dto.AnalyticsSpendTotalResult{TotalMinor: 58000, Currency: "USD"},
+	}
+
+	if err := newEvaluator(users, goals, snaps, analytics).Run(evalContext()); err != nil {
+		t.Fatalf("Run error: %v", err)
+	}
+	s := snaps.created[0]
+	if s.CurrentValueMinor != 2000 {
+		t.Fatalf("expected net 2000, got %d", s.CurrentValueMinor)
+	}
+	if s.IsOnTrack {
+		t.Fatal("expected not on track: the surplus is well below the pace line")
 	}
 }
 

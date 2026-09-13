@@ -13,8 +13,9 @@ type GoalType string
 const (
 	GoalTypeSpendingLimit GoalType = "spending_limit"
 	GoalTypeReduction     GoalType = "reduction"
-	// Further types (savings_target, pay_down, ...) are added as their
-	// evaluation logic lands.
+	GoalTypeNetSavings    GoalType = "net_savings"
+	// Further types (income_target, savings_target, pay_down, ...) are added as
+	// their evaluation logic lands.
 )
 
 // GoalTimeWindow is the period a goal is measured over.

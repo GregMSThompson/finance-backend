@@ -136,6 +136,16 @@ func validReductionDef() dto.GoalDefinition {
 	}
 }
 
+func validNetSavingsDef() dto.GoalDefinition {
+	return dto.GoalDefinition{
+		Type:             models.GoalTypeNetSavings,
+		Name:             "Save $500 a month",
+		TargetValueMinor: 50000,
+		TimeWindow:       models.GoalWindowMonthly,
+		Recurrence:       models.GoalRecurrenceRecurring,
+	}
+}
+
 func seedGoal(store *fakeGoalStore) *models.Goal {
 	g := &models.Goal{
 		GoalID:           "g1",
@@ -276,6 +286,29 @@ func seedReductionGoal(store *fakeGoalStore) *models.Goal {
 	}
 	store.goals[g.GoalID] = g
 	return g
+}
+
+func TestGoalCreate_NetSavingsValid(t *testing.T) {
+	goals := newFakeGoalStore()
+	svc := NewGoalService(goals, &fakeGoalSnapshotStore{}, &fakeJobs{}, &fakeTransactionsLister{}, &fakeEvalAnalytics{})
+
+	g, err := svc.Create(context.Background(), "uid1", "s", validNetSavingsDef())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if g.Type != models.GoalTypeNetSavings || g.TargetValueMinor != 50000 {
+		t.Fatalf("unexpected goal: %+v", g)
+	}
+}
+
+func TestGoalCreate_NetSavingsRejectsFilters(t *testing.T) {
+	svc := NewGoalService(newFakeGoalStore(), &fakeGoalSnapshotStore{}, &fakeJobs{}, &fakeTransactionsLister{}, &fakeEvalAnalytics{})
+	def := validNetSavingsDef()
+	def.Filters = models.GoalFilters{PFCPrimary: "FOOD_AND_DRINK"}
+	_, err := svc.Create(context.Background(), "uid1", "s", def)
+	if !isValidationError(err) {
+		t.Fatalf("expected ValidationError for filters on a net savings goal, got %v", err)
+	}
 }
 
 // --- Update ---
