@@ -48,6 +48,8 @@ type goalStrategy interface {
 	Measure(ctx context.Context, uid string, g *models.Goal, w goalWindow) (int64, error)
 	Target(g *models.Goal) int64
 	Score(g *models.Goal, w goalWindow, current int64) goalProgress
+	ProgressText(g *models.Goal, snap *models.GoalSnapshot, crossedOver bool) (string, error)
+	TerminalText(g *models.Goal, snap *models.GoalSnapshot, status models.GoalStatus) (string, error)
 }
 
 // goalEvaluatorService writes a daily progress snapshot for every active goal.
@@ -265,7 +267,7 @@ func (s *goalEvaluatorService) evaluateGoal(ctx context.Context, uid string, goa
 		if prog.succeeded {
 			eval.newStatus = models.GoalStatusCompleted
 		}
-		body, err := goalTerminalText(goal, snap, eval.newStatus)
+		body, err := strat.TerminalText(goal, snap, eval.newStatus)
 		if err != nil {
 			return nil, err
 		}
@@ -276,7 +278,7 @@ func (s *goalEvaluatorService) evaluateGoal(ctx context.Context, uid string, goa
 	}
 
 	// Otherwise, the progress-threshold notification (terminal supersedes it).
-	notification, err := s.maybeNotify(ctx, uid, goal, snap, start)
+	notification, err := s.maybeNotify(ctx, uid, goal, snap, start, strat)
 	if err != nil {
 		return nil, err
 	}
@@ -293,7 +295,7 @@ func (s *goalEvaluatorService) evaluateGoal(ctx context.Context, uid string, goa
 // none, so it baselines to "under" (spend has reset) and a period rollover is
 // silent. Comparing to the previous snapshot rather than a fixed rule keeps this
 // independent of how often the evaluator runs.
-func (s *goalEvaluatorService) maybeNotify(ctx context.Context, uid string, goal *models.Goal, snap *models.GoalSnapshot, periodStart time.Time) (*models.Notification, error) {
+func (s *goalEvaluatorService) maybeNotify(ctx context.Context, uid string, goal *models.Goal, snap *models.GoalSnapshot, periodStart time.Time, strat goalStrategy) (*models.Notification, error) {
 	threshold := goal.AlertThresholds.ProgressPercent
 	if threshold == nil {
 		return nil, nil
@@ -312,7 +314,7 @@ func (s *goalEvaluatorService) maybeNotify(ctx context.Context, uid string, goal
 		return nil, nil
 	}
 
-	insight, err := goalProgressText(goal, snap, over)
+	insight, err := strat.ProgressText(goal, snap, over)
 	if err != nil {
 		return nil, err
 	}
@@ -340,29 +342,28 @@ func buildGoalNotification(goal *models.Goal, body string, now time.Time) *model
 	}
 }
 
-// goalTerminalText renders the body for a one-off goal's completed/failed
-// outcome. Deterministic, same as the progress placeholder — see the
-// TODO(goals) note on goalInsightText for the richer AI insight to come.
-func goalTerminalText(goal *models.Goal, snap *models.GoalSnapshot, status models.GoalStatus) (string, error) {
-	current, err := helpers.FormatCurrency(snap.CurrentValueMinor, goal.Currency)
+// TerminalText renders an at-most goal's completed/failed outcome (spend limit,
+// reduction): success means the spend stayed within the limit.
+func (spendingLimitStrategy) TerminalText(g *models.Goal, snap *models.GoalSnapshot, status models.GoalStatus) (string, error) {
+	current, err := helpers.FormatCurrency(snap.CurrentValueMinor, g.Currency)
 	if err != nil {
 		return "", err
 	}
-	target, err := helpers.FormatCurrency(snap.TargetValueMinor, goal.Currency)
+	target, err := helpers.FormatCurrency(snap.TargetValueMinor, g.Currency)
 	if err != nil {
 		return "", err
 	}
 	if status == models.GoalStatusCompleted {
 		return fmt.Sprintf("You completed your %s goal — spent %s, within your %s limit.",
-			goal.Name, current, target), nil
+			g.Name, current, target), nil
 	}
 	return fmt.Sprintf("Your %s goal ended over budget — spent %s of your %s limit.",
-		goal.Name, current, target), nil
+		g.Name, current, target), nil
 }
 
-// goalProgressText renders the notification body for a threshold transition —
-// over is true when spending has just crossed the threshold, false when it has
-// dropped back under.
+// ProgressText renders an at-most goal's threshold-crossing body — crossedOver
+// true when spending has just passed the threshold (a warning), false when it
+// has dropped back under (recovery).
 //
 // TODO(goals): this is a deterministic placeholder that only restates the
 // numbers. The real feature is a personalized AI insight that pulls richer
@@ -371,28 +372,78 @@ func goalTerminalText(goal *models.Goal, snap *models.GoalSnapshot, status model
 // something specific and actionable. That deserves its own piece (deciding
 // which analytics to pull, prompt design, cost/latency); when we build it,
 // reintroduce a genai dependency on the evaluator and swap this call out.
-func goalProgressText(goal *models.Goal, snap *models.GoalSnapshot, over bool) (string, error) {
-	current, err := helpers.FormatCurrency(snap.CurrentValueMinor, goal.Currency)
+func (spendingLimitStrategy) ProgressText(g *models.Goal, snap *models.GoalSnapshot, crossedOver bool) (string, error) {
+	current, err := helpers.FormatCurrency(snap.CurrentValueMinor, g.Currency)
 	if err != nil {
 		return "", err
 	}
-	target, err := helpers.FormatCurrency(snap.TargetValueMinor, goal.Currency)
+	target, err := helpers.FormatCurrency(snap.TargetValueMinor, g.Currency)
 	if err != nil {
 		return "", err
 	}
-	remaining, err := helpers.FormatCurrency(snap.TargetValueMinor-snap.CurrentValueMinor, goal.Currency)
+	remaining, err := helpers.FormatCurrency(snap.TargetValueMinor-snap.CurrentValueMinor, g.Currency)
 	if err != nil {
 		return "", err
 	}
-	if over {
+	if crossedOver {
 		return fmt.Sprintf("You've used %s of your %s budget — %s of %s, %s remaining.",
 			helpers.FormatPercent(snap.PercentComplete),
-			goal.Name, current, target, remaining), nil
+			g.Name, current, target, remaining), nil
 	}
 	return fmt.Sprintf("Your %s spending is back down to %s — %s of %s, %s remaining.",
-		goal.Name,
+		g.Name,
 		helpers.FormatPercent(snap.PercentComplete),
 		current, target, remaining), nil
+}
+
+// TerminalText renders an at-least goal's completed/failed outcome (income, net
+// savings): success means the accumulated value reached the target.
+func (atLeastStrategy) TerminalText(g *models.Goal, snap *models.GoalSnapshot, status models.GoalStatus) (string, error) {
+	current, err := helpers.FormatCurrency(snap.CurrentValueMinor, g.Currency)
+	if err != nil {
+		return "", err
+	}
+	target, err := helpers.FormatCurrency(snap.TargetValueMinor, g.Currency)
+	if err != nil {
+		return "", err
+	}
+	if status == models.GoalStatusCompleted {
+		return fmt.Sprintf("You reached your %s goal — %s of your %s target.",
+			g.Name, current, target), nil
+	}
+	return fmt.Sprintf("Your %s goal ended short — %s of your %s target.",
+		g.Name, current, target), nil
+}
+
+// ProgressText renders an at-least goal's threshold-crossing body — crossedOver
+// true when progress has just reached the threshold (encouragement), false when
+// it has slipped back below. remaining ("to go") is clamped at zero once met.
+func (atLeastStrategy) ProgressText(g *models.Goal, snap *models.GoalSnapshot, crossedOver bool) (string, error) {
+	current, err := helpers.FormatCurrency(snap.CurrentValueMinor, g.Currency)
+	if err != nil {
+		return "", err
+	}
+	target, err := helpers.FormatCurrency(snap.TargetValueMinor, g.Currency)
+	if err != nil {
+		return "", err
+	}
+	toGoMinor := snap.TargetValueMinor - snap.CurrentValueMinor
+	if toGoMinor < 0 {
+		toGoMinor = 0
+	}
+	toGo, err := helpers.FormatCurrency(toGoMinor, g.Currency)
+	if err != nil {
+		return "", err
+	}
+	if crossedOver {
+		return fmt.Sprintf("You're %s of the way to your %s goal — %s of %s, %s to go.",
+			helpers.FormatPercent(snap.PercentComplete),
+			g.Name, current, target, toGo), nil
+	}
+	return fmt.Sprintf("Your %s progress slipped to %s — %s of %s, %s to go.",
+		g.Name,
+		helpers.FormatPercent(snap.PercentComplete),
+		current, target, toGo), nil
 }
 
 // goalElapsedFraction returns how far through the window queryTo sits, in whole

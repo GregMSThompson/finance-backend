@@ -459,6 +459,109 @@ func TestGoalEvaluator_NetSavingsBehindPaceNotOnTrack(t *testing.T) {
 	}
 }
 
+// netSavingsGoal builds a net savings goal off the monthly template.
+func netSavingsGoal(id string, targetMinor int64) *models.Goal {
+	g := monthlyGoal(id, targetMinor)
+	g.Type = models.GoalTypeNetSavings
+	g.Name = "Savings"
+	return g
+}
+
+func TestGoalEvaluator_NetSavingsTerminalCompletedWording(t *testing.T) {
+	// One-off net savings whose window has closed, target reached → completed,
+	// phrased for saving (not spending).
+	g := oneOffFixedGoal("g1", 50000, "2026-07-01", "2026-07-31")
+	g.Type = models.GoalTypeNetSavings
+	g.Name = "Summer savings"
+	goals := &fakeGoalStore{goals: map[string]*models.Goal{"g1": g}}
+	snaps := &fakeGoalSnapshotStore{}
+	// net = 300000 − 240000 = 60000 ≥ 50000.
+	analytics := &fakeEvalAnalytics{
+		incomeResult: dto.AnalyticsIncomeTotalResult{TotalMinor: 300000, Currency: "USD"},
+		result:       dto.AnalyticsSpendTotalResult{TotalMinor: 240000, Currency: "USD"},
+	}
+	notifs := &fakeNotificationStore{}
+	tasks := &fakeTasksClient{}
+
+	if err := newNotifyEvaluator(goals, snaps, analytics, notifs, tasks).Run(evalContext()); err != nil {
+		t.Fatalf("Run error: %v", err)
+	}
+	if goals.goals["g1"].Status != models.GoalStatusCompleted {
+		t.Fatalf("expected completed, got %s", goals.goals["g1"].Status)
+	}
+	if len(notifs.created) != 1 || notifs.created[0].Body != "You reached your Summer savings goal — USD 600.00 of your USD 500.00 target." {
+		t.Fatalf("wrong terminal wording: %+v", notifs.created)
+	}
+}
+
+func TestGoalEvaluator_NetSavingsTerminalFailedWording(t *testing.T) {
+	g := oneOffFixedGoal("g1", 50000, "2026-07-01", "2026-07-31")
+	g.Type = models.GoalTypeNetSavings
+	g.Name = "Summer savings"
+	goals := &fakeGoalStore{goals: map[string]*models.Goal{"g1": g}}
+	snaps := &fakeGoalSnapshotStore{}
+	// net = 250000 − 240000 = 10000 < 50000.
+	analytics := &fakeEvalAnalytics{
+		incomeResult: dto.AnalyticsIncomeTotalResult{TotalMinor: 250000, Currency: "USD"},
+		result:       dto.AnalyticsSpendTotalResult{TotalMinor: 240000, Currency: "USD"},
+	}
+	notifs := &fakeNotificationStore{}
+	tasks := &fakeTasksClient{}
+
+	if err := newNotifyEvaluator(goals, snaps, analytics, notifs, tasks).Run(evalContext()); err != nil {
+		t.Fatalf("Run error: %v", err)
+	}
+	if goals.goals["g1"].Status != models.GoalStatusFailed {
+		t.Fatalf("expected failed, got %s", goals.goals["g1"].Status)
+	}
+	if len(notifs.created) != 1 || notifs.created[0].Body != "Your Summer savings goal ended short — USD 100.00 of your USD 500.00 target." {
+		t.Fatalf("wrong terminal wording: %+v", notifs.created)
+	}
+}
+
+func TestGoalEvaluator_NetSavingsProgressCrossedOverWording(t *testing.T) {
+	g := netSavingsGoal("g1", 50000)
+	g.AlertThresholds = models.GoalAlertThresholds{ProgressPercent: helpers.Ptr(80.0)}
+	goals := &fakeGoalStore{goals: map[string]*models.Goal{"g1": g}}
+	snaps := &fakeGoalSnapshotStore{} // no prior snapshot this period
+	// net = 250000 − 205000 = 45000 → 90% of 50000, crosses 80%.
+	analytics := &fakeEvalAnalytics{
+		incomeResult: dto.AnalyticsIncomeTotalResult{TotalMinor: 250000, Currency: "USD"},
+		result:       dto.AnalyticsSpendTotalResult{TotalMinor: 205000, Currency: "USD"},
+	}
+	notifs := &fakeNotificationStore{}
+	tasks := &fakeTasksClient{}
+
+	if err := newNotifyEvaluator(goals, snaps, analytics, notifs, tasks).Run(evalContext()); err != nil {
+		t.Fatalf("Run error: %v", err)
+	}
+	if len(notifs.created) != 1 || notifs.created[0].Body != "You're 90.0% of the way to your Savings goal — USD 450.00 of USD 500.00, USD 50.00 to go." {
+		t.Fatalf("wrong progress wording: %+v", notifs.created)
+	}
+}
+
+func TestGoalEvaluator_NetSavingsProgressSlippedUnderWording(t *testing.T) {
+	g := netSavingsGoal("g1", 50000)
+	g.AlertThresholds = models.GoalAlertThresholds{ProgressPercent: helpers.Ptr(80.0)}
+	goals := &fakeGoalStore{goals: map[string]*models.Goal{"g1": g}}
+	// Prior snapshot was above the threshold; a correction drops progress back under.
+	snaps := &fakeGoalSnapshotStore{sinceSnapshots: []*models.GoalSnapshot{{GoalID: "g1", PercentComplete: 90}}}
+	// net = 235000 − 200000 = 35000 → 70% of 50000, back under 80%.
+	analytics := &fakeEvalAnalytics{
+		incomeResult: dto.AnalyticsIncomeTotalResult{TotalMinor: 235000, Currency: "USD"},
+		result:       dto.AnalyticsSpendTotalResult{TotalMinor: 200000, Currency: "USD"},
+	}
+	notifs := &fakeNotificationStore{}
+	tasks := &fakeTasksClient{}
+
+	if err := newNotifyEvaluator(goals, snaps, analytics, notifs, tasks).Run(evalContext()); err != nil {
+		t.Fatalf("Run error: %v", err)
+	}
+	if len(notifs.created) != 1 || notifs.created[0].Body != "Your Savings progress slipped to 70.0% — USD 350.00 of USD 500.00, USD 150.00 to go." {
+		t.Fatalf("wrong progress wording: %+v", notifs.created)
+	}
+}
+
 func TestGoalEvaluator_OneOffNotYetEndedDoesNotTerminate(t *testing.T) {
 	// EndDate is in the future, so the goal stays active — no terminal transition.
 	goals := &fakeGoalStore{goals: map[string]*models.Goal{"g1": oneOffFixedGoal("g1", 30000, "2026-07-01", "2026-12-31")}}
