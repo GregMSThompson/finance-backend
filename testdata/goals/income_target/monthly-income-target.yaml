@@ -1,0 +1,46 @@
+name: monthly-income-target
+userId: sim-income-target-user
+
+# A recurring monthly income target: receive at least $3000 in income. Income
+# target measures income ALONE (not net of spend), so spend transactions must
+# not move the number — the 2026-08-20 step below seeds a spend on a day with no
+# income to prove it. Income arrives with Plaid's negative sign; the evaluator
+# reports it as a positive magnitude.
+goal:
+  goalId: g-income-target
+  name: Freelance income
+  type: income_target
+  targetValue: 3000
+  timeWindow: monthly
+  recurrence: recurring
+  createdAt: 2026-08-01
+
+replay:
+  from: 2026-08-01
+  to: 2026-08-31
+
+steps:
+  # First invoice (inflow, negative amount): income 800. Early in the month this
+  # clears the pace line ($3000 × 5/31 ≈ $484), so on track.
+  - date: 2026-08-05
+    add:
+      - { name: Invoice 1, amount: -800, pfcPrimary: INCOME }
+    expect: { currentValue: 800, percentComplete: 26.67, isOnTrack: true }
+
+  # A grocery spend lands but NO new income. Net savings would drop to 400 here;
+  # income target ignores spend, so the value stays 800 — now behind pace
+  # ($3000 × 20/31 ≈ $1935).
+  - date: 2026-08-20
+    add:
+      - { name: Groceries, amount: 400, pfcPrimary: FOOD_AND_DRINK }
+    expect: { currentValue: 800, percentComplete: 26.67, isOnTrack: false }
+
+  # A big invoice arrives late: income 800 + 2500 = 3300, over the target.
+  - date: 2026-08-28
+    add:
+      - { name: Invoice 2, amount: -2500, pfcPrimary: INCOME }
+    expect: { currentValue: 3300, percentComplete: 110, isOnTrack: true }
+
+# Recurring goals never terminate — they reset next period.
+finalExpect:
+  status: active

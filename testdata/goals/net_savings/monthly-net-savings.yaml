@@ -1,0 +1,49 @@
+name: monthly-net-savings
+userId: sim-net-savings-user
+
+# A recurring monthly net savings goal: save at least $500 (income minus spend)
+# across all accounts. Net savings takes no filters — every income and spend
+# transaction counts. Income arrives with Plaid's negative sign; the evaluator
+# reports it as positive and subtracts spend.
+goal:
+  goalId: g-net-savings
+  name: Monthly savings
+  type: net_savings
+  targetValue: 500
+  timeWindow: monthly
+  recurrence: recurring
+  createdAt: 2026-08-01
+
+replay:
+  from: 2026-08-01
+  to: 2026-08-31
+
+steps:
+  # Paycheck lands (inflow, so a negative amount). Net = 2000 income − 0 spend.
+  # Way ahead of the $500 target this early, so on track.
+  - date: 2026-08-02
+    add:
+      - { name: Paycheck, amount: -2000, pfcPrimary: INCOME }
+    expect: { currentValue: 2000, percentComplete: 400, isOnTrack: true }
+
+  # Rent hits: net = 2000 − 1500 = 500, exactly the target so far.
+  - date: 2026-08-10
+    add:
+      - { name: Rent, amount: 1500, pfcPrimary: RENT_AND_UTILITIES }
+    expect: { currentValue: 500, percentComplete: 100 }
+
+  # Groceries erode the surplus: net = 2000 − 1800 = 200, now behind pace.
+  - date: 2026-08-20
+    add:
+      - { name: Groceries, amount: 300, pfcPrimary: FOOD_AND_DRINK }
+    expect: { currentValue: 200, percentComplete: 40, isOnTrack: false }
+
+  # More spend late in the month: net = 2000 − 1900 = 100.
+  - date: 2026-08-28
+    add:
+      - { name: Utilities, amount: 100, pfcPrimary: RENT_AND_UTILITIES }
+    expect: { currentValue: 100, percentComplete: 20, isOnTrack: false }
+
+# Recurring goals never terminate — they reset next period.
+finalExpect:
+  status: active

@@ -681,6 +681,42 @@ func TestCreateGoalToolDecodesReductionDefinition(t *testing.T) {
 	}
 }
 
+func TestCreateGoalToolDecodesAtLeastTypes(t *testing.T) {
+	cases := []struct {
+		typ  string
+		want models.GoalType
+	}{
+		{"net_savings", models.GoalTypeNetSavings},
+		{"income_target", models.GoalTypeIncomeTarget},
+	}
+	for _, tc := range cases {
+		t.Run(tc.typ, func(t *testing.T) {
+			goals := &fakeGoalsService{createResp: &models.Goal{GoalID: "g"}}
+			svc := NewAIService(&fakeVertexClient{}, &fakeAnalyticsClient{}, &fakeTransactionsLister{}, goals, &fakeAIStore{})
+
+			_, err := svc.executeTool(helpers.TestCtx(), "user", "s", dto.VertexToolCall{
+				Name: "create_goal",
+				Args: map[string]any{
+					"name":        "Save",
+					"type":        tc.typ,
+					"targetValue": 500.0,
+					"timeWindow":  "monthly",
+					"recurrence":  "recurring",
+				},
+			})
+			if err != nil {
+				t.Fatalf("executeTool error: %v", err)
+			}
+			if goals.createDef.Type != tc.want {
+				t.Fatalf("expected type %s, got %q", tc.want, goals.createDef.Type)
+			}
+			if goals.createDef.TargetValueMinor != 50000 {
+				t.Fatalf("expected targetValue 500 → 50000, got %d", goals.createDef.TargetValueMinor)
+			}
+		})
+	}
+}
+
 func TestCreateGoalToolReflectsValidationError(t *testing.T) {
 	goals := &fakeGoalsService{createErr: errs.NewValidationError("targetValue must be greater than 0")}
 	vertex := &fakeVertexClient{

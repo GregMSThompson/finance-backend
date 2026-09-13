@@ -146,6 +146,16 @@ func validNetSavingsDef() dto.GoalDefinition {
 	}
 }
 
+func validIncomeTargetDef() dto.GoalDefinition {
+	return dto.GoalDefinition{
+		Type:             models.GoalTypeIncomeTarget,
+		Name:             "Earn $3k a month",
+		TargetValueMinor: 300000,
+		TimeWindow:       models.GoalWindowMonthly,
+		Recurrence:       models.GoalRecurrenceRecurring,
+	}
+}
+
 func seedGoal(store *fakeGoalStore) *models.Goal {
 	g := &models.Goal{
 		GoalID:           "g1",
@@ -308,6 +318,29 @@ func TestGoalCreate_NetSavingsRejectsFilters(t *testing.T) {
 	_, err := svc.Create(context.Background(), "uid1", "s", def)
 	if !isValidationError(err) {
 		t.Fatalf("expected ValidationError for filters on a net savings goal, got %v", err)
+	}
+}
+
+func TestGoalCreate_IncomeTargetValid(t *testing.T) {
+	goals := newFakeGoalStore()
+	svc := NewGoalService(goals, &fakeGoalSnapshotStore{}, &fakeJobs{}, &fakeTransactionsLister{}, &fakeEvalAnalytics{})
+
+	g, err := svc.Create(context.Background(), "uid1", "s", validIncomeTargetDef())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if g.Type != models.GoalTypeIncomeTarget || g.TargetValueMinor != 300000 {
+		t.Fatalf("unexpected goal: %+v", g)
+	}
+}
+
+func TestGoalCreate_IncomeTargetRejectsFilters(t *testing.T) {
+	svc := NewGoalService(newFakeGoalStore(), &fakeGoalSnapshotStore{}, &fakeJobs{}, &fakeTransactionsLister{}, &fakeEvalAnalytics{})
+	def := validIncomeTargetDef()
+	def.Filters = models.GoalFilters{AccountID: "acc1"}
+	_, err := svc.Create(context.Background(), "uid1", "s", def)
+	if !isValidationError(err) {
+		t.Fatalf("expected ValidationError for filters on an income target goal, got %v", err)
 	}
 }
 

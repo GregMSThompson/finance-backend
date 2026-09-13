@@ -562,6 +562,36 @@ func TestGoalEvaluator_NetSavingsProgressSlippedUnderWording(t *testing.T) {
 	}
 }
 
+func TestGoalEvaluator_IncomeTargetMeasuresIncomeOnly(t *testing.T) {
+	// Income target scores income alone against the floor — it must not subtract
+	// spend (that's net savings), so it never queries the spend total.
+	g := monthlyGoal("g1", 300000)
+	g.Type = models.GoalTypeIncomeTarget
+	g.Name = "Freelance income"
+
+	users := &fakeEvalUserStore{users: []*models.User{{UID: "u1"}}}
+	goals := &fakeGoalStore{goals: map[string]*models.Goal{"g1": g}}
+	snaps := &fakeGoalSnapshotStore{}
+	analytics := &fakeEvalAnalytics{
+		incomeResult: dto.AnalyticsIncomeTotalResult{TotalMinor: 360000, Currency: "USD"},
+		result:       dto.AnalyticsSpendTotalResult{TotalMinor: 200000, Currency: "USD"}, // must be ignored
+	}
+
+	if err := newEvaluator(users, goals, snaps, analytics).Run(evalContext()); err != nil {
+		t.Fatalf("Run error: %v", err)
+	}
+	s := snaps.created[0]
+	if s.CurrentValueMinor != 360000 || s.PercentComplete != 120 {
+		t.Fatalf("expected income 360000 at 120%% of 300000, got current=%d pct=%v", s.CurrentValueMinor, s.PercentComplete)
+	}
+	if !s.IsOnTrack {
+		t.Fatal("expected on track: income already exceeds the target")
+	}
+	if len(analytics.incomeCalls) != 1 || len(analytics.calls) != 0 {
+		t.Fatalf("income target must query income only, got income=%d spend=%d", len(analytics.incomeCalls), len(analytics.calls))
+	}
+}
+
 func TestGoalEvaluator_OneOffNotYetEndedDoesNotTerminate(t *testing.T) {
 	// EndDate is in the future, so the goal stays active — no terminal transition.
 	goals := &fakeGoalStore{goals: map[string]*models.Goal{"g1": oneOffFixedGoal("g1", 30000, "2026-07-01", "2026-12-31")}}

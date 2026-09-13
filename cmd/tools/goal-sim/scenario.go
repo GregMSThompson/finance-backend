@@ -103,10 +103,10 @@ func (sc *scenario) buildGoalDefinition() (dto.GoalDefinition, error) {
 			ProgressPercent: sc.Goal.AlertThresholds.ProgressPercent,
 		},
 	}
-	// Only spending_limit carries an explicit target; reduction derives its own
-	// from the baseline at creation. Scenario YAML uses major units for
+	// Every type except reduction carries an explicit target; reduction derives
+	// its own from the baseline at creation. Scenario YAML uses major units for
 	// readability, so convert to the minor units the model stores.
-	if def.Type == models.GoalTypeSpendingLimit {
+	if def.Type != models.GoalTypeReduction {
 		targetMinor, err := helpers.ToMinorUnits(sc.Goal.TargetValue, helpers.CurrencyUSD)
 		if err != nil {
 			return dto.GoalDefinition{}, fmt.Errorf("goal.targetValue: %w", err)

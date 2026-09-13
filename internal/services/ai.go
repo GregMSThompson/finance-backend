@@ -935,8 +935,9 @@ func toolSchemas() []dto.VertexTool {
 			Name: "create_goal",
 			Description: "Create a goal after the user has confirmed the details. " +
 				"Summarise the goal (target, period, category, alerts) and get explicit confirmation before calling this. " +
-				"Supported types: spending_limit (spend at most targetValue in the period) and reduction (spend reductionPercent less than the previous comparable period). " +
-				"For spending_limit provide targetValue (dollars, > 0). For reduction provide reductionPercent instead — the concrete target is computed from the previous period at creation and then stays fixed, even for a recurring goal. " +
+				"Supported types: spending_limit (spend at most targetValue), reduction (spend reductionPercent less than the previous comparable period), net_savings (save at least targetValue — income minus spend across all accounts), and income_target (receive at least targetValue in income). " +
+				"Provide targetValue (dollars, > 0) for spending_limit, net_savings, and income_target; provide reductionPercent instead for reduction — its target is computed from the previous period at creation and then stays fixed, even for a recurring goal. " +
+				"net_savings and income_target are whole-finances figures and take no filters. " +
 				"A recurring goal resets each period and must use a weekly or monthly window (no endDate). " +
 				"A one_off goal runs once; a fixed window requires an endDate (YYYY-MM-DD). " +
 				"If the call is rejected, explain what needs to change and try again.",
@@ -944,15 +945,15 @@ func toolSchemas() []dto.VertexTool {
 				Type: "object",
 				Properties: map[string]*dto.VertexSchema{
 					"name":             {Type: "string", Description: "Short user-facing name, e.g. 'Dining out budget'. Required."},
-					"type":             {Type: "string", Enum: []string{string(models.GoalTypeSpendingLimit), string(models.GoalTypeReduction)}, Description: "Goal type. Defaults to spending_limit."},
-					"targetValue":      {Type: "number", Description: "The spending limit for the period, in dollars. Required for spending_limit, must be greater than 0. Omit for reduction."},
-					"reductionPercent": {Type: "number", Description: "For reduction goals: how much less to spend than the previous comparable period, as a percent between 0 and 100 (e.g. 10 = 10% less). Required for reduction; omit for spending_limit."},
+					"type":             {Type: "string", Enum: []string{string(models.GoalTypeSpendingLimit), string(models.GoalTypeReduction), string(models.GoalTypeNetSavings), string(models.GoalTypeIncomeTarget)}, Description: "Goal type. Defaults to spending_limit."},
+					"targetValue":      {Type: "number", Description: "The target amount for the period, in dollars, greater than 0. Required for spending_limit (the limit), net_savings (the amount to save), and income_target (the income floor). Omit for reduction."},
+					"reductionPercent": {Type: "number", Description: "For reduction goals: how much less to spend than the previous comparable period, as a percent between 0 and 100 (e.g. 10 = 10% less). Required for reduction; omit for other types."},
 					"timeWindow":       {Type: "string", Enum: []string{"weekly", "monthly", "fixed"}, Description: "Period the target is measured over. Required."},
 					"recurrence":       {Type: "string", Enum: []string{"recurring", "one_off"}, Description: "recurring resets each period; one_off runs once. Required."},
 					"endDate":          {Type: "string", Description: "YYYY-MM-DD end date. Required when timeWindow is fixed; omit for weekly/monthly."},
 					"filters": {
 						Type:        "object",
-						Description: "Optional scope. Omit to count all spending toward the target.",
+						Description: "Optional scope for spending_limit and reduction. Omit to count all spending. Not valid for net_savings or income_target.",
 						Properties: map[string]*dto.VertexSchema{
 							"pfcPrimary": {Type: "string", Enum: taxonomy.PFCPrimaryList, Description: "Only count this category."},
 							"merchant":   {Type: "string", Description: "Only count this merchant (partial, case-insensitive)."},
@@ -975,15 +976,15 @@ func toolSchemas() []dto.VertexTool {
 			Description: "Change an existing goal. Call list_goals first to get the goalId. " +
 				"Only the fields you provide change; omit the rest. " +
 				"Providing filters or alertThresholds replaces the whole object, so include every value you want to keep. " +
-				"A goal's type can't be changed. For a spending_limit goal, set targetValue. For a reduction goal, set reductionPercent (not targetValue) — its target is re-derived from the baseline; changing reductionPercent, filters, or the window re-measures that baseline. " +
+				"A goal's type can't be changed. For spending_limit, net_savings, and income_target goals, set targetValue. For a reduction goal, set reductionPercent (not targetValue) — its target is re-derived from the baseline; changing reductionPercent, filters, or the window re-measures that baseline. " +
 				"Summarise substantive changes and confirm with the user before calling.",
 			Parameters: &dto.VertexSchema{
 				Type: "object",
 				Properties: map[string]*dto.VertexSchema{
 					"goalId":           {Type: "string", Description: "Id of the goal to change. Required."},
 					"name":             {Type: "string", Description: "New name."},
-					"targetValue":      {Type: "number", Description: "New spending limit for a spending_limit goal, must be greater than 0. Not valid for reduction goals."},
-					"reductionPercent": {Type: "number", Description: "New percent less than the baseline for a reduction goal (0-100). Re-derives the target. Not valid for spending_limit goals."},
+					"targetValue":      {Type: "number", Description: "New target amount, must be greater than 0. Valid for spending_limit, net_savings, and income_target goals. Not valid for reduction goals."},
+					"reductionPercent": {Type: "number", Description: "New percent less than the baseline for a reduction goal (0-100). Re-derives the target. Not valid for other goal types."},
 					"timeWindow":       {Type: "string", Enum: []string{"weekly", "monthly", "fixed"}, Description: "New period."},
 					"recurrence":  {Type: "string", Enum: []string{"recurring", "one_off"}, Description: "New recurrence."},
 					"endDate":     {Type: "string", Description: "YYYY-MM-DD end date for a fixed window."},

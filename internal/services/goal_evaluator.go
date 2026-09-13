@@ -121,6 +121,13 @@ type netSavingsStrategy struct {
 	analytics goalStrategyAnalytics
 }
 
+// incomeTargetStrategy measures income received over the window against a floor:
+// earning at least the target. Useful mainly for variable-income users.
+type incomeTargetStrategy struct {
+	atLeastStrategy
+	analytics goalStrategyAnalytics
+}
+
 func NewGoalEvaluatorService(
 	users goalEvaluatorUserStore,
 	goals goalEvaluatorGoalStore,
@@ -485,6 +492,7 @@ func newGoalStrategies(analytics goalStrategyAnalytics) map[models.GoalType]goal
 		models.GoalTypeSpendingLimit: sl,
 		models.GoalTypeReduction:     reductionStrategy{spendingLimitStrategy: sl},
 		models.GoalTypeNetSavings:    netSavingsStrategy{analytics: analytics},
+		models.GoalTypeIncomeTarget:  incomeTargetStrategy{analytics: analytics},
 	}
 }
 
@@ -627,4 +635,18 @@ func (s netSavingsStrategy) Measure(ctx context.Context, uid string, g *models.G
 		return 0, fmt.Errorf("spend total: %w", err)
 	}
 	return income.TotalMinor - spend.TotalMinor, nil
+}
+
+// Measure returns income received over the window. Like net savings it takes no
+// filters — it's the user's whole income.
+func (s incomeTargetStrategy) Measure(ctx context.Context, uid string, g *models.Goal, w goalWindow) (int64, error) {
+	income, err := s.analytics.GetIncomeTotal(ctx, uid, dto.AnalyticsIncomeTotalArgs{
+		Pending:  helpers.Ptr(false),
+		DateFrom: helpers.Ptr(helpers.FormatDate(w.start)),
+		DateTo:   helpers.Ptr(helpers.FormatDate(w.queryTo)),
+	})
+	if err != nil {
+		return 0, fmt.Errorf("income total: %w", err)
+	}
+	return income.TotalMinor, nil
 }
