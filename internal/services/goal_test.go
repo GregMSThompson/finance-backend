@@ -239,6 +239,32 @@ func TestGoalCreate_InvalidCategory(t *testing.T) {
 	}
 }
 
+func TestGoalCreate_SpendingLimitRejectsNonSpendCategory(t *testing.T) {
+	// A spending goal filtered to a non-spend category (income or a transfer)
+	// would measure the wrong thing — GetSpendTotal honors an explicit category
+	// filter and would report the raw income/transfer sum. Both spend types reject
+	// it, even though the category itself is a valid PFC primary.
+	for _, tc := range []struct {
+		name string
+		def  func() dto.GoalDefinition
+	}{
+		{"spending_limit", validGoalDef},
+		{"reduction", validReductionDef},
+	} {
+		for _, cat := range []string{"INCOME", "TRANSFER_IN", "TRANSFER_OUT"} {
+			t.Run(tc.name+"/"+cat, func(t *testing.T) {
+				svc := NewGoalService(newFakeGoalStore(), &fakeGoalSnapshotStore{}, &fakeJobs{}, &fakeTransactionsLister{}, &fakeEvalAnalytics{})
+				def := tc.def()
+				def.Filters.PFCPrimary = cat
+				_, err := svc.Create(context.Background(), "uid1", "s", def)
+				if !isValidationError(err) {
+					t.Fatalf("expected ValidationError for non-spend category %s, got %v", cat, err)
+				}
+			})
+		}
+	}
+}
+
 func TestGoalCreate_ReductionFreezesTargetFromBaseline(t *testing.T) {
 	goals := newFakeGoalStore()
 	analytics := &fakeEvalAnalytics{result: dto.AnalyticsSpendTotalResult{TotalMinor: 20000, Currency: "USD"}}

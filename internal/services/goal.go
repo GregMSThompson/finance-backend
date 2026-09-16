@@ -374,6 +374,16 @@ func validateGoal(g *models.Goal) error {
 		return errs.NewValidationError(fmt.Sprintf("invalid category: %s", g.Filters.PFCPrimary))
 	}
 
+	// Spend goals (spending_limit, reduction) measure expenditure, so a filter on
+	// a non-spend category — income or a transfer — would scope them to the wrong
+	// thing: GetSpendTotal treats an explicit category filter as "give me exactly
+	// this category", so it would report the raw income/transfer sum instead of
+	// spend. Reject it. The at-least types reject all filters above.
+	if (g.Type == models.GoalTypeSpendingLimit || g.Type == models.GoalTypeReduction) &&
+		g.Filters.PFCPrimary != "" && taxonomy.IsNonSpendCategory(g.Filters.PFCPrimary) {
+		return errs.NewValidationError(fmt.Sprintf("a spending goal can't be scoped to the non-spend category %s", g.Filters.PFCPrimary))
+	}
+
 	if p := g.AlertThresholds.ProgressPercent; p != nil && (*p <= 0 || *p > 100) {
 		return errs.NewValidationError("progressPercent must be between 0 and 100")
 	}
