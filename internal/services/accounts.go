@@ -16,6 +16,7 @@ type accountsPlaid interface {
 
 type accountsBankStore interface {
 	Get(ctx context.Context, uid, bankID string) (*models.Bank, error)
+	List(ctx context.Context, uid string) ([]*models.Bank, error)
 }
 
 type accountsStore interface {
@@ -42,6 +43,29 @@ func NewAccountsService(plaid accountsPlaid, banks accountsBankStore, accounts a
 // GetAccounts returns the stored accounts for the given bank.
 func (s *accountsService) GetAccounts(ctx context.Context, uid, bankID string) ([]models.Account, error) {
 	return s.accounts.List(ctx, uid, bankID)
+}
+
+// GetAllAccounts returns every stored account for the user across all their
+// banks. Accounts are nested per bank in Firestore, so this fans out over the
+// user's banks and concatenates the results. It fails on the first bank error
+// rather than returning a partial list, since callers such as balance goals
+// would silently understate a total against a partial set of accounts.
+func (s *accountsService) GetAllAccounts(ctx context.Context, uid string) ([]models.Account, error) {
+	banks, err := s.banks.List(ctx, uid)
+	if err != nil {
+		return nil, err
+	}
+
+	var accounts []models.Account
+	for _, b := range banks {
+		bankAccounts, err := s.accounts.List(ctx, uid, b.BankID)
+		if err != nil {
+			return nil, err
+		}
+		accounts = append(accounts, bankAccounts...)
+	}
+
+	return accounts, nil
 }
 
 // SyncAccounts submits an account.sync job for the given bank and returns the

@@ -14,6 +14,7 @@ import (
 
 type accountsService interface {
 	GetAccounts(ctx context.Context, uid, bankID string) ([]models.Account, error)
+	GetAllAccounts(ctx context.Context, uid string) ([]models.Account, error)
 	SyncAccounts(ctx context.Context, uid, bankID string) (string, error)
 }
 
@@ -36,11 +37,31 @@ func (h *accountsHandlers) AccountRoutes() chi.Router {
 	return r
 }
 
+// AllAccountRoutes serves account endpoints that span every bank, mounted
+// outside the /banks/{bankId} tree.
+func (h *accountsHandlers) AllAccountRoutes() chi.Router {
+	r := chi.NewRouter()
+	r.Get("/", h.ListAllAccounts)
+	return r
+}
+
 func (h *accountsHandlers) ListAccounts(w http.ResponseWriter, r *http.Request) {
 	uid := middleware.UID(r.Context())
 	bankID := chi.URLParam(r, "bankId")
 
 	accounts, err := h.AccountsSvc.GetAccounts(r.Context(), uid, bankID)
+	if err != nil {
+		h.ResponseHandler.HandleError(w, r, err)
+		return
+	}
+
+	h.ResponseHandler.WriteSuccess(w, r, http.StatusOK, accounts)
+}
+
+func (h *accountsHandlers) ListAllAccounts(w http.ResponseWriter, r *http.Request) {
+	uid := middleware.UID(r.Context())
+
+	accounts, err := h.AccountsSvc.GetAllAccounts(r.Context(), uid)
 	if err != nil {
 		h.ResponseHandler.HandleError(w, r, err)
 		return

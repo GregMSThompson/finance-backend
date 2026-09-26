@@ -52,6 +52,7 @@ func NewAPIRouter(deps *handlers.Deps) chi.Router {
 		r.Mount("/plaid", ph.PlaidRoutes())
 		r.Mount("/banks", bh.BankRoutes())
 		r.Mount("/banks/{bankId}/accounts", ach.AccountRoutes())
+		r.Mount("/accounts", ach.AllAccountRoutes())
 		r.Mount("/ai", aih.AIRoutes())
 		r.Mount("/dashboard", dsh.DashboardRoutes())
 		r.Mount("/alerts", alh.AlertRoutes())
