@@ -42,13 +42,13 @@ type goalService struct {
 	strategies   map[models.GoalType]goalStrategy
 }
 
-func NewGoalService(goals goalStore, snapshots goalSnapshotStore, jobs jobSubmitter, transactions goalTransactionLister, analytics goalStrategyAnalytics) *goalService {
+func NewGoalService(goals goalStore, snapshots goalSnapshotStore, jobs jobSubmitter, transactions goalTransactionLister, analytics goalStrategyAnalytics, accounts goalStrategyAccounts) *goalService {
 	return &goalService{
 		goals:        goals,
 		snapshots:    snapshots,
 		jobs:         jobs,
 		transactions: transactions,
-		strategies:   newGoalStrategies(analytics),
+		strategies:   newGoalStrategies(analytics, accounts),
 	}
 }
 
@@ -335,6 +335,24 @@ func validateGoal(g *models.Goal) error {
 		// take no filters — scoping to an account is a separate goal type.
 		if g.Filters != (models.GoalFilters{}) {
 			return errs.NewValidationError("net savings and income goals take no filters")
+		}
+	case models.GoalTypeSavingsTarget:
+		if g.TargetValueMinor <= 0 {
+			return errs.NewValidationError("targetValue must be greater than 0")
+		}
+		if g.ReductionPercent != nil {
+			return errs.NewValidationError("reductionPercent applies only to reduction goals")
+		}
+		// A savings target measures growth against a fixed starting balance, so a
+		// recurring reset has no meaning — the baseline would move each period.
+		// Per-period saving is the future savings-contributions goal.
+		if g.Recurrence == models.GoalRecurrenceRecurring {
+			return errs.NewValidationError("a savings target must be one-off")
+		}
+		// It tracks an account balance, not spend, so category and merchant filters
+		// don't apply; only an optional accountId scope is allowed.
+		if g.Filters.PFCPrimary != "" || g.Filters.Merchant != "" {
+			return errs.NewValidationError("a savings target can only be scoped by accountId, not category or merchant")
 		}
 	default:
 		return errs.NewValidationError(fmt.Sprintf("unsupported goal type: %s", g.Type))

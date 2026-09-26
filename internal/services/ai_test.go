@@ -731,6 +731,36 @@ func TestCreateGoalToolDecodesAtLeastTypes(t *testing.T) {
 	}
 }
 
+func TestCreateGoalToolDecodesSavingsTarget(t *testing.T) {
+	goals := &fakeGoalsService{createResp: &models.Goal{GoalID: "g3"}}
+	svc := NewAIService(&fakeVertexClient{}, &fakeAnalyticsClient{}, &fakeTransactionsLister{}, &fakeAIAccounts{}, goals, &fakeAIStore{})
+
+	_, err := svc.executeTool(helpers.TestCtx(), "user", "s", dto.VertexToolCall{
+		Name: "create_goal",
+		Args: map[string]any{
+			"name":        "Emergency fund",
+			"type":        "savings_target",
+			"targetValue": 2000.0,
+			"timeWindow":  "fixed",
+			"recurrence":  "one_off",
+			"endDate":     "2026-12-31",
+			"filters":     map[string]any{"accountId": "acc-savings"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("executeTool error: %v", err)
+	}
+	if goals.createDef.Type != models.GoalTypeSavingsTarget {
+		t.Fatalf("expected savings_target type, got %q", goals.createDef.Type)
+	}
+	if goals.createDef.TargetValueMinor != 200000 {
+		t.Fatalf("expected targetValue 2000 → 200000, got %d", goals.createDef.TargetValueMinor)
+	}
+	if goals.createDef.Filters.AccountID != "acc-savings" {
+		t.Fatalf("expected accountId scope decoded, got %+v", goals.createDef.Filters)
+	}
+}
+
 func TestCreateGoalToolReflectsValidationError(t *testing.T) {
 	goals := &fakeGoalsService{createErr: errs.NewValidationError("targetValue must be greater than 0")}
 	vertex := &fakeVertexClient{

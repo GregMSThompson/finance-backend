@@ -15,8 +15,7 @@ const (
 	GoalTypeReduction     GoalType = "reduction"
 	GoalTypeNetSavings    GoalType = "net_savings"
 	GoalTypeIncomeTarget  GoalType = "income_target"
-	// Further types (savings_target, pay_down, ...) are added as their evaluation
-	// logic lands.
+	GoalTypeSavingsTarget GoalType = "savings_target"
 )
 
 // GoalTimeWindow is the period a goal is measured over.
@@ -62,9 +61,10 @@ type Goal struct {
 	Filters         GoalFilters         `firestore:"filters" json:"filters"`
 	AlertThresholds GoalAlertThresholds `firestore:"alertThresholds" json:"alertThresholds"`
 	Status          GoalStatus          `firestore:"status" json:"status"`
-	// BaselineValueMinor is computed at creation for types measured against a
-	// prior period (Reduction, Emergency Fund), in integer minor units. Unused
-	// for Spending Limit.
+	// BaselineValueMinor is captured at creation for types measured against a
+	// starting point, in integer minor units: Reduction (prior-period spend) and
+	// Savings Target (the account balance at creation, so progress measures new
+	// saving since then). Unused for Spending Limit.
 	BaselineValueMinor *int64 `firestore:"baselineValueMinor,omitempty" json:"baselineValueMinor,omitempty"`
 	// ReductionPercent is set only for reduction goals: how much less than the
 	// baseline period the user aims to spend (e.g. 10 → 10% less). The concrete

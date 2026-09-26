@@ -45,6 +45,20 @@ func (f *fakeEvalAnalytics) GetIncomeTotal(_ context.Context, _ string, args dto
 	return f.incomeResult, f.incomeErr
 }
 
+// fakeGoalAccounts stubs the balance dependency for goal tests. calls records the
+// accountId filter each call received (nil for whole-finances) so a test can
+// assert scoping.
+type fakeGoalAccounts struct {
+	balance int64
+	err     error
+	calls   []*string
+}
+
+func (f *fakeGoalAccounts) GetTotalBalance(_ context.Context, _ string, accountID *string) (int64, error) {
+	f.calls = append(f.calls, accountID)
+	return f.balance, f.err
+}
+
 // clock is a mid-August run time used across the evaluator tests: the 15th of a
 // 31-day month, so a monthly window spans [2026-08-01, 2026-08-31].
 var evalClock = time.Date(2026, time.August, 15, 12, 0, 0, 0, time.UTC)
@@ -56,7 +70,7 @@ func evalContext() context.Context {
 func newEvaluator(users *fakeEvalUserStore, goals *fakeGoalStore, snaps *fakeGoalSnapshotStore, analytics *fakeEvalAnalytics) *goalEvaluatorService {
 	// Notification deps default to no-ops; the goals in these tests have no
 	// ProgressPercent threshold, so the notification path never runs.
-	return NewGoalEvaluatorService(users, goals, snaps, analytics, &fakeNotificationStore{}, &fakeTasksClient{})
+	return NewGoalEvaluatorService(users, goals, snaps, analytics, &fakeGoalAccounts{}, &fakeNotificationStore{}, &fakeTasksClient{})
 }
 
 // Targets and spend totals are in integer minor units (e.g. 30000 = $300.00).
@@ -212,7 +226,7 @@ func goalWithThreshold(id string, targetMinor int64, thresholdPct float64) *mode
 
 func newNotifyEvaluator(goals *fakeGoalStore, snaps *fakeGoalSnapshotStore, analytics *fakeEvalAnalytics, notifs *fakeNotificationStore, tasks *fakeTasksClient) *goalEvaluatorService {
 	users := &fakeEvalUserStore{users: []*models.User{{UID: "u1"}}}
-	return NewGoalEvaluatorService(users, goals, snaps, analytics, notifs, tasks)
+	return NewGoalEvaluatorService(users, goals, snaps, analytics, &fakeGoalAccounts{}, notifs, tasks)
 }
 
 func TestGoalEvaluator_FiresThresholdNotification(t *testing.T) {
@@ -589,6 +603,51 @@ func TestGoalEvaluator_IncomeTargetMeasuresIncomeOnly(t *testing.T) {
 	}
 	if len(analytics.incomeCalls) != 1 || len(analytics.calls) != 0 {
 		t.Fatalf("income target must query income only, got income=%d spend=%d", len(analytics.incomeCalls), len(analytics.calls))
+	}
+}
+
+func TestGoalEvaluator_SavingsTargetMeasuresBalanceDelta(t *testing.T) {
+	// Balance grew from an 800000 baseline to 900000 → 100000 saved against a
+	// 200000 target = 50%. Measured from the balance, not spend/income, so the
+	// analytics client is never touched. On 2026-08-15 (~48% of the window) a
+	// 50% delta is ahead of pace.
+	baseline := int64(800000)
+	g := &models.Goal{
+		GoalID:             "g1",
+		Type:               models.GoalTypeSavingsTarget,
+		Name:               "Save $2k",
+		TargetValueMinor:   200000,
+		BaselineValueMinor: &baseline,
+		Currency:           helpers.CurrencyUSD,
+		TimeWindow:         models.GoalWindowFixed,
+		Recurrence:         models.GoalRecurrenceOneOff,
+		EndDate:            "2026-08-31",
+		CreatedAt:          time.Date(2026, time.August, 1, 0, 0, 0, 0, time.UTC),
+		Status:             models.GoalStatusActive,
+	}
+
+	users := &fakeEvalUserStore{users: []*models.User{{UID: "u1"}}}
+	goals := &fakeGoalStore{goals: map[string]*models.Goal{"g1": g}}
+	snaps := &fakeGoalSnapshotStore{}
+	analytics := &fakeEvalAnalytics{}
+	accounts := &fakeGoalAccounts{balance: 900000}
+	svc := NewGoalEvaluatorService(users, goals, snaps, analytics, accounts, &fakeNotificationStore{}, &fakeTasksClient{})
+
+	if err := svc.Run(evalContext()); err != nil {
+		t.Fatalf("Run error: %v", err)
+	}
+	s := snaps.created[0]
+	if s.CurrentValueMinor != 100000 || s.TargetValueMinor != 200000 || s.PercentComplete != 50 {
+		t.Fatalf("expected 100000 saved at 50%% of 200000, got current=%d target=%d pct=%v", s.CurrentValueMinor, s.TargetValueMinor, s.PercentComplete)
+	}
+	if !s.IsOnTrack {
+		t.Fatal("expected on track: 50%% saved is ahead of the ~48%% window pace")
+	}
+	if len(analytics.calls) != 0 || len(analytics.incomeCalls) != 0 {
+		t.Fatalf("a balance goal must not query spend/income, got spend=%d income=%d", len(analytics.calls), len(analytics.incomeCalls))
+	}
+	if len(accounts.calls) != 1 || accounts.calls[0] != nil {
+		t.Fatalf("expected one unscoped balance read (nil accountId), got %v", accounts.calls)
 	}
 }
 

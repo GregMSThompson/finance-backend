@@ -26,9 +26,16 @@ func main() {
 	goalSnapshotStore := store.NewGoalSnapshotStore(bs.Firestore)
 	notificationStore := store.NewNotificationStore(bs.Firestore)
 	transactionStore := store.NewTransactionStore(bs.Firestore)
+	// Balance reads only enumerate bank ids (ListIDs, no token decryption), so the
+	// bank store's KMS cipher is unused here and left nil.
+	bankStore := store.NewBankStore(bs.Firestore, nil)
+	accountStore := store.NewAccountStore(bs.Firestore)
 
 	analyticsSvc := services.NewAnalyticsService(transactionStore)
-	evaluatorSvc := services.NewGoalEvaluatorService(userStore, goalStore, goalSnapshotStore, analyticsSvc, notificationStore, bs.CloudTasks)
+	// Only the balance read (banks + accounts) is exercised here, so the Plaid and
+	// job-submission deps a full accounts service would use are left nil.
+	accountsSvc := services.NewAccountsService(nil, bankStore, accountStore, nil)
+	evaluatorSvc := services.NewGoalEvaluatorService(userStore, goalStore, goalSnapshotStore, analyticsSvc, accountsSvc, notificationStore, bs.CloudTasks)
 
 	err = evaluatorSvc.Run(ctx)
 	helpers.ExitOnError("goal evaluation failed", err, bs.Log)

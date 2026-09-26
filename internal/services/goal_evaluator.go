@@ -37,6 +37,13 @@ type goalStrategyAnalytics interface {
 	GetIncomeTotal(ctx context.Context, uid string, args dto.AnalyticsIncomeTotalArgs) (dto.AnalyticsIncomeTotalResult, error)
 }
 
+// goalStrategyAccounts is the balance measurement a balance-family strategy needs
+// (savings target, and later pay down / emergency fund), satisfied by the
+// accounts service. accountID scopes the balance to a single account when set.
+type goalStrategyAccounts interface {
+	GetTotalBalance(ctx context.Context, uid string, accountID *string) (int64, error)
+}
+
 // goalStrategy encapsulates the type-specific parts of a goal: capturing any
 // baseline at creation, measuring current progress in a window, resolving the
 // effective target, and scoring a measurement. The evaluator owns the shared
@@ -128,11 +135,24 @@ type incomeTargetStrategy struct {
 	analytics goalStrategyAnalytics
 }
 
+// savingsTargetStrategy measures growth in an account balance against a floor:
+// saving at least the target since creation. Unlike the flow strategies it reads
+// a point-in-time balance rather than summing transactions over the window, and
+// it freezes the starting balance as a baseline so progress reflects new saving
+// (current balance − baseline), not the absolute balance. It honors an optional
+// accountId filter (scope to one account), which the whole-finances at-least
+// types do not.
+type savingsTargetStrategy struct {
+	atLeastStrategy
+	accounts goalStrategyAccounts
+}
+
 func NewGoalEvaluatorService(
 	users goalEvaluatorUserStore,
 	goals goalEvaluatorGoalStore,
 	snapshots goalEvaluatorSnapshotStore,
 	analytics goalStrategyAnalytics,
+	accounts goalStrategyAccounts,
 	notifications evaluatorNotificationStore,
 	tasks evaluatorTasksClient,
 ) *goalEvaluatorService {
@@ -140,7 +160,7 @@ func NewGoalEvaluatorService(
 		users:         users,
 		goals:         goals,
 		snapshots:     snapshots,
-		strategies:    newGoalStrategies(analytics),
+		strategies:    newGoalStrategies(analytics, accounts),
 		notifications: notifications,
 		tasks:         tasks,
 	}
@@ -486,13 +506,14 @@ func goalPercentComplete(current, target int64) float64 {
 
 // --- Goal strategies -------------------------------------------------------
 
-func newGoalStrategies(analytics goalStrategyAnalytics) map[models.GoalType]goalStrategy {
+func newGoalStrategies(analytics goalStrategyAnalytics, accounts goalStrategyAccounts) map[models.GoalType]goalStrategy {
 	sl := spendingLimitStrategy{analytics: analytics}
 	return map[models.GoalType]goalStrategy{
 		models.GoalTypeSpendingLimit: sl,
 		models.GoalTypeReduction:     reductionStrategy{spendingLimitStrategy: sl},
 		models.GoalTypeNetSavings:    netSavingsStrategy{analytics: analytics},
 		models.GoalTypeIncomeTarget:  incomeTargetStrategy{analytics: analytics},
+		models.GoalTypeSavingsTarget: savingsTargetStrategy{accounts: accounts},
 	}
 }
 
@@ -649,4 +670,26 @@ func (s incomeTargetStrategy) Measure(ctx context.Context, uid string, g *models
 		return 0, fmt.Errorf("income total: %w", err)
 	}
 	return income.TotalMinor, nil
+}
+
+// Initialize freezes the current balance as the baseline so progress measures new
+// saving since creation rather than the absolute balance the user already held.
+func (s savingsTargetStrategy) Initialize(ctx context.Context, uid string, g *models.Goal) error {
+	balance, err := s.accounts.GetTotalBalance(ctx, uid, helpers.OptString(g.Filters.AccountID))
+	if err != nil {
+		return fmt.Errorf("savings target baseline balance: %w", err)
+	}
+	g.BaselineValueMinor = &balance
+	return nil
+}
+
+// Measure returns how much the balance has grown since creation: the current
+// balance minus the frozen baseline. The window bounds pace scoring (via Score),
+// not the reading itself — a balance is point-in-time, not a sum over the window.
+func (s savingsTargetStrategy) Measure(ctx context.Context, uid string, g *models.Goal, w goalWindow) (int64, error) {
+	balance, err := s.accounts.GetTotalBalance(ctx, uid, helpers.OptString(g.Filters.AccountID))
+	if err != nil {
+		return 0, fmt.Errorf("savings target balance: %w", err)
+	}
+	return balance - helpers.Value(g.BaselineValueMinor), nil
 }

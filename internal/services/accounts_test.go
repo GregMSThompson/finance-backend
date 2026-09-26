@@ -7,10 +7,11 @@ import (
 	"testing"
 
 	"github.com/GregMSThompson/finance-backend/internal/models"
+	"github.com/GregMSThompson/finance-backend/pkg/helpers"
 )
 
 type acctFakeBankStore struct {
-	banks   []*models.Bank
+	bankIDs []string
 	listErr error
 }
 
@@ -18,8 +19,8 @@ func (f *acctFakeBankStore) Get(ctx context.Context, uid, bankID string) (*model
 	return &models.Bank{BankID: bankID}, nil
 }
 
-func (f *acctFakeBankStore) List(ctx context.Context, uid string) ([]*models.Bank, error) {
-	return f.banks, f.listErr
+func (f *acctFakeBankStore) ListIDs(ctx context.Context, uid string) ([]string, error) {
+	return f.bankIDs, f.listErr
 }
 
 type acctFakeAccountStore struct {
@@ -39,7 +40,7 @@ func (f *acctFakeAccountStore) List(ctx context.Context, uid, bankID string) ([]
 }
 
 func TestGetAllAccounts_FansOutOverBanks(t *testing.T) {
-	banks := &acctFakeBankStore{banks: []*models.Bank{{BankID: "b1"}, {BankID: "b2"}}}
+	banks := &acctFakeBankStore{bankIDs: []string{"b1", "b2"}}
 	accounts := &acctFakeAccountStore{byBank: map[string][]models.Account{
 		"b1": {{AccountID: "a1"}, {AccountID: "a2"}},
 		"b2": {{AccountID: "a3"}},
@@ -75,7 +76,7 @@ func TestGetAllAccounts_BankListError(t *testing.T) {
 // return a partial list, so a balance total is never computed against a subset.
 func TestGetAllAccounts_FailsHardOnAccountError(t *testing.T) {
 	sentinel := errors.New("boom")
-	banks := &acctFakeBankStore{banks: []*models.Bank{{BankID: "b1"}, {BankID: "b2"}}}
+	banks := &acctFakeBankStore{bankIDs: []string{"b1", "b2"}}
 	accounts := &acctFakeAccountStore{
 		byBank:  map[string][]models.Account{"b1": {{AccountID: "a1"}}},
 		listErr: map[string]error{"b2": sentinel},
@@ -85,4 +86,43 @@ func TestGetAllAccounts_FailsHardOnAccountError(t *testing.T) {
 	if _, err := svc.GetAllAccounts(context.Background(), "uid1"); !errors.Is(err, sentinel) {
 		t.Fatalf("expected account list error, got %v", err)
 	}
+}
+
+func TestGetTotalBalance(t *testing.T) {
+	banks := &acctFakeBankStore{bankIDs: []string{"b1", "b2"}}
+	accounts := &acctFakeAccountStore{byBank: map[string][]models.Account{
+		"b1": {
+			{AccountID: "a1", BalanceCurrentMinor: helpers.Ptr(int64(10000))},
+			{AccountID: "a2", BalanceCurrentMinor: nil}, // unknown balance contributes zero
+		},
+		"b2": {{AccountID: "a3", BalanceCurrentMinor: helpers.Ptr(int64(2500))}},
+	}}
+	svc := NewAccountsService(nil, banks, accounts, nil)
+
+	t.Run("all accounts", func(t *testing.T) {
+		total, err := svc.GetTotalBalance(context.Background(), "uid1", nil)
+		if err != nil {
+			t.Fatalf("GetTotalBalance: %v", err)
+		}
+		if total != 12500 {
+			t.Fatalf("total = %d, want 12500", total)
+		}
+	})
+
+	t.Run("scoped to one account", func(t *testing.T) {
+		total, err := svc.GetTotalBalance(context.Background(), "uid1", helpers.Ptr("a3"))
+		if err != nil {
+			t.Fatalf("GetTotalBalance: %v", err)
+		}
+		if total != 2500 {
+			t.Fatalf("total = %d, want 2500", total)
+		}
+	})
+
+	t.Run("unknown account is an error", func(t *testing.T) {
+		_, err := svc.GetTotalBalance(context.Background(), "uid1", helpers.Ptr("missing"))
+		if !isValidationError(err) {
+			t.Fatalf("expected ValidationError for unknown account, got %v", err)
+		}
+	})
 }

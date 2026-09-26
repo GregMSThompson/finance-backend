@@ -67,6 +67,21 @@ func (s *bankStore) Create(ctx context.Context, uid string, bank *models.Bank) e
 	return nil
 }
 
+// ListIDs returns the user's bank ids without reading or decrypting the bank
+// documents, for callers that only need to enumerate banks (e.g. fanning out
+// over accounts). It avoids the KMS round-trip List performs per bank.
+func (s *bankStore) ListIDs(ctx context.Context, uid string) ([]string, error) {
+	refs, err := s.collection(uid).DocumentRefs(ctx).GetAll()
+	if err != nil {
+		return nil, errs.NewDatabaseError("read", "failed to list bank ids", err)
+	}
+	ids := make([]string, 0, len(refs))
+	for _, r := range refs {
+		ids = append(ids, r.ID)
+	}
+	return ids, nil
+}
+
 func (s *bankStore) List(ctx context.Context, uid string) ([]*models.Bank, error) {
 	docs, err := s.collection(uid).Documents(ctx).GetAll()
 	if err != nil {

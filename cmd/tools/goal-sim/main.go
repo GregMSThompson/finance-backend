@@ -124,7 +124,7 @@ func run(ctx context.Context, client *firestore.Client, sc *scenario) error {
 	// Pin the clock to the creation date so CreatedAt and any baseline window are
 	// resolved as of the scenario date, not wall-clock now. Delete/list deps are
 	// unused by Create, so they're left nil.
-	goalSvc := services.NewGoalService(goalStore, snapshotStore, nil, nil, analyticsSvc)
+	goalSvc := services.NewGoalService(goalStore, snapshotStore, nil, nil, analyticsSvc, unsupportedAccounts{})
 	createCtx := clock.WithClock(ctx, func() time.Time { return createdAt })
 	goal, err := goalSvc.Create(createCtx, sc.UserID, "sim-session", def)
 	if err != nil {
@@ -143,7 +143,7 @@ func run(ctx context.Context, client *firestore.Client, sc *scenario) error {
 	// Evaluate only the sim user with no real deliveries.
 	evalSvc := services.NewGoalEvaluatorService(
 		singleUserStore{uid: sc.UserID},
-		goalStore, snapshotStore, analyticsSvc, notificationStore, noopTasks{},
+		goalStore, snapshotStore, analyticsSvc, unsupportedAccounts{}, notificationStore, noopTasks{},
 	)
 
 	steps := indexSteps(sc.Steps)
@@ -362,4 +362,14 @@ type noopTasks struct{}
 
 func (noopTasks) EnqueueNotificationDelivery(_ context.Context, _ dto.DeliverNotificationRequest) error {
 	return nil
+}
+
+// unsupportedAccounts satisfies the balance dependency for balance-family goals.
+// The transaction-driven simulator doesn't model account balances yet, so any
+// savings_target scenario fails loudly rather than silently reading a zero
+// balance. Flow-based scenarios never call it.
+type unsupportedAccounts struct{}
+
+func (unsupportedAccounts) GetTotalBalance(_ context.Context, _ string, _ *string) (int64, error) {
+	return 0, fmt.Errorf("balance-family goals are not supported by the simulator")
 }
