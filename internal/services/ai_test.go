@@ -148,6 +148,20 @@ func (f *fakeTransactionsLister) ListTransactions(ctx context.Context, uid strin
 	return f.resp, nil
 }
 
+type fakeAIAccounts struct {
+	calls int
+	resp  []models.Account
+	err   error
+}
+
+func (f *fakeAIAccounts) GetAllAccounts(ctx context.Context, uid string) ([]models.Account, error) {
+	f.calls++
+	if f.err != nil {
+		return nil, f.err
+	}
+	return f.resp, nil
+}
+
 type fakeGoalsService struct {
 	createCalls     int
 	createSessionID string
@@ -256,7 +270,7 @@ func TestAIQueryToolFlow(t *testing.T) {
 	}
 	store := &fakeAIStore{}
 	transactions := &fakeTransactionsLister{}
-	svc := NewAIService(vertex, analytics, transactions, &fakeGoalsService{}, store)
+	svc := NewAIService(vertex, analytics, transactions, &fakeAIAccounts{}, &fakeGoalsService{}, store)
 	ctx := aiContextAt(time.Date(2025, time.February, 15, 12, 0, 0, 0, time.UTC))
 	resp, err := svc.Query(ctx, "user", dto.AIQueryRequest{SessionID: "session", Message: "How much did I spend?"})
 	if err != nil {
@@ -286,7 +300,7 @@ func TestAIQueryNoToolCall(t *testing.T) {
 	analytics := &fakeAnalyticsClient{}
 	store := &fakeAIStore{}
 	transactions := &fakeTransactionsLister{}
-	svc := NewAIService(vertex, analytics, transactions, &fakeGoalsService{}, store)
+	svc := NewAIService(vertex, analytics, transactions, &fakeAIAccounts{}, &fakeGoalsService{}, store)
 
 	ctx := helpers.TestCtx()
 	resp, err := svc.Query(ctx, "user", dto.AIQueryRequest{SessionID: "session", Message: "Hi"})
@@ -314,7 +328,7 @@ func TestAIQueryUnknownTool(t *testing.T) {
 	analytics := &fakeAnalyticsClient{}
 	store := &fakeAIStore{}
 	transactions := &fakeTransactionsLister{}
-	svc := NewAIService(vertex, analytics, transactions, &fakeGoalsService{}, store)
+	svc := NewAIService(vertex, analytics, transactions, &fakeAIAccounts{}, &fakeGoalsService{}, store)
 
 	ctx := helpers.TestCtx()
 	_, err := svc.Query(ctx, "user", dto.AIQueryRequest{SessionID: "session", Message: "What is this?"})
@@ -340,7 +354,7 @@ func TestAIQueryMultipleToolCallsUsesFirst(t *testing.T) {
 	}
 	store := &fakeAIStore{}
 	transactions := &fakeTransactionsLister{}
-	svc := NewAIService(vertex, analytics, transactions, &fakeGoalsService{}, store)
+	svc := NewAIService(vertex, analytics, transactions, &fakeAIAccounts{}, &fakeGoalsService{}, store)
 
 	ctx := helpers.TestCtx()
 	_, err := svc.Query(ctx, "user", dto.AIQueryRequest{SessionID: "session", Message: "Multi"})
@@ -370,7 +384,7 @@ func TestAIQueryAnalyticsErrorPropagates(t *testing.T) {
 	}
 	store := &fakeAIStore{}
 	transactions := &fakeTransactionsLister{}
-	svc := NewAIService(vertex, analytics, transactions, &fakeGoalsService{}, store)
+	svc := NewAIService(vertex, analytics, transactions, &fakeAIAccounts{}, &fakeGoalsService{}, store)
 
 	ctx := helpers.TestCtx()
 	_, err := svc.Query(ctx, "user", dto.AIQueryRequest{SessionID: "session", Message: "How much?"})
@@ -388,7 +402,7 @@ func TestAIQueryDoesNotRetryOnOtherErrors(t *testing.T) {
 	analytics := &fakeAnalyticsClient{}
 	store := &fakeAIStore{}
 	transactions := &fakeTransactionsLister{}
-	svc := NewAIService(vertex, analytics, transactions, &fakeGoalsService{}, store)
+	svc := NewAIService(vertex, analytics, transactions, &fakeAIAccounts{}, &fakeGoalsService{}, store)
 
 	ctx := helpers.TestCtx()
 	_, err := svc.Query(ctx, "user", dto.AIQueryRequest{SessionID: "session", Message: "Hi"})
@@ -404,7 +418,7 @@ func TestAIQueryPrimaryUsesValidatedMode(t *testing.T) {
 	vertex := &fakeVertexClient{
 		responses: []dto.VertexGenerateResponse{{Text: "Hi there."}},
 	}
-	svc := NewAIService(vertex, &fakeAnalyticsClient{}, &fakeTransactionsLister{}, &fakeGoalsService{}, &fakeAIStore{})
+	svc := NewAIService(vertex, &fakeAnalyticsClient{}, &fakeTransactionsLister{}, &fakeAIAccounts{}, &fakeGoalsService{}, &fakeAIStore{})
 
 	ctx := helpers.TestCtx()
 	if _, err := svc.Query(ctx, "user", dto.AIQueryRequest{SessionID: "session", Message: "Hello"}); err != nil {
@@ -427,7 +441,7 @@ func TestAIQueryMalformedFallsBackToTextReply(t *testing.T) {
 			{Text: "I couldn't run that query — could you rephrase?"},
 		},
 	}
-	svc := NewAIService(vertex, &fakeAnalyticsClient{}, &fakeTransactionsLister{}, &fakeGoalsService{}, &fakeAIStore{})
+	svc := NewAIService(vertex, &fakeAnalyticsClient{}, &fakeTransactionsLister{}, &fakeAIAccounts{}, &fakeGoalsService{}, &fakeAIStore{})
 
 	ctx := helpers.TestCtx()
 	resp, err := svc.Query(ctx, "user", dto.AIQueryRequest{SessionID: "session", Message: "Hello"})
@@ -456,7 +470,7 @@ func TestAIQueryRejectsOverRangeAndReflects(t *testing.T) {
 		},
 	}
 	transactions := &fakeTransactionsLister{}
-	svc := NewAIService(vertex, &fakeAnalyticsClient{}, transactions, &fakeGoalsService{}, &fakeAIStore{})
+	svc := NewAIService(vertex, &fakeAnalyticsClient{}, transactions, &fakeAIAccounts{}, &fakeGoalsService{}, &fakeAIStore{})
 	ctx := aiContextAt(time.Date(2026, time.February, 15, 12, 0, 0, 0, time.UTC))
 	resp, err := svc.Query(ctx, "user", dto.AIQueryRequest{SessionID: "s", Message: "biggest ever"})
 	if err != nil {
@@ -481,7 +495,7 @@ func TestAIQueryDefaultsTransactionLimit(t *testing.T) {
 		},
 	}
 	transactions := &fakeTransactionsLister{}
-	svc := NewAIService(vertex, &fakeAnalyticsClient{}, transactions, &fakeGoalsService{}, &fakeAIStore{})
+	svc := NewAIService(vertex, &fakeAnalyticsClient{}, transactions, &fakeAIAccounts{}, &fakeGoalsService{}, &fakeAIStore{})
 	ctx := aiContextAt(time.Date(2026, time.February, 15, 12, 0, 0, 0, time.UTC))
 	if _, err := svc.Query(ctx, "user", dto.AIQueryRequest{SessionID: "s", Message: "list"}); err != nil {
 		t.Fatalf("Query error: %v", err)
@@ -499,7 +513,7 @@ func TestGetTransactionsSurfacesHasMoreNotCursor(t *testing.T) {
 			NextCursor:   &cursor,
 		},
 	}
-	svc := NewAIService(&fakeVertexClient{}, &fakeAnalyticsClient{}, transactions, &fakeGoalsService{}, &fakeAIStore{})
+	svc := NewAIService(&fakeVertexClient{}, &fakeAnalyticsClient{}, transactions, &fakeAIAccounts{}, &fakeGoalsService{}, &fakeAIStore{})
 	ctx := aiContextAt(time.Date(2026, time.February, 15, 12, 0, 0, 0, time.UTC))
 	res, err := svc.executeTool(ctx, "user", "session", dto.VertexToolCall{
 		Name: "get_transactions",
@@ -529,7 +543,7 @@ func TestAIQueryMultiToolLoop(t *testing.T) {
 		breakdownResp: dto.AnalyticsSpendBreakdownResult{},
 	}
 	store := &fakeAIStore{}
-	svc := NewAIService(vertex, analytics, &fakeTransactionsLister{}, &fakeGoalsService{}, store)
+	svc := NewAIService(vertex, analytics, &fakeTransactionsLister{}, &fakeAIAccounts{}, &fakeGoalsService{}, store)
 
 	ctx := helpers.TestCtx()
 	resp, err := svc.Query(ctx, "user", dto.AIQueryRequest{SessionID: "session", Message: "Full analysis?"})
@@ -560,7 +574,7 @@ func TestAIQueryToolLoopExhausted(t *testing.T) {
 		totalResp: dto.AnalyticsSpendTotalResult{TotalMinor: 5, Currency: "USD"},
 	}
 	store := &fakeAIStore{}
-	svc := NewAIService(vertex, analytics, &fakeTransactionsLister{}, &fakeGoalsService{}, store)
+	svc := NewAIService(vertex, analytics, &fakeTransactionsLister{}, &fakeAIAccounts{}, &fakeGoalsService{}, store)
 
 	ctx := helpers.TestCtx()
 	resp, err := svc.Query(ctx, "user", dto.AIQueryRequest{SessionID: "session", Message: "Spend?"})
@@ -590,7 +604,7 @@ func TestAIQueryToolMessagesNotSavedToHistory(t *testing.T) {
 	}
 	analytics := &fakeAnalyticsClient{totalResp: dto.AnalyticsSpendTotalResult{TotalMinor: 5, Currency: "USD"}}
 	store := &fakeAIStore{}
-	svc := NewAIService(vertex, analytics, &fakeTransactionsLister{}, &fakeGoalsService{}, store)
+	svc := NewAIService(vertex, analytics, &fakeTransactionsLister{}, &fakeAIAccounts{}, &fakeGoalsService{}, store)
 
 	ctx := helpers.TestCtx()
 	_, err := svc.Query(ctx, "user", dto.AIQueryRequest{SessionID: "session", Message: "How much?"})
@@ -612,7 +626,7 @@ func TestAIQueryToolMessagesNotSavedToHistory(t *testing.T) {
 
 func TestCreateGoalToolThreadsSessionAndDecodesDefinition(t *testing.T) {
 	goals := &fakeGoalsService{createResp: &models.Goal{GoalID: "g1", Name: "Dining"}}
-	svc := NewAIService(&fakeVertexClient{}, &fakeAnalyticsClient{}, &fakeTransactionsLister{}, goals, &fakeAIStore{})
+	svc := NewAIService(&fakeVertexClient{}, &fakeAnalyticsClient{}, &fakeTransactionsLister{}, &fakeAIAccounts{}, goals, &fakeAIStore{})
 
 	ctx := helpers.TestCtx()
 	res, err := svc.executeTool(ctx, "user", "session-42", dto.VertexToolCall{
@@ -652,7 +666,7 @@ func TestCreateGoalToolThreadsSessionAndDecodesDefinition(t *testing.T) {
 
 func TestCreateGoalToolDecodesReductionDefinition(t *testing.T) {
 	goals := &fakeGoalsService{createResp: &models.Goal{GoalID: "g2", Name: "Dining — 10% less"}}
-	svc := NewAIService(&fakeVertexClient{}, &fakeAnalyticsClient{}, &fakeTransactionsLister{}, goals, &fakeAIStore{})
+	svc := NewAIService(&fakeVertexClient{}, &fakeAnalyticsClient{}, &fakeTransactionsLister{}, &fakeAIAccounts{}, goals, &fakeAIStore{})
 
 	ctx := helpers.TestCtx()
 	_, err := svc.executeTool(ctx, "user", "s", dto.VertexToolCall{
@@ -692,7 +706,7 @@ func TestCreateGoalToolDecodesAtLeastTypes(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.typ, func(t *testing.T) {
 			goals := &fakeGoalsService{createResp: &models.Goal{GoalID: "g"}}
-			svc := NewAIService(&fakeVertexClient{}, &fakeAnalyticsClient{}, &fakeTransactionsLister{}, goals, &fakeAIStore{})
+			svc := NewAIService(&fakeVertexClient{}, &fakeAnalyticsClient{}, &fakeTransactionsLister{}, &fakeAIAccounts{}, goals, &fakeAIStore{})
 
 			_, err := svc.executeTool(helpers.TestCtx(), "user", "s", dto.VertexToolCall{
 				Name: "create_goal",
@@ -727,7 +741,7 @@ func TestCreateGoalToolReflectsValidationError(t *testing.T) {
 			{Text: "That target needs to be positive — how much would you like to cap it at?"},
 		},
 	}
-	svc := NewAIService(vertex, &fakeAnalyticsClient{}, &fakeTransactionsLister{}, goals, &fakeAIStore{})
+	svc := NewAIService(vertex, &fakeAnalyticsClient{}, &fakeTransactionsLister{}, &fakeAIAccounts{}, goals, &fakeAIStore{})
 
 	ctx := helpers.TestCtx()
 	resp, err := svc.Query(ctx, "user", dto.AIQueryRequest{SessionID: "s", Message: "cap dining at -1"})
@@ -744,7 +758,7 @@ func TestCreateGoalToolReflectsValidationError(t *testing.T) {
 
 func TestPeriodComparisonPresetThisMonthVsLast(t *testing.T) {
 	analytics := &fakeAnalyticsClient{}
-	svc := NewAIService(&fakeVertexClient{}, analytics, &fakeTransactionsLister{}, &fakeGoalsService{}, &fakeAIStore{})
+	svc := NewAIService(&fakeVertexClient{}, analytics, &fakeTransactionsLister{}, &fakeAIAccounts{}, &fakeGoalsService{}, &fakeAIStore{})
 
 	// Mid-month: this month so far vs the equivalent span of last month.
 	ctx := clock.WithClock(helpers.TestCtx(), func() time.Time {
@@ -765,7 +779,7 @@ func TestPeriodComparisonPresetThisMonthVsLast(t *testing.T) {
 
 func TestPeriodComparisonPresetLast30VsPrior30(t *testing.T) {
 	analytics := &fakeAnalyticsClient{}
-	svc := NewAIService(&fakeVertexClient{}, analytics, &fakeTransactionsLister{}, &fakeGoalsService{}, &fakeAIStore{})
+	svc := NewAIService(&fakeVertexClient{}, analytics, &fakeTransactionsLister{}, &fakeAIAccounts{}, &fakeGoalsService{}, &fakeAIStore{})
 
 	ctx := clock.WithClock(helpers.TestCtx(), func() time.Time {
 		return time.Date(2026, time.August, 15, 12, 0, 0, 0, time.UTC)
@@ -785,7 +799,7 @@ func TestPeriodComparisonPresetLast30VsPrior30(t *testing.T) {
 
 func TestPeriodComparisonRequiresPresetOrDates(t *testing.T) {
 	analytics := &fakeAnalyticsClient{}
-	svc := NewAIService(&fakeVertexClient{}, analytics, &fakeTransactionsLister{}, &fakeGoalsService{}, &fakeAIStore{})
+	svc := NewAIService(&fakeVertexClient{}, analytics, &fakeTransactionsLister{}, &fakeAIAccounts{}, &fakeGoalsService{}, &fakeAIStore{})
 
 	_, err := svc.executeTool(helpers.TestCtx(), "user", "s", dto.VertexToolCall{
 		Name: "get_period_comparison",
@@ -799,9 +813,52 @@ func TestPeriodComparisonRequiresPresetOrDates(t *testing.T) {
 	}
 }
 
+func TestListAccountsToolReturnsAccounts(t *testing.T) {
+	accounts := &fakeAIAccounts{resp: []models.Account{
+		{AccountID: "a1", Name: "Checking", BalanceCurrentMinor: helpers.Ptr(int64(12345))},
+		{AccountID: "a2", Name: "Savings"},
+	}}
+	svc := NewAIService(&fakeVertexClient{}, &fakeAnalyticsClient{}, &fakeTransactionsLister{}, accounts, &fakeGoalsService{}, &fakeAIStore{})
+
+	ctx := helpers.TestCtx()
+	res, err := svc.executeTool(ctx, "user", "s", dto.VertexToolCall{Name: "list_accounts", Args: map[string]any{}})
+	if err != nil {
+		t.Fatalf("executeTool error: %v", err)
+	}
+	if accounts.calls != 1 {
+		t.Fatalf("expected 1 GetAllAccounts call, got %d", accounts.calls)
+	}
+	list, ok := res.Response["accounts"].([]any)
+	if !ok {
+		t.Fatalf("expected accounts array in response, got %v", res.Response)
+	}
+	if len(list) != 2 {
+		t.Fatalf("expected 2 accounts, got %d", len(list))
+	}
+	// Balances are money fields, so the payload converts balanceCurrentMinor
+	// (12345 cents) to a major-unit balanceCurrent (123.45).
+	first, ok := list[0].(map[string]any)
+	if !ok {
+		t.Fatalf("expected account object, got %T", list[0])
+	}
+	if got := first["balanceCurrent"]; got != 123.45 {
+		t.Fatalf("balanceCurrent = %v, want 123.45", got)
+	}
+}
+
+func TestListAccountsToolPropagatesError(t *testing.T) {
+	accounts := &fakeAIAccounts{err: errors.New("boom")}
+	svc := NewAIService(&fakeVertexClient{}, &fakeAnalyticsClient{}, &fakeTransactionsLister{}, accounts, &fakeGoalsService{}, &fakeAIStore{})
+
+	ctx := helpers.TestCtx()
+	if _, err := svc.executeTool(ctx, "user", "s", dto.VertexToolCall{Name: "list_accounts", Args: map[string]any{}}); err == nil {
+		t.Fatal("expected error to propagate from GetAllAccounts")
+	}
+}
+
 func TestListGoalsToolDefaultsToActiveAndPaused(t *testing.T) {
 	goals := &fakeGoalsService{listResp: []*models.Goal{{GoalID: "g1"}}}
-	svc := NewAIService(&fakeVertexClient{}, &fakeAnalyticsClient{}, &fakeTransactionsLister{}, goals, &fakeAIStore{})
+	svc := NewAIService(&fakeVertexClient{}, &fakeAnalyticsClient{}, &fakeTransactionsLister{}, &fakeAIAccounts{}, goals, &fakeAIStore{})
 
 	ctx := helpers.TestCtx()
 	res, err := svc.executeTool(ctx, "user", "s", dto.VertexToolCall{Name: "list_goals", Args: map[string]any{}})
@@ -820,7 +877,7 @@ func TestListGoalsToolDefaultsToActiveAndPaused(t *testing.T) {
 
 func TestListGoalsToolPassesStatusFilter(t *testing.T) {
 	goals := &fakeGoalsService{}
-	svc := NewAIService(&fakeVertexClient{}, &fakeAnalyticsClient{}, &fakeTransactionsLister{}, goals, &fakeAIStore{})
+	svc := NewAIService(&fakeVertexClient{}, &fakeAnalyticsClient{}, &fakeTransactionsLister{}, &fakeAIAccounts{}, goals, &fakeAIStore{})
 
 	ctx := helpers.TestCtx()
 	if _, err := svc.executeTool(ctx, "user", "s", dto.VertexToolCall{
@@ -836,7 +893,7 @@ func TestListGoalsToolPassesStatusFilter(t *testing.T) {
 
 func TestUpdateGoalToolRequiresGoalID(t *testing.T) {
 	goals := &fakeGoalsService{}
-	svc := NewAIService(&fakeVertexClient{}, &fakeAnalyticsClient{}, &fakeTransactionsLister{}, goals, &fakeAIStore{})
+	svc := NewAIService(&fakeVertexClient{}, &fakeAnalyticsClient{}, &fakeTransactionsLister{}, &fakeAIAccounts{}, goals, &fakeAIStore{})
 
 	ctx := helpers.TestCtx()
 	_, err := svc.executeTool(ctx, "user", "s", dto.VertexToolCall{
@@ -854,7 +911,7 @@ func TestUpdateGoalToolRequiresGoalID(t *testing.T) {
 
 func TestUpdateGoalToolDecodesPartial(t *testing.T) {
 	goals := &fakeGoalsService{updateResp: &models.Goal{GoalID: "g1"}}
-	svc := NewAIService(&fakeVertexClient{}, &fakeAnalyticsClient{}, &fakeTransactionsLister{}, goals, &fakeAIStore{})
+	svc := NewAIService(&fakeVertexClient{}, &fakeAnalyticsClient{}, &fakeTransactionsLister{}, &fakeAIAccounts{}, goals, &fakeAIStore{})
 
 	ctx := helpers.TestCtx()
 	if _, err := svc.executeTool(ctx, "user", "s", dto.VertexToolCall{
@@ -880,7 +937,7 @@ func TestUpdateGoalToolDecodesPartial(t *testing.T) {
 
 func TestUpdateGoalToolDecodesReductionPercent(t *testing.T) {
 	goals := &fakeGoalsService{updateResp: &models.Goal{GoalID: "r1"}}
-	svc := NewAIService(&fakeVertexClient{}, &fakeAnalyticsClient{}, &fakeTransactionsLister{}, goals, &fakeAIStore{})
+	svc := NewAIService(&fakeVertexClient{}, &fakeAnalyticsClient{}, &fakeTransactionsLister{}, &fakeAIAccounts{}, goals, &fakeAIStore{})
 
 	_, err := svc.executeTool(helpers.TestCtx(), "user", "s", dto.VertexToolCall{
 		Name: "update_goal",
@@ -896,7 +953,7 @@ func TestUpdateGoalToolDecodesReductionPercent(t *testing.T) {
 
 func TestGetGoalProgressTool(t *testing.T) {
 	goals := &fakeGoalsService{progressResp: dto.GoalProgress{GoalID: "g1", CurrentValueMinor: 12000, TargetValueMinor: 30000}}
-	svc := NewAIService(&fakeVertexClient{}, &fakeAnalyticsClient{}, &fakeTransactionsLister{}, goals, &fakeAIStore{})
+	svc := NewAIService(&fakeVertexClient{}, &fakeAnalyticsClient{}, &fakeTransactionsLister{}, &fakeAIAccounts{}, goals, &fakeAIStore{})
 
 	ctx := helpers.TestCtx()
 	res, err := svc.executeTool(ctx, "user", "s", dto.VertexToolCall{
@@ -973,7 +1030,7 @@ func TestToMajorUnitsPayload(t *testing.T) {
 
 func TestGetSpendTotalToolConvertsToMajorUnits(t *testing.T) {
 	analytics := &fakeAnalyticsClient{totalResp: dto.AnalyticsSpendTotalResult{TotalMinor: 12345, Currency: "USD"}}
-	svc := NewAIService(&fakeVertexClient{}, analytics, &fakeTransactionsLister{}, &fakeGoalsService{}, &fakeAIStore{})
+	svc := NewAIService(&fakeVertexClient{}, analytics, &fakeTransactionsLister{}, &fakeAIAccounts{}, &fakeGoalsService{}, &fakeAIStore{})
 
 	res, err := svc.executeTool(helpers.TestCtx(), "user", "s", dto.VertexToolCall{
 		Name: "get_spend_total",
@@ -995,7 +1052,7 @@ func TestGetConversation(t *testing.T) {
 		{Role: "user", Content: "hi"},
 		{Role: "assistant", Content: "hello"},
 	}}
-	svc := NewAIService(&fakeVertexClient{}, &fakeAnalyticsClient{}, &fakeTransactionsLister{}, &fakeGoalsService{}, store)
+	svc := NewAIService(&fakeVertexClient{}, &fakeAnalyticsClient{}, &fakeTransactionsLister{}, &fakeAIAccounts{}, &fakeGoalsService{}, store)
 
 	res, err := svc.GetConversation(helpers.TestCtx(), "user", "session", 100)
 	if err != nil {
@@ -1010,7 +1067,7 @@ func TestGetConversation(t *testing.T) {
 }
 
 func TestGetConversationUnknownReturnsNotFound(t *testing.T) {
-	svc := NewAIService(&fakeVertexClient{}, &fakeAnalyticsClient{}, &fakeTransactionsLister{}, &fakeGoalsService{}, &fakeAIStore{})
+	svc := NewAIService(&fakeVertexClient{}, &fakeAnalyticsClient{}, &fakeTransactionsLister{}, &fakeAIAccounts{}, &fakeGoalsService{}, &fakeAIStore{})
 
 	_, err := svc.GetConversation(helpers.TestCtx(), "user", "unknown", 100)
 	var nf *errs.NotFoundError
@@ -1022,7 +1079,7 @@ func TestGetConversationUnknownReturnsNotFound(t *testing.T) {
 func TestAIQuery_FirstMessageCreatesSession(t *testing.T) {
 	vertex := &fakeVertexClient{responses: []dto.VertexGenerateResponse{{Text: "You spent $5."}}}
 	store := &fakeAIStore{} // no prior messages → first message
-	svc := NewAIService(vertex, &fakeAnalyticsClient{}, &fakeTransactionsLister{}, &fakeGoalsService{}, store)
+	svc := NewAIService(vertex, &fakeAnalyticsClient{}, &fakeTransactionsLister{}, &fakeAIAccounts{}, &fakeGoalsService{}, store)
 	fixed := time.Date(2026, time.February, 15, 12, 0, 0, 0, time.UTC)
 
 	_, err := svc.Query(aiContextAt(fixed), "user", dto.AIQueryRequest{SessionID: "s1", Message: "How much did I spend?"})
@@ -1047,7 +1104,7 @@ func TestAIQuery_FirstMessageCreatesSession(t *testing.T) {
 func TestAIQuery_SubsequentMessageTouchesSession(t *testing.T) {
 	vertex := &fakeVertexClient{responses: []dto.VertexGenerateResponse{{Text: "ok"}}}
 	store := &fakeAIStore{messages: []models.AIMessage{{Role: "user", Content: "earlier"}}} // existing session
-	svc := NewAIService(vertex, &fakeAnalyticsClient{}, &fakeTransactionsLister{}, &fakeGoalsService{}, store)
+	svc := NewAIService(vertex, &fakeAnalyticsClient{}, &fakeTransactionsLister{}, &fakeAIAccounts{}, &fakeGoalsService{}, store)
 
 	_, err := svc.Query(helpers.TestCtx(), "user", dto.AIQueryRequest{SessionID: "s1", Message: "again"})
 	if err != nil {

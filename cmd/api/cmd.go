@@ -49,7 +49,7 @@ func main() {
 	txserv := services.NewTransactionsService(tstore)
 	alertsvc := services.NewAlertService(alstore, nstore)
 	goalsvc := services.NewGoalService(gstore, gsstore, jobsvc, txserv, anserv)
-	aiserv := services.NewAIService(bs.GenAIAdapter, anserv, txserv, goalsvc, astore)
+	aiserv := services.NewAIService(bs.GenAIAdapter, anserv, txserv, accountsvc, goalsvc, astore)
 	dashsvc := services.NewDashboardService(dstore, anserv, txserv)
 
 	// response handler

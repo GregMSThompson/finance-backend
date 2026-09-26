@@ -51,6 +51,13 @@ type aiTransactions interface {
 	ListTransactions(ctx context.Context, uid string, args dto.TransactionListArgs) (dto.TransactionListResult, error)
 }
 
+// aiAccounts is the slice of the accounts service the chat tools drive. The model
+// uses it to discover account ids (and balances) so it can scope other calls to a
+// specific account.
+type aiAccounts interface {
+	GetAllAccounts(ctx context.Context, uid string) ([]models.Account, error)
+}
+
 // aiGoals is the narrow slice of the goal service the chat tools drive. Creation
 // links the goal to the originating chat session; every method surfaces
 // errs.ValidationError so the tool loop can reflect it back to the model.
@@ -125,15 +132,17 @@ type aiService struct {
 	vertex       vertexClient
 	analysis     analyticsClient
 	transactions aiTransactions
+	accounts     aiAccounts
 	goals        aiGoals
 	store        aiStore
 }
 
-func NewAIService(vertex vertexClient, analysis analyticsClient, transactions aiTransactions, goals aiGoals, store aiStore) *aiService {
+func NewAIService(vertex vertexClient, analysis analyticsClient, transactions aiTransactions, accounts aiAccounts, goals aiGoals, store aiStore) *aiService {
 	return &aiService{
 		vertex:       vertex,
 		analysis:     analysis,
 		transactions: transactions,
+		accounts:     accounts,
 		goals:        goals,
 		store:        store,
 	}
@@ -460,6 +469,19 @@ func (s *aiService) executeTool(ctx context.Context, uid, sessionID string, call
 		// leaking the opaque cursor into its context.
 		delete(payload, "nextCursor")
 		payload["hasMore"] = result.NextCursor != nil
+		return dto.VertexToolResult{Name: call.Name, Response: payload}, nil
+	case "list_accounts":
+		accounts, err := s.accounts.GetAllAccounts(ctx, uid)
+		if err != nil {
+			return dto.VertexToolResult{}, err
+		}
+		// Wrap in an object as the tool-response transport requires.
+		payload, err := toMajorUnitsPayload(struct {
+			Accounts []models.Account `json:"accounts"`
+		}{Accounts: accounts})
+		if err != nil {
+			return dto.VertexToolResult{}, err
+		}
 		return dto.VertexToolResult{Name: call.Name, Response: payload}, nil
 	case "get_period_comparison":
 		raw, err := decodeArgs[aiPeriodComparisonArgs](call.Args)
@@ -930,6 +952,14 @@ func toolSchemas() []dto.VertexTool {
 					"merchant":   {Type: "string", Description: "Partial, case-insensitive merchant name filter."},
 				},
 			},
+		},
+		{
+			Name: "list_accounts",
+			Description: "List the user's linked bank accounts across all their banks, including each account's id, " +
+				"name, type, mask, and current balance. Call this to answer questions about accounts or balances, " +
+				"and to resolve an accountId before scoping another tool (e.g. get_transactions or create_goal) to a " +
+				"specific account. Takes no arguments.",
+			Parameters: &dto.VertexSchema{Type: "object"},
 		},
 		{
 			Name: "create_goal",
