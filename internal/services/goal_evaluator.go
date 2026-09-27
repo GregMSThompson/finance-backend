@@ -35,6 +35,7 @@ type goalEvaluatorSnapshotStore interface {
 type goalStrategyAnalytics interface {
 	GetSpendTotal(ctx context.Context, uid string, args dto.AnalyticsSpendTotalArgs) (dto.AnalyticsSpendTotalResult, error)
 	GetIncomeTotal(ctx context.Context, uid string, args dto.AnalyticsIncomeTotalArgs) (dto.AnalyticsIncomeTotalResult, error)
+	GetContributionsTotal(ctx context.Context, uid string, args dto.AnalyticsContributionsTotalArgs) (dto.AnalyticsContributionsTotalResult, error)
 }
 
 // goalStrategyAccounts is the balance measurement a balance-family strategy needs
@@ -145,6 +146,17 @@ type incomeTargetStrategy struct {
 type savingsTargetStrategy struct {
 	atLeastStrategy
 	accounts goalStrategyAccounts
+}
+
+// savingsContributionsStrategy measures money transferred into an account (gross
+// TRANSFER_IN inflows) over the window against a floor: contributing at least the
+// target. It's a flow like income target — a sum over the window — but scoped to
+// the destination account and counting transfers rather than income. Withdrawals
+// are excluded (gross, not net), so it answers "did I pay in enough", not "did the
+// balance grow" (that's savings target).
+type savingsContributionsStrategy struct {
+	atLeastStrategy
+	analytics goalStrategyAnalytics
 }
 
 func NewGoalEvaluatorService(
@@ -509,11 +521,12 @@ func goalPercentComplete(current, target int64) float64 {
 func newGoalStrategies(analytics goalStrategyAnalytics, accounts goalStrategyAccounts) map[models.GoalType]goalStrategy {
 	sl := spendingLimitStrategy{analytics: analytics}
 	return map[models.GoalType]goalStrategy{
-		models.GoalTypeSpendingLimit: sl,
-		models.GoalTypeReduction:     reductionStrategy{spendingLimitStrategy: sl},
-		models.GoalTypeNetSavings:    netSavingsStrategy{analytics: analytics},
-		models.GoalTypeIncomeTarget:  incomeTargetStrategy{analytics: analytics},
-		models.GoalTypeSavingsTarget: savingsTargetStrategy{accounts: accounts},
+		models.GoalTypeSpendingLimit:        sl,
+		models.GoalTypeReduction:            reductionStrategy{spendingLimitStrategy: sl},
+		models.GoalTypeNetSavings:           netSavingsStrategy{analytics: analytics},
+		models.GoalTypeIncomeTarget:         incomeTargetStrategy{analytics: analytics},
+		models.GoalTypeSavingsTarget:        savingsTargetStrategy{accounts: accounts},
+		models.GoalTypeSavingsContributions: savingsContributionsStrategy{analytics: analytics},
 	}
 }
 
@@ -692,4 +705,19 @@ func (s savingsTargetStrategy) Measure(ctx context.Context, uid string, g *model
 		return 0, fmt.Errorf("savings target balance: %w", err)
 	}
 	return balance - helpers.Value(g.BaselineValueMinor), nil
+}
+
+// Measure returns gross contributions — transfers into the scoped account — over
+// the window. Validation guarantees an accountId, so the scope is always set.
+func (s savingsContributionsStrategy) Measure(ctx context.Context, uid string, g *models.Goal, w goalWindow) (int64, error) {
+	contributions, err := s.analytics.GetContributionsTotal(ctx, uid, dto.AnalyticsContributionsTotalArgs{
+		Pending:   helpers.Ptr(false),
+		AccountID: helpers.OptString(g.Filters.AccountID),
+		DateFrom:  helpers.Ptr(helpers.FormatDate(w.start)),
+		DateTo:    helpers.Ptr(helpers.FormatDate(w.queryTo)),
+	})
+	if err != nil {
+		return 0, fmt.Errorf("contributions total: %w", err)
+	}
+	return contributions.TotalMinor, nil
 }

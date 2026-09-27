@@ -345,7 +345,7 @@ func validateGoal(g *models.Goal) error {
 		}
 		// A savings target measures growth against a fixed starting balance, so a
 		// recurring reset has no meaning — the baseline would move each period.
-		// Per-period saving is the future savings-contributions goal.
+		// Per-period saving is the savings_contributions goal instead.
 		if g.Recurrence == models.GoalRecurrenceRecurring {
 			return errs.NewValidationError("a savings target must be one-off")
 		}
@@ -353,6 +353,24 @@ func validateGoal(g *models.Goal) error {
 		// don't apply; only an optional accountId scope is allowed.
 		if g.Filters.PFCPrimary != "" || g.Filters.Merchant != "" {
 			return errs.NewValidationError("a savings target can only be scoped by accountId, not category or merchant")
+		}
+	case models.GoalTypeSavingsContributions:
+		if g.TargetValueMinor <= 0 {
+			return errs.NewValidationError("targetValue must be greater than 0")
+		}
+		if g.ReductionPercent != nil {
+			return errs.NewValidationError("reductionPercent applies only to reduction goals")
+		}
+		// Contributions are transfers into a specific destination account. Without a
+		// scope, gross transfers-in across all accounts would count internal
+		// account-to-account moves as contributions, so the account is required.
+		if g.Filters.AccountID == "" {
+			return errs.NewValidationError("a savings contributions goal must be scoped to an accountId")
+		}
+		// It counts transfers into that account, not spend, so category and merchant
+		// filters don't apply.
+		if g.Filters.PFCPrimary != "" || g.Filters.Merchant != "" {
+			return errs.NewValidationError("a savings contributions goal can only be scoped by accountId, not category or merchant")
 		}
 	default:
 		return errs.NewValidationError(fmt.Sprintf("unsupported goal type: %s", g.Type))

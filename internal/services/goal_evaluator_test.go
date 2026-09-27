@@ -30,6 +30,10 @@ type fakeEvalAnalytics struct {
 	incomeCalls  []dto.AnalyticsIncomeTotalArgs
 	incomeResult dto.AnalyticsIncomeTotalResult
 	incomeErr    error
+
+	contribCalls  []dto.AnalyticsContributionsTotalArgs
+	contribResult dto.AnalyticsContributionsTotalResult
+	contribErr    error
 }
 
 func (f *fakeEvalAnalytics) GetSpendTotal(_ context.Context, _ string, args dto.AnalyticsSpendTotalArgs) (dto.AnalyticsSpendTotalResult, error) {
@@ -43,6 +47,11 @@ func (f *fakeEvalAnalytics) GetSpendTotal(_ context.Context, _ string, args dto.
 func (f *fakeEvalAnalytics) GetIncomeTotal(_ context.Context, _ string, args dto.AnalyticsIncomeTotalArgs) (dto.AnalyticsIncomeTotalResult, error) {
 	f.incomeCalls = append(f.incomeCalls, args)
 	return f.incomeResult, f.incomeErr
+}
+
+func (f *fakeEvalAnalytics) GetContributionsTotal(_ context.Context, _ string, args dto.AnalyticsContributionsTotalArgs) (dto.AnalyticsContributionsTotalResult, error) {
+	f.contribCalls = append(f.contribCalls, args)
+	return f.contribResult, f.contribErr
 }
 
 // fakeGoalAccounts stubs the balance dependency for goal tests. calls records the
@@ -648,6 +657,41 @@ func TestGoalEvaluator_SavingsTargetMeasuresBalanceDelta(t *testing.T) {
 	}
 	if len(accounts.calls) != 1 || accounts.calls[0] != nil {
 		t.Fatalf("expected one unscoped balance read (nil accountId), got %v", accounts.calls)
+	}
+}
+
+func TestGoalEvaluator_SavingsContributionsMeasuresTransfersInScoped(t *testing.T) {
+	// A recurring monthly contributions goal: $600 paid in against a $500 target =
+	// 120%, scoped to the destination account. It's a flow, so it reads the
+	// contributions total (transfers in), never spend/income or the balance.
+	g := monthlyGoal("g1", 50000)
+	g.Type = models.GoalTypeSavingsContributions
+	g.Name = "Pay into savings"
+	g.Filters = models.GoalFilters{AccountID: "acc-savings"}
+
+	users := &fakeEvalUserStore{users: []*models.User{{UID: "u1"}}}
+	goals := &fakeGoalStore{goals: map[string]*models.Goal{"g1": g}}
+	snaps := &fakeGoalSnapshotStore{}
+	analytics := &fakeEvalAnalytics{contribResult: dto.AnalyticsContributionsTotalResult{TotalMinor: 60000, Currency: "USD"}}
+
+	if err := newEvaluator(users, goals, snaps, analytics).Run(evalContext()); err != nil {
+		t.Fatalf("Run error: %v", err)
+	}
+	s := snaps.created[0]
+	if s.CurrentValueMinor != 60000 || s.TargetValueMinor != 50000 || s.PercentComplete != 120 {
+		t.Fatalf("expected 60000 contributed at 120%% of 50000, got current=%d target=%d pct=%v", s.CurrentValueMinor, s.TargetValueMinor, s.PercentComplete)
+	}
+	if !s.IsOnTrack {
+		t.Fatal("expected on track: contributions already exceed the target")
+	}
+	if len(analytics.contribCalls) != 1 {
+		t.Fatalf("expected one contributions query, got %d", len(analytics.contribCalls))
+	}
+	if helpers.Value(analytics.contribCalls[0].AccountID) != "acc-savings" {
+		t.Fatalf("expected the contributions query scoped to acc-savings, got %v", analytics.contribCalls[0].AccountID)
+	}
+	if len(analytics.calls) != 0 || len(analytics.incomeCalls) != 0 {
+		t.Fatalf("a contributions goal must not query spend/income, got spend=%d income=%d", len(analytics.calls), len(analytics.incomeCalls))
 	}
 }
 

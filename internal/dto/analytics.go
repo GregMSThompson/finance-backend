@@ -35,6 +35,27 @@ type AnalyticsIncomeTotalResult struct {
 	To         string `json:"to,omitempty"`
 }
 
+// AnalyticsContributionsTotalArgs mirrors the income-total args: contributions
+// are always the TRANSFER_IN category, so no category filter is exposed. The
+// AccountID scope is the point of the figure — it measures money moved into one
+// account.
+type AnalyticsContributionsTotalArgs struct {
+	Pending   *bool
+	AccountID *string
+	Merchant  *string
+	DateFrom  *string
+	DateTo    *string
+}
+
+// AnalyticsContributionsTotalResult reports contributions (transfers in) as a
+// positive magnitude even though inflows are stored with Plaid's negative sign.
+type AnalyticsContributionsTotalResult struct {
+	TotalMinor int64  `json:"totalMinor"`
+	Currency   string `json:"currency"`
+	From       string `json:"from,omitempty"`
+	To         string `json:"to,omitempty"`
+}
+
 type AnalyticsSpendBreakdownArgs struct {
 	Pending    *bool
 	PFCPrimary *string

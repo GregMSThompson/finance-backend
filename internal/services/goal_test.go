@@ -167,6 +167,17 @@ func validSavingsTargetDef() dto.GoalDefinition {
 	}
 }
 
+func validSavingsContributionsDef() dto.GoalDefinition {
+	return dto.GoalDefinition{
+		Type:             models.GoalTypeSavingsContributions,
+		Name:             "Pay $500 into savings monthly",
+		TargetValueMinor: 50000,
+		TimeWindow:       models.GoalWindowMonthly,
+		Recurrence:       models.GoalRecurrenceRecurring,
+		Filters:          models.GoalFilters{AccountID: "acc-savings"},
+	}
+}
+
 func seedGoal(store *fakeGoalStore) *models.Goal {
 	g := &models.Goal{
 		GoalID:           "g1",
@@ -449,6 +460,60 @@ func TestGoalCreate_SavingsTargetAllowsAccountFilter(t *testing.T) {
 	def.Filters = models.GoalFilters{AccountID: "acc1"}
 	if _, err := svc.Create(context.Background(), "uid1", "s", def); err != nil {
 		t.Fatalf("an accountId scope should be allowed on a savings target, got %v", err)
+	}
+}
+
+func TestGoalCreate_SavingsContributionsValid(t *testing.T) {
+	goals := newFakeGoalStore()
+	svc := NewGoalService(goals, &fakeGoalSnapshotStore{}, &fakeJobs{}, &fakeTransactionsLister{}, &fakeEvalAnalytics{}, &fakeGoalAccounts{})
+
+	g, err := svc.Create(context.Background(), "uid1", "s", validSavingsContributionsDef())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if g.Type != models.GoalTypeSavingsContributions || g.TargetValueMinor != 50000 {
+		t.Fatalf("unexpected goal: %+v", g)
+	}
+	// A flow goal captures no baseline.
+	if g.BaselineValueMinor != nil {
+		t.Fatalf("expected no baseline for a contributions goal, got %v", g.BaselineValueMinor)
+	}
+}
+
+func TestGoalCreate_SavingsContributionsRequiresAccount(t *testing.T) {
+	svc := NewGoalService(newFakeGoalStore(), &fakeGoalSnapshotStore{}, &fakeJobs{}, &fakeTransactionsLister{}, &fakeEvalAnalytics{}, &fakeGoalAccounts{})
+	def := validSavingsContributionsDef()
+	def.Filters = models.GoalFilters{}
+	if _, err := svc.Create(context.Background(), "uid1", "s", def); !isValidationError(err) {
+		t.Fatalf("expected ValidationError when accountId missing, got %v", err)
+	}
+}
+
+func TestGoalCreate_SavingsContributionsRejectsCategoryAndMerchant(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		filters models.GoalFilters
+	}{
+		{"category", models.GoalFilters{AccountID: "acc1", PFCPrimary: "FOOD_AND_DRINK"}},
+		{"merchant", models.GoalFilters{AccountID: "acc1", Merchant: "Amazon"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			svc := NewGoalService(newFakeGoalStore(), &fakeGoalSnapshotStore{}, &fakeJobs{}, &fakeTransactionsLister{}, &fakeEvalAnalytics{}, &fakeGoalAccounts{})
+			def := validSavingsContributionsDef()
+			def.Filters = tc.filters
+			if _, err := svc.Create(context.Background(), "uid1", "s", def); !isValidationError(err) {
+				t.Fatalf("expected ValidationError for %s filter, got %v", tc.name, err)
+			}
+		})
+	}
+}
+
+func TestGoalCreate_SavingsContributionsAllowsRecurring(t *testing.T) {
+	svc := NewGoalService(newFakeGoalStore(), &fakeGoalSnapshotStore{}, &fakeJobs{}, &fakeTransactionsLister{}, &fakeEvalAnalytics{}, &fakeGoalAccounts{})
+	// The default def is already recurring/monthly; assert it's accepted (unlike
+	// savings_target, which rejects recurring).
+	if _, err := svc.Create(context.Background(), "uid1", "s", validSavingsContributionsDef()); err != nil {
+		t.Fatalf("a recurring savings contributions goal should be allowed, got %v", err)
 	}
 }
 

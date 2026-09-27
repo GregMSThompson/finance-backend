@@ -23,6 +23,16 @@ type analyticsService struct {
 	txs transactionAnalyticsStore
 }
 
+// inflowQuery is the shared parameter set for single-category inflow totals
+// (income, contributions), decoupling the helper from any one caller's args type.
+type inflowQuery struct {
+	Pending   *bool
+	AccountID *string
+	Merchant  *string
+	DateFrom  *string
+	DateTo    *string
+}
+
 func NewAnalyticsService(txs transactionAnalyticsStore) *analyticsService {
 	return &analyticsService{txs: txs}
 }
@@ -65,22 +75,63 @@ func (s *analyticsService) GetSpendTotal(ctx context.Context, uid string, args d
 
 // GetIncomeTotal sums the INCOME category over the window and reports it as a
 // positive magnitude — inflows are stored with Plaid's negative sign, so the
-// raw sum is negated here so callers get an intuitive figure.
+// raw sum is negated so callers get an intuitive figure.
 func (s *analyticsService) GetIncomeTotal(ctx context.Context, uid string, args dto.AnalyticsIncomeTotalArgs) (dto.AnalyticsIncomeTotalResult, error) {
-	result := dto.AnalyticsIncomeTotalResult{
-		From: helpers.Value(args.DateFrom),
-		To:   helpers.Value(args.DateTo),
+	total, currency, err := s.sumInflowCategory(ctx, uid, "INCOME", inflowQuery{
+		Pending:   args.Pending,
+		AccountID: args.AccountID,
+		Merchant:  args.Merchant,
+		DateFrom:  args.DateFrom,
+		DateTo:    args.DateTo,
+	})
+	if err != nil {
+		return dto.AnalyticsIncomeTotalResult{}, err
 	}
+	return dto.AnalyticsIncomeTotalResult{
+		TotalMinor: total,
+		Currency:   currency,
+		From:       helpers.Value(args.DateFrom),
+		To:         helpers.Value(args.DateTo),
+	}, nil
+}
 
+// GetContributionsTotal sums transfers into an account (the TRANSFER_IN category)
+// over the window as a positive magnitude — money the user moved into savings.
+// Only inflows are counted (TRANSFER_OUT withdrawals are excluded), so this is a
+// gross contributions figure, not the net change in the account.
+func (s *analyticsService) GetContributionsTotal(ctx context.Context, uid string, args dto.AnalyticsContributionsTotalArgs) (dto.AnalyticsContributionsTotalResult, error) {
+	total, currency, err := s.sumInflowCategory(ctx, uid, "TRANSFER_IN", inflowQuery{
+		Pending:   args.Pending,
+		AccountID: args.AccountID,
+		Merchant:  args.Merchant,
+		DateFrom:  args.DateFrom,
+		DateTo:    args.DateTo,
+	})
+	if err != nil {
+		return dto.AnalyticsContributionsTotalResult{}, err
+	}
+	return dto.AnalyticsContributionsTotalResult{
+		TotalMinor: total,
+		Currency:   currency,
+		From:       helpers.Value(args.DateFrom),
+		To:         helpers.Value(args.DateTo),
+	}, nil
+}
+
+// sumInflowCategory sums a single inflow category over the window and returns it
+// as a positive magnitude. Inflows are stored with Plaid's negative sign, so the
+// raw signed sum is negated. Shared by the income and contributions totals, which
+// differ only in the category queried.
+func (s *analyticsService) sumInflowCategory(ctx context.Context, uid, category string, q inflowQuery) (int64, string, error) {
 	var signed int64
 	var currency string
 	if err := s.txs.Query(ctx, uid, dto.TransactionQuery{
-		Pending:      args.Pending,
-		PFCPrimaries: []string{"INCOME"},
-		AccountID:    args.AccountID,
-		Merchant:     args.Merchant,
-		DateFrom:     args.DateFrom,
-		DateTo:       args.DateTo,
+		Pending:      q.Pending,
+		PFCPrimaries: []string{category},
+		AccountID:    q.AccountID,
+		Merchant:     q.Merchant,
+		DateFrom:     q.DateFrom,
+		DateTo:       q.DateTo,
 	}, func(tx *models.Transaction) error {
 		signed += tx.AmountMinor
 		if currency == "" && tx.Currency != "" {
@@ -88,12 +139,9 @@ func (s *analyticsService) GetIncomeTotal(ctx context.Context, uid string, args 
 		}
 		return nil
 	}); err != nil {
-		return result, err
+		return 0, "", err
 	}
-
-	result.TotalMinor = -signed
-	result.Currency = currency
-	return result, nil
+	return -signed, currency, nil
 }
 
 func (s *analyticsService) GetSpendBreakdown(ctx context.Context, uid string, args dto.AnalyticsSpendBreakdownArgs) (dto.AnalyticsSpendBreakdownResult, error) {

@@ -11,11 +11,12 @@ import (
 type GoalType string
 
 const (
-	GoalTypeSpendingLimit GoalType = "spending_limit"
-	GoalTypeReduction     GoalType = "reduction"
-	GoalTypeNetSavings    GoalType = "net_savings"
-	GoalTypeIncomeTarget  GoalType = "income_target"
-	GoalTypeSavingsTarget GoalType = "savings_target"
+	GoalTypeSpendingLimit        GoalType = "spending_limit"
+	GoalTypeReduction            GoalType = "reduction"
+	GoalTypeNetSavings           GoalType = "net_savings"
+	GoalTypeIncomeTarget         GoalType = "income_target"
+	GoalTypeSavingsTarget        GoalType = "savings_target"
+	GoalTypeSavingsContributions GoalType = "savings_contributions"
 )
 
 // GoalTimeWindow is the period a goal is measured over.

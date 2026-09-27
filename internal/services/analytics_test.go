@@ -1088,6 +1088,41 @@ func TestGetIncomeTotalNormalizesSign(t *testing.T) {
 	}
 }
 
+func TestGetContributionsTotalNormalizesSignAndScopes(t *testing.T) {
+	// The store filters to TRANSFER_IN (asserted below), so it yields only
+	// transfer-in rows — inflows carrying Plaid's negative sign. The total is
+	// reported as a positive magnitude.
+	store := &fakeAnalyticsStore{
+		txs: []*models.Transaction{
+			{AmountMinor: -50000, Currency: "USD", PFCPrimary: "TRANSFER_IN"},
+			{AmountMinor: -10000, Currency: "USD", PFCPrimary: "TRANSFER_IN"},
+		},
+	}
+	svc := NewAnalyticsService(store)
+
+	got, err := svc.GetContributionsTotal(context.Background(), "user", dto.AnalyticsContributionsTotalArgs{
+		AccountID: helpers.Ptr("acc-savings"),
+		DateFrom:  helpers.Ptr("2026-01-01"),
+		DateTo:    helpers.Ptr("2026-01-31"),
+	})
+	if err != nil {
+		t.Fatalf("GetContributionsTotal error: %v", err)
+	}
+	if got.TotalMinor != 60000 {
+		t.Fatalf("expected positive contributions magnitude 60000, got %d", got.TotalMinor)
+	}
+	if got.Currency != "USD" {
+		t.Fatalf("currency mismatch: got %q", got.Currency)
+	}
+	// The query must scope to TRANSFER_IN and the requested account.
+	if len(store.lastQuery.PFCPrimaries) != 1 || store.lastQuery.PFCPrimaries[0] != "TRANSFER_IN" {
+		t.Fatalf("expected the query filtered to TRANSFER_IN, got %v", store.lastQuery.PFCPrimaries)
+	}
+	if helpers.Value(store.lastQuery.AccountID) != "acc-savings" {
+		t.Fatalf("expected the query scoped to acc-savings, got %v", store.lastQuery.AccountID)
+	}
+}
+
 func TestGetSpendBreakdownExcludesIncomeAndTransfers(t *testing.T) {
 	// collectPeriod (shared by breakdown, period-comparison, top-N) must drop
 	// non-spend categories, so income/transfers never appear as a spend group.
