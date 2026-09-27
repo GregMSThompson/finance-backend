@@ -13,13 +13,25 @@ import (
 // period (for goals that derive a target from prior spend), a day-by-day data
 // progression, and the expected state at each point.
 type scenario struct {
-	Name        string         `yaml:"name"`
-	UserID      string         `yaml:"userId"`
-	Goal        scenarioGoal   `yaml:"goal"`
-	Baseline    []scenarioTx   `yaml:"baseline"`
-	Replay      replayRange    `yaml:"replay"`
-	Steps       []scenarioStep `yaml:"steps"`
-	FinalExpect *finalExpect   `yaml:"finalExpect"`
+	Name     string       `yaml:"name"`
+	UserID   string       `yaml:"userId"`
+	Goal     scenarioGoal `yaml:"goal"`
+	Baseline []scenarioTx `yaml:"baseline"`
+	// Accounts seeds starting balances for balance-family goals (e.g. savings
+	// target). They're written before the goal is created, so the strategy's
+	// Initialize captures them as the baseline. Empty for flow-based scenarios.
+	Accounts    []scenarioAccount `yaml:"accounts"`
+	Replay      replayRange       `yaml:"replay"`
+	Steps       []scenarioStep    `yaml:"steps"`
+	FinalExpect *finalExpect      `yaml:"finalExpect"`
+}
+
+// scenarioAccount is an account's starting balance (major units) for balance
+// replay. The balance is a point-in-time level, unlike transactions which
+// accumulate over the window.
+type scenarioAccount struct {
+	AccountID string  `yaml:"accountId"`
+	Balance   float64 `yaml:"balance"`
 }
 
 type scenarioGoal struct {
@@ -52,9 +64,14 @@ type replayRange struct {
 }
 
 type scenarioStep struct {
-	Date   string       `yaml:"date"`
-	Add    []scenarioTx `yaml:"add"`
-	Expect *stepExpect  `yaml:"expect"`
+	Date string       `yaml:"date"`
+	Add  []scenarioTx `yaml:"add"`
+	// SetBalances updates account balances (accountId → absolute balance in major
+	// units) before this day's evaluation, replaying how a balance-family goal's
+	// measurement moves. Only the listed accounts change; others keep their prior
+	// balance. Empty for flow-based scenarios.
+	SetBalances map[string]float64 `yaml:"setBalances"`
+	Expect      *stepExpect        `yaml:"expect"`
 }
 
 type scenarioTx struct {
@@ -124,4 +141,8 @@ type goalGetter interface {
 
 type txUpserter interface {
 	UpsertBatch(ctx context.Context, uid string, txs []models.Transaction) error
+}
+
+type accountUpserter interface {
+	UpsertBatch(ctx context.Context, uid, bankID string, accounts []models.Account) error
 }

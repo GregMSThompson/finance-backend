@@ -38,6 +38,11 @@ import (
 
 const dateLayout = "2006-01-02"
 
+// simBankID is the single synthetic bank every sim account (and transaction)
+// hangs under, so balance-family goals can enumerate accounts via the real
+// accounts service.
+const simBankID = "sim-bank"
+
 // percentTolerance is the allowed difference when asserting float fields.
 const percentTolerance = 0.1
 
@@ -98,7 +103,12 @@ func run(ctx context.Context, client *firestore.Client, sc *scenario) error {
 	snapshotStore := store.NewGoalSnapshotStore(client)
 	notificationStore := store.NewNotificationStore(client)
 	transactionStore := store.NewTransactionStore(client)
+	accountStore := store.NewAccountStore(client)
 	analyticsSvc := services.NewAnalyticsService(transactionStore)
+	// Balance-family goals read balances through the real accounts service. It only
+	// enumerates bank ids (no token decryption) and sums account balances, so the
+	// Plaid, KMS, and job deps a full wiring would use are left nil.
+	accountsSvc := services.NewAccountsService(nil, store.NewBankStore(client, nil), accountStore, nil)
 
 	// Start from a clean sim user so each run is deterministic.
 	if err := resetUser(ctx, client, sc.UserID); err != nil {
@@ -109,6 +119,12 @@ func run(ctx context.Context, client *firestore.Client, sc *scenario) error {
 	// reduction goal's Initialize measures them when deriving its target.
 	if err := seedBaselineTransactions(ctx, transactionStore, sc.UserID, sc.Baseline); err != nil {
 		return fmt.Errorf("seed baseline transactions: %w", err)
+	}
+
+	// Seed starting account balances before goal creation, so a balance-family
+	// goal's Initialize captures them as its baseline.
+	if err := seedAccounts(ctx, client, accountStore, sc.UserID, sc.Accounts); err != nil {
+		return fmt.Errorf("seed accounts: %w", err)
 	}
 
 	createdAt, err := time.Parse(dateLayout, sc.Goal.CreatedAt)
@@ -124,7 +140,7 @@ func run(ctx context.Context, client *firestore.Client, sc *scenario) error {
 	// Pin the clock to the creation date so CreatedAt and any baseline window are
 	// resolved as of the scenario date, not wall-clock now. Delete/list deps are
 	// unused by Create, so they're left nil.
-	goalSvc := services.NewGoalService(goalStore, snapshotStore, nil, nil, analyticsSvc, unsupportedAccounts{})
+	goalSvc := services.NewGoalService(goalStore, snapshotStore, nil, nil, analyticsSvc, accountsSvc)
 	createCtx := clock.WithClock(ctx, func() time.Time { return createdAt })
 	goal, err := goalSvc.Create(createCtx, sc.UserID, "sim-session", def)
 	if err != nil {
@@ -143,7 +159,7 @@ func run(ctx context.Context, client *firestore.Client, sc *scenario) error {
 	// Evaluate only the sim user with no real deliveries.
 	evalSvc := services.NewGoalEvaluatorService(
 		singleUserStore{uid: sc.UserID},
-		goalStore, snapshotStore, analyticsSvc, unsupportedAccounts{}, notificationStore, noopTasks{},
+		goalStore, snapshotStore, analyticsSvc, accountsSvc, notificationStore, noopTasks{},
 	)
 
 	steps := indexSteps(sc.Steps)
@@ -160,6 +176,12 @@ func run(ctx context.Context, client *firestore.Client, sc *scenario) error {
 		if step, ok := steps[key]; ok && len(step.Add) > 0 {
 			if err := seedTransactions(runCtx, transactionStore, sc.UserID, key, step.Add); err != nil {
 				return fmt.Errorf("seed transactions on %s: %w", key, err)
+			}
+		}
+
+		if step, ok := steps[key]; ok && len(step.SetBalances) > 0 {
+			if err := setBalances(runCtx, accountStore, sc.UserID, step.SetBalances); err != nil {
+				return fmt.Errorf("set balances on %s: %w", key, err)
 			}
 		}
 
@@ -271,7 +293,7 @@ func seedTransactions(ctx context.Context, txs txUpserter, uid, date string, add
 		}
 		batch = append(batch, models.Transaction{
 			TransactionID: uuid.NewString(),
-			BankID:        "sim-bank",
+			BankID:        simBankID,
 			AccountID:     a.AccountID,
 			Name:          a.Name,
 			AmountMinor:   amountMinor,
@@ -299,6 +321,44 @@ func seedBaselineTransactions(ctx context.Context, txs txUpserter, uid string, b
 	return nil
 }
 
+// seedAccounts writes the scenario's starting account balances under a single
+// synthetic bank. The bank doc is written raw (not via the bank store) so the sim
+// needs no KMS cipher for token encryption — balance enumeration only needs the
+// bank doc to exist. No-op for flow-based scenarios that define no accounts.
+func seedAccounts(ctx context.Context, client *firestore.Client, accounts accountUpserter, uid string, accts []scenarioAccount) error {
+	if len(accts) == 0 {
+		return nil
+	}
+	if _, err := client.Collection("users").Doc(uid).Collection("banks").Doc(simBankID).Set(ctx, map[string]any{"bankId": simBankID}); err != nil {
+		return fmt.Errorf("seed bank doc: %w", err)
+	}
+	balances := make(map[string]float64, len(accts))
+	for _, a := range accts {
+		balances[a.AccountID] = a.Balance
+	}
+	return setBalances(ctx, accounts, uid, balances)
+}
+
+// setBalances upserts account balances (accountId → absolute balance in major
+// units) under the synthetic bank. It overwrites each listed account doc, which
+// carries all a balance-family goal reads; unlisted accounts keep their balance.
+func setBalances(ctx context.Context, accounts accountUpserter, uid string, balances map[string]float64) error {
+	batch := make([]models.Account, 0, len(balances))
+	for id, major := range balances {
+		minor, err := helpers.ToMinorUnits(major, helpers.CurrencyUSD)
+		if err != nil {
+			return fmt.Errorf("balance for %s: %w", id, err)
+		}
+		m := minor
+		batch = append(batch, models.Account{
+			AccountID:           id,
+			BalanceCurrentMinor: &m,
+			Currency:            helpers.CurrencyUSD,
+		})
+	}
+	return accounts.UpsertBatch(ctx, uid, simBankID, batch)
+}
+
 // resetUser clears the sim user's goal-related subcollections so a rerun starts
 // from a blank slate.
 func resetUser(ctx context.Context, client *firestore.Client, uid string) error {
@@ -307,7 +367,19 @@ func resetUser(ctx context.Context, client *firestore.Client, uid string) error 
 			return err
 		}
 	}
-	return nil
+	// Banks nest an accounts subcollection, which deleting the bank doc alone
+	// leaves orphaned, so clear each bank's accounts before the banks themselves.
+	banks := client.Collection("users").Doc(uid).Collection("banks")
+	bankDocs, err := banks.Documents(ctx).GetAll()
+	if err != nil {
+		return err
+	}
+	for _, b := range bankDocs {
+		if err := deleteCollection(ctx, client, b.Ref.Collection("accounts")); err != nil {
+			return err
+		}
+	}
+	return deleteCollection(ctx, client, banks)
 }
 
 func deleteCollection(ctx context.Context, client *firestore.Client, coll *firestore.CollectionRef) error {
@@ -362,14 +434,4 @@ type noopTasks struct{}
 
 func (noopTasks) EnqueueNotificationDelivery(_ context.Context, _ dto.DeliverNotificationRequest) error {
 	return nil
-}
-
-// unsupportedAccounts satisfies the balance dependency for balance-family goals.
-// The transaction-driven simulator doesn't model account balances yet, so any
-// savings_target scenario fails loudly rather than silently reading a zero
-// balance. Flow-based scenarios never call it.
-type unsupportedAccounts struct{}
-
-func (unsupportedAccounts) GetTotalBalance(_ context.Context, _ string, _ *string) (int64, error) {
-	return 0, fmt.Errorf("balance-family goals are not supported by the simulator")
 }
