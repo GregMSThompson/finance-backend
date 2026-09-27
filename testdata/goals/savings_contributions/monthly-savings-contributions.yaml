@@ -1,0 +1,57 @@
+name: monthly-savings-contributions
+userId: sim-savings-contributions-user
+
+# A recurring monthly savings contributions goal: pay at least $500 into the
+# savings account. Contributions are GROSS transfers INTO the scoped account
+# (TRANSFER_IN), so:
+#   - withdrawals from the account (TRANSFER_OUT) don't reduce the number,
+#   - transfers into a DIFFERENT account don't count (scope),
+#   - income into the account doesn't count (wrong category).
+# Transfers in arrive with Plaid's negative sign; the evaluator reports the total
+# as a positive magnitude. The 2026-08-08 step seeds one of each excluded case to
+# prove none of them move the figure.
+goal:
+  goalId: g-savings-contributions
+  name: Pay into savings
+  type: savings_contributions
+  targetValue: 500
+  timeWindow: monthly
+  recurrence: recurring
+  createdAt: 2026-08-01
+  filters:
+    accountId: acc-savings
+
+replay:
+  from: 2026-08-01
+  to: 2026-08-31
+
+steps:
+  # First transfer into savings (inflow, negative amount): $100 contributed.
+  # Early in the month this clears the pace line ($500 × 5/31 ≈ $80.6), so on
+  # track.
+  - date: 2026-08-05
+    add:
+      - { name: Standing order, amount: -100, pfcPrimary: TRANSFER_IN, accountId: acc-savings }
+    expect: { currentValue: 100, percentComplete: 20, isOnTrack: true }
+
+  # Three rows that must NOT count, all on one day:
+  #   - a withdrawal from savings (gross, so ignored — this is not net saving),
+  #   - a transfer into a different account (out of scope),
+  #   - salary paid into savings (INCOME, not a contribution).
+  # Contributions stay at $100, now behind the pace line ($500 × 8/31 ≈ $129).
+  - date: 2026-08-08
+    add:
+      - { name: Rainy-day withdrawal, amount: 150, pfcPrimary: TRANSFER_OUT, accountId: acc-savings }
+      - { name: Buffer to checking, amount: -300, pfcPrimary: TRANSFER_IN, accountId: acc-checking }
+      - { name: Salary, amount: -1000, pfcPrimary: INCOME, accountId: acc-savings }
+    expect: { currentValue: 100, percentComplete: 20, isOnTrack: false }
+
+  # A big transfer late in the month: $100 + $500 = $600 contributed, over target.
+  - date: 2026-08-25
+    add:
+      - { name: Bonus transfer, amount: -500, pfcPrimary: TRANSFER_IN, accountId: acc-savings }
+    expect: { currentValue: 600, percentComplete: 120, isOnTrack: true }
+
+# Recurring goals never terminate — they reset next period.
+finalExpect:
+  status: active
