@@ -1,0 +1,64 @@
+name: oneoff-savings-target-completes
+userId: sim-savings-target-user
+
+# A one-off savings target: grow the savings balance by at least $2000 by the end
+# of August. Savings target is a BALANCE goal — it reads the account's current
+# balance, not a sum of transactions, and measures progress as the DELTA from the
+# balance frozen at creation (the $8000 seeded below). So:
+#   - progress can go DOWN if the balance falls (a withdrawal), unlike gross
+#     savings_contributions which only ever counts money paid in,
+#   - the figure is the point-in-time balance minus the $8000 baseline.
+# Balances are replayed with setBalances (absolute balance on the day it changes).
+goal:
+  goalId: g-savings-target
+  name: Build the buffer
+  type: savings_target
+  targetValue: 2000
+  timeWindow: fixed
+  recurrence: one_off
+  createdAt: 2026-08-01
+  endDate: 2026-08-31
+  filters:
+    accountId: acc-savings
+
+# Balance at creation — frozen as the baseline, so progress measures growth from
+# here.
+accounts:
+  - { accountId: acc-savings, balance: 8000 }
+
+# Replay past the end date so the terminal transition fires.
+replay:
+  from: 2026-08-01
+  to: 2026-09-02
+
+steps:
+  # Balance up to $8600: delta $600 saved. Early in the window this clears the
+  # pace line ($2000 × 6/31 ≈ $387), so on track.
+  - date: 2026-08-06
+    setBalances: { acc-savings: 8600 }
+    expect: { currentValue: 600, percentComplete: 30, isOnTrack: true }
+
+  # A withdrawal drops the balance to $8400: delta falls to $400. A balance goal
+  # measures the level, so progress goes backwards here — now behind pace
+  # ($2000 × 16/31 ≈ $1032).
+  - date: 2026-08-16
+    setBalances: { acc-savings: 8400 }
+    expect: { currentValue: 400, percentComplete: 20, isOnTrack: false }
+
+  # A big deposit takes the balance to $10300: delta $2300, past the $2000 target.
+  # Still active on the final stretch of the window.
+  - date: 2026-08-30
+    setBalances: { acc-savings: 10300 }
+    expect: { currentValue: 2300, percentComplete: 115, isOnTrack: true, status: active }
+
+  # First run past the end date: the balance still shows $2300 saved (>= $2000),
+  # so the goal resolves to completed and notifies once.
+  - date: 2026-09-01
+    expect: { currentValue: 2300, notified: true, status: completed }
+
+  # Now terminal, so it's no longer evaluated — no new snapshot this day.
+  - date: 2026-09-02
+    expect: { status: completed }
+
+finalExpect:
+  status: completed
