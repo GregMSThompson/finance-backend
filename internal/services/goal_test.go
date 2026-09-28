@@ -178,6 +178,18 @@ func validSavingsContributionsDef() dto.GoalDefinition {
 	}
 }
 
+func validPayDownDef() dto.GoalDefinition {
+	return dto.GoalDefinition{
+		Type:             models.GoalTypePayDown,
+		Name:             "Clear the card",
+		TargetValueMinor: 200000,
+		TimeWindow:       models.GoalWindowFixed,
+		Recurrence:       models.GoalRecurrenceOneOff,
+		EndDate:          "2026-12-31",
+		Filters:          models.GoalFilters{AccountID: "acc-card"},
+	}
+}
+
 func seedGoal(store *fakeGoalStore) *models.Goal {
 	g := &models.Goal{
 		GoalID:           "g1",
@@ -514,6 +526,66 @@ func TestGoalCreate_SavingsContributionsAllowsRecurring(t *testing.T) {
 	// savings_target, which rejects recurring).
 	if _, err := svc.Create(context.Background(), "uid1", "s", validSavingsContributionsDef()); err != nil {
 		t.Fatalf("a recurring savings contributions goal should be allowed, got %v", err)
+	}
+}
+
+func TestGoalCreate_PayDownFreezesBaselineOwed(t *testing.T) {
+	goals := newFakeGoalStore()
+	accounts := &fakeGoalAccounts{balance: 500000} // $5,000 owed on the card
+	svc := NewGoalService(goals, &fakeGoalSnapshotStore{}, &fakeJobs{}, &fakeTransactionsLister{}, &fakeEvalAnalytics{}, accounts)
+
+	g, err := svc.Create(context.Background(), "uid1", "s", validPayDownDef())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if g.BaselineValueMinor == nil || *g.BaselineValueMinor != 500000 {
+		t.Fatalf("expected baseline owed 500000 captured, got %v", g.BaselineValueMinor)
+	}
+	// The target stays the amount to pay off — it is not rewritten from the baseline.
+	if g.TargetValueMinor != 200000 {
+		t.Fatalf("expected target to remain 200000, got %d", g.TargetValueMinor)
+	}
+	if len(accounts.calls) != 1 || accounts.calls[0] == nil || *accounts.calls[0] != "acc-card" {
+		t.Fatalf("expected baseline scoped to acc-card, got %v", accounts.calls)
+	}
+}
+
+func TestGoalCreate_PayDownRejectsRecurring(t *testing.T) {
+	svc := NewGoalService(newFakeGoalStore(), &fakeGoalSnapshotStore{}, &fakeJobs{}, &fakeTransactionsLister{}, &fakeEvalAnalytics{}, &fakeGoalAccounts{})
+	def := validPayDownDef()
+	def.TimeWindow = models.GoalWindowMonthly
+	def.Recurrence = models.GoalRecurrenceRecurring
+	def.EndDate = ""
+	if _, err := svc.Create(context.Background(), "uid1", "s", def); !isValidationError(err) {
+		t.Fatalf("expected ValidationError for a recurring pay down goal, got %v", err)
+	}
+}
+
+func TestGoalCreate_PayDownRequiresAccount(t *testing.T) {
+	svc := NewGoalService(newFakeGoalStore(), &fakeGoalSnapshotStore{}, &fakeJobs{}, &fakeTransactionsLister{}, &fakeEvalAnalytics{}, &fakeGoalAccounts{})
+	def := validPayDownDef()
+	def.Filters = models.GoalFilters{}
+	if _, err := svc.Create(context.Background(), "uid1", "s", def); !isValidationError(err) {
+		t.Fatalf("expected ValidationError when accountId missing, got %v", err)
+	}
+}
+
+func TestGoalCreate_PayDownRejectsCategoryAndMerchant(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		filters models.GoalFilters
+	}{
+		{"category", models.GoalFilters{AccountID: "acc-card", PFCPrimary: "LOAN_PAYMENTS"}},
+		{"merchant", models.GoalFilters{AccountID: "acc-card", Merchant: "Chase"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			svc := NewGoalService(newFakeGoalStore(), &fakeGoalSnapshotStore{}, &fakeJobs{}, &fakeTransactionsLister{}, &fakeEvalAnalytics{}, &fakeGoalAccounts{})
+			def := validPayDownDef()
+			def.Filters = tc.filters
+			if _, err := svc.Create(context.Background(), "uid1", "s", def); !isValidationError(err) {
+				t.Fatalf("expected ValidationError for %s filter, got %v", tc.name, err)
+			}
+		})
 	}
 }
 

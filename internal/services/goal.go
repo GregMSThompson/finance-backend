@@ -372,6 +372,28 @@ func validateGoal(g *models.Goal) error {
 		if g.Filters.PFCPrimary != "" || g.Filters.Merchant != "" {
 			return errs.NewValidationError("a savings contributions goal can only be scoped by accountId, not category or merchant")
 		}
+	case models.GoalTypePayDown:
+		if g.TargetValueMinor <= 0 {
+			return errs.NewValidationError("targetValue must be greater than 0")
+		}
+		if g.ReductionPercent != nil {
+			return errs.NewValidationError("reductionPercent applies only to reduction goals")
+		}
+		// Measures reduction against a fixed starting balance, so a recurring reset
+		// would move the baseline — one-off only, same as a savings target.
+		if g.Recurrence == models.GoalRecurrenceRecurring {
+			return errs.NewValidationError("a pay down goal must be one-off")
+		}
+		// The account is required: summing balances across all accounts would net
+		// asset balances against the debt, which isn't a meaningful pay-down figure.
+		if g.Filters.AccountID == "" {
+			return errs.NewValidationError("a pay down goal must be scoped to an accountId")
+		}
+		// It tracks a debt balance, not spend, so category and merchant filters don't
+		// apply.
+		if g.Filters.PFCPrimary != "" || g.Filters.Merchant != "" {
+			return errs.NewValidationError("a pay down goal can only be scoped by accountId, not category or merchant")
+		}
 	default:
 		return errs.NewValidationError(fmt.Sprintf("unsupported goal type: %s", g.Type))
 	}

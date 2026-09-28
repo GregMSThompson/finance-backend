@@ -965,11 +965,12 @@ func toolSchemas() []dto.VertexTool {
 			Name: "create_goal",
 			Description: "Create a goal after the user has confirmed the details. " +
 				"Summarise the goal (target, period, category, alerts) and get explicit confirmation before calling this. " +
-				"Supported types: spending_limit (spend at most targetValue), reduction (spend reductionPercent less than the previous comparable period), net_savings (save at least targetValue — income minus spend across all accounts), income_target (receive at least targetValue in income), savings_target (grow savings by at least targetValue — measured as the increase in account balance since the goal was created), and savings_contributions (pay at least targetValue into an account — measured as gross transfers into it over the period). " +
-				"Provide targetValue (dollars, > 0) for spending_limit, net_savings, income_target, savings_target, and savings_contributions; provide reductionPercent instead for reduction — its target is computed from the previous period at creation and then stays fixed, even for a recurring goal. " +
+				"Supported types: spending_limit (spend at most targetValue), reduction (spend reductionPercent less than the previous comparable period), net_savings (save at least targetValue — income minus spend across all accounts), income_target (receive at least targetValue in income), savings_target (grow savings by at least targetValue — measured as the increase in account balance since the goal was created), savings_contributions (pay at least targetValue into an account — measured as gross transfers into it over the period), and pay_down (reduce a debt by at least targetValue — measured as the decrease in the account's balance owed since the goal was created). " +
+				"Provide targetValue (dollars, > 0) for spending_limit, net_savings, income_target, savings_target, savings_contributions, and pay_down; provide reductionPercent instead for reduction — its target is computed from the previous period at creation and then stays fixed, even for a recurring goal. " +
 				"net_savings and income_target are whole-finances figures and take no filters. " +
 				"savings_target must be one_off and can optionally be scoped to a single accountId (use list_accounts to find it); omit the account to track the balance across all accounts. It measures new saving, so a starting balance of $8,000 with a $2,000 savings_target completes when the balance reaches $10,000. " +
 				"savings_contributions must be scoped to a single accountId (use list_accounts) — it's the destination you pay into — and works well as a recurring goal (e.g. contribute $500 monthly). It counts money transferred in, ignoring withdrawals, so it measures the habit of paying in rather than whether the balance grew. " +
+				"pay_down must be one_off and scoped to a single accountId (the debt account, via list_accounts). Its targetValue is the amount to pay OFF (a reduction), not the balance to reach: a card owing $5,000 with a $2,000 pay_down completes when the balance reaches $3,000. If the user instead frames it as paying down TO a remaining balance (e.g. 'pay my card down to $3,000') or paying it off entirely, read the account's current balance with list_accounts and set targetValue to (current balance owed − the target remaining balance) — so 'down to $3,000' on a $5,000 card is targetValue 2000, and 'pay it off' is targetValue equal to the full current balance. Summarise the computed amount back to the user and confirm before creating. " +
 				"A recurring goal resets each period and must use a weekly or monthly window (no endDate). " +
 				"A one_off goal runs once; a fixed window requires an endDate (YYYY-MM-DD). " +
 				"If the call is rejected, explain what needs to change and try again.",
@@ -977,19 +978,19 @@ func toolSchemas() []dto.VertexTool {
 				Type: "object",
 				Properties: map[string]*dto.VertexSchema{
 					"name":             {Type: "string", Description: "Short user-facing name, e.g. 'Dining out budget'. Required."},
-					"type":             {Type: "string", Enum: []string{string(models.GoalTypeSpendingLimit), string(models.GoalTypeReduction), string(models.GoalTypeNetSavings), string(models.GoalTypeIncomeTarget), string(models.GoalTypeSavingsTarget), string(models.GoalTypeSavingsContributions)}, Description: "Goal type. Defaults to spending_limit."},
-					"targetValue":      {Type: "number", Description: "The target amount for the period, in dollars, greater than 0. Required for spending_limit (the limit), net_savings (the amount to save), income_target (the income floor), savings_target (the amount to grow the balance by), and savings_contributions (the amount to pay in). Omit for reduction."},
+					"type":             {Type: "string", Enum: []string{string(models.GoalTypeSpendingLimit), string(models.GoalTypeReduction), string(models.GoalTypeNetSavings), string(models.GoalTypeIncomeTarget), string(models.GoalTypeSavingsTarget), string(models.GoalTypeSavingsContributions), string(models.GoalTypePayDown)}, Description: "Goal type. Defaults to spending_limit."},
+					"targetValue":      {Type: "number", Description: "The target amount for the period, in dollars, greater than 0. Required for spending_limit (the limit), net_savings (the amount to save), income_target (the income floor), savings_target (the amount to grow the balance by), savings_contributions (the amount to pay in), and pay_down (the amount of debt to clear). Omit for reduction."},
 					"reductionPercent": {Type: "number", Description: "For reduction goals: how much less to spend than the previous comparable period, as a percent between 0 and 100 (e.g. 10 = 10% less). Required for reduction; omit for other types."},
 					"timeWindow":       {Type: "string", Enum: []string{"weekly", "monthly", "fixed"}, Description: "Period the target is measured over. Required."},
-					"recurrence":       {Type: "string", Enum: []string{"recurring", "one_off"}, Description: "recurring resets each period; one_off runs once. Required. savings_target must be one_off."},
+					"recurrence":       {Type: "string", Enum: []string{"recurring", "one_off"}, Description: "recurring resets each period; one_off runs once. Required. savings_target and pay_down must be one_off."},
 					"endDate":          {Type: "string", Description: "YYYY-MM-DD end date. Required when timeWindow is fixed; omit for weekly/monthly."},
 					"filters": {
 						Type:        "object",
-						Description: "Optional scope. For spending_limit and reduction: category, merchant, or account. For savings_target: accountId only (optional). For savings_contributions: accountId only (required). Omit to count everything. Not valid for net_savings or income_target.",
+						Description: "Optional scope. For spending_limit and reduction: category, merchant, or account. For savings_target: accountId only (optional). For savings_contributions and pay_down: accountId only (required). Omit to count everything. Not valid for net_savings or income_target.",
 						Properties: map[string]*dto.VertexSchema{
 							"pfcPrimary": {Type: "string", Enum: taxonomy.PFCPrimaryList, Description: "Only count this category. Spend goals only."},
 							"merchant":   {Type: "string", Description: "Only count this merchant (partial, case-insensitive). Spend goals only."},
-							"accountId":  {Type: "string", Description: "Only count this account. For savings_target it scopes the balance; for savings_contributions it's the required destination account."},
+							"accountId":  {Type: "string", Description: "Only count this account. For savings_target it scopes the balance; for savings_contributions it's the required destination account; for pay_down it's the required debt account."},
 						},
 					},
 					"alertThresholds": {

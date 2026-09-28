@@ -136,16 +136,24 @@ type incomeTargetStrategy struct {
 	analytics goalStrategyAnalytics
 }
 
+// balanceBaselineStrategy is the shared base for balance-family goals that freeze
+// the account balance at creation and measure a delta from it (savings target,
+// pay down). It supplies the at-least direction, the accounts dependency, and the
+// baseline capture; each concrete type provides only Measure — the sign of the
+// delta, which is the one thing that differs (growth vs reduction). Unlike the
+// flow strategies these read a point-in-time balance, not a sum over the window.
+type balanceBaselineStrategy struct {
+	atLeastStrategy
+	accounts goalStrategyAccounts
+}
+
 // savingsTargetStrategy measures growth in an account balance against a floor:
-// saving at least the target since creation. Unlike the flow strategies it reads
-// a point-in-time balance rather than summing transactions over the window, and
-// it freezes the starting balance as a baseline so progress reflects new saving
+// saving at least the target since creation. Progress reflects new saving
 // (current balance − baseline), not the absolute balance. It honors an optional
 // accountId filter (scope to one account), which the whole-finances at-least
 // types do not.
 type savingsTargetStrategy struct {
-	atLeastStrategy
-	accounts goalStrategyAccounts
+	balanceBaselineStrategy
 }
 
 // savingsContributionsStrategy measures money transferred into an account (gross
@@ -157,6 +165,16 @@ type savingsTargetStrategy struct {
 type savingsContributionsStrategy struct {
 	atLeastStrategy
 	analytics goalStrategyAnalytics
+}
+
+// payDownStrategy is savings target inverted: it measures how much a debt balance
+// has been reduced since creation (baseline owed − current owed) against a target
+// to pay off. Plaid stores a liability's balance as a positive amount owed, so a
+// shrinking balance means a growing amount paid off — an at-least figure. It
+// requires an accountId: summing across all accounts would mix asset and
+// liability balances, which isn't meaningful.
+type payDownStrategy struct {
+	balanceBaselineStrategy
 }
 
 func NewGoalEvaluatorService(
@@ -520,13 +538,15 @@ func goalPercentComplete(current, target int64) float64 {
 
 func newGoalStrategies(analytics goalStrategyAnalytics, accounts goalStrategyAccounts) map[models.GoalType]goalStrategy {
 	sl := spendingLimitStrategy{analytics: analytics}
+	bb := balanceBaselineStrategy{accounts: accounts}
 	return map[models.GoalType]goalStrategy{
 		models.GoalTypeSpendingLimit:        sl,
 		models.GoalTypeReduction:            reductionStrategy{spendingLimitStrategy: sl},
 		models.GoalTypeNetSavings:           netSavingsStrategy{analytics: analytics},
 		models.GoalTypeIncomeTarget:         incomeTargetStrategy{analytics: analytics},
-		models.GoalTypeSavingsTarget:        savingsTargetStrategy{accounts: accounts},
+		models.GoalTypeSavingsTarget:        savingsTargetStrategy{balanceBaselineStrategy: bb},
 		models.GoalTypeSavingsContributions: savingsContributionsStrategy{analytics: analytics},
+		models.GoalTypePayDown:              payDownStrategy{balanceBaselineStrategy: bb},
 	}
 }
 
@@ -646,6 +666,17 @@ func (atLeastStrategy) Score(g *models.Goal, w goalWindow, current int64) goalPr
 	}
 }
 
+// Initialize freezes the current scoped balance as the baseline, so progress
+// measures change since creation rather than the absolute balance.
+func (s balanceBaselineStrategy) Initialize(ctx context.Context, uid string, g *models.Goal) error {
+	balance, err := s.accounts.GetTotalBalance(ctx, uid, helpers.OptString(g.Filters.AccountID))
+	if err != nil {
+		return fmt.Errorf("baseline balance: %w", err)
+	}
+	g.BaselineValueMinor = &balance
+	return nil
+}
+
 // Measure returns net cash flow — income minus spend — for the window. Filters
 // are intentionally ignored: net savings is a whole-finances figure (scoping to
 // an account is a separate savings-contributions goal).
@@ -685,17 +716,6 @@ func (s incomeTargetStrategy) Measure(ctx context.Context, uid string, g *models
 	return income.TotalMinor, nil
 }
 
-// Initialize freezes the current balance as the baseline so progress measures new
-// saving since creation rather than the absolute balance the user already held.
-func (s savingsTargetStrategy) Initialize(ctx context.Context, uid string, g *models.Goal) error {
-	balance, err := s.accounts.GetTotalBalance(ctx, uid, helpers.OptString(g.Filters.AccountID))
-	if err != nil {
-		return fmt.Errorf("savings target baseline balance: %w", err)
-	}
-	g.BaselineValueMinor = &balance
-	return nil
-}
-
 // Measure returns how much the balance has grown since creation: the current
 // balance minus the frozen baseline. The window bounds pace scoring (via Score),
 // not the reading itself — a balance is point-in-time, not a sum over the window.
@@ -720,4 +740,15 @@ func (s savingsContributionsStrategy) Measure(ctx context.Context, uid string, g
 		return 0, fmt.Errorf("contributions total: %w", err)
 	}
 	return contributions.TotalMinor, nil
+}
+
+// Measure returns how much of the debt has been paid off since creation: the
+// baseline owed minus the current owed. A shrinking balance yields a growing
+// figure (an at-least amount); if the balance grows, this goes negative.
+func (s payDownStrategy) Measure(ctx context.Context, uid string, g *models.Goal, w goalWindow) (int64, error) {
+	owed, err := s.accounts.GetTotalBalance(ctx, uid, helpers.OptString(g.Filters.AccountID))
+	if err != nil {
+		return 0, fmt.Errorf("pay down balance: %w", err)
+	}
+	return helpers.Value(g.BaselineValueMinor) - owed, nil
 }

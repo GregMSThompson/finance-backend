@@ -695,6 +695,48 @@ func TestGoalEvaluator_SavingsContributionsMeasuresTransfersInScoped(t *testing.
 	}
 }
 
+func TestGoalEvaluator_PayDownMeasuresDebtReducedScoped(t *testing.T) {
+	// A one-off pay down: clear $2000 of a card that owed $5000 at creation. The
+	// balance now reads $3500 owed, so $1500 has been paid off = 75%. It's a
+	// balance goal scoped to the debt account, so it never queries spend/income.
+	baseline := int64(500000)
+	g := &models.Goal{
+		GoalID:             "g1",
+		Type:               models.GoalTypePayDown,
+		Name:               "Clear the card",
+		TargetValueMinor:   200000,
+		BaselineValueMinor: &baseline,
+		Currency:           helpers.CurrencyUSD,
+		TimeWindow:         models.GoalWindowFixed,
+		Recurrence:         models.GoalRecurrenceOneOff,
+		EndDate:            "2026-08-31",
+		CreatedAt:          time.Date(2026, time.August, 1, 0, 0, 0, 0, time.UTC),
+		Status:             models.GoalStatusActive,
+		Filters:            models.GoalFilters{AccountID: "acc-card"},
+	}
+
+	users := &fakeEvalUserStore{users: []*models.User{{UID: "u1"}}}
+	goals := &fakeGoalStore{goals: map[string]*models.Goal{"g1": g}}
+	snaps := &fakeGoalSnapshotStore{}
+	analytics := &fakeEvalAnalytics{}
+	accounts := &fakeGoalAccounts{balance: 350000} // $3,500 still owed
+	svc := NewGoalEvaluatorService(users, goals, snaps, analytics, accounts, &fakeNotificationStore{}, &fakeTasksClient{})
+
+	if err := svc.Run(evalContext()); err != nil {
+		t.Fatalf("Run error: %v", err)
+	}
+	s := snaps.created[0]
+	if s.CurrentValueMinor != 150000 || s.TargetValueMinor != 200000 || s.PercentComplete != 75 {
+		t.Fatalf("expected 150000 paid off at 75%% of 200000, got current=%d target=%d pct=%v", s.CurrentValueMinor, s.TargetValueMinor, s.PercentComplete)
+	}
+	if len(analytics.calls) != 0 || len(analytics.incomeCalls) != 0 {
+		t.Fatalf("a pay down goal must not query spend/income, got spend=%d income=%d", len(analytics.calls), len(analytics.incomeCalls))
+	}
+	if len(accounts.calls) != 1 || accounts.calls[0] == nil || *accounts.calls[0] != "acc-card" {
+		t.Fatalf("expected the balance read scoped to acc-card, got %v", accounts.calls)
+	}
+}
+
 func TestGoalEvaluator_OneOffNotYetEndedDoesNotTerminate(t *testing.T) {
 	// EndDate is in the future, so the goal stays active — no terminal transition.
 	goals := &fakeGoalStore{goals: map[string]*models.Goal{"g1": oneOffFixedGoal("g1", 30000, "2026-07-01", "2026-12-31")}}

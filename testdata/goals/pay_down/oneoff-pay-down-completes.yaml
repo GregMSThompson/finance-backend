@@ -1,0 +1,63 @@
+name: oneoff-pay-down-completes
+userId: sim-pay-down-user
+
+# A one-off pay down: clear at least $2000 of a credit card by the end of August.
+# Pay down is a BALANCE goal on a debt account — Plaid stores a liability's
+# balance as a positive amount owed, so paying it off makes the balance FALL. It
+# measures the DELTA from the balance frozen at creation ($5000 owed below):
+# progress = baseline owed − current owed = amount paid off. So a shrinking
+# balance means growing progress; a new charge (balance rising) would push it
+# back down. Balances are replayed with setBalances (absolute balance owed).
+goal:
+  goalId: g-pay-down
+  name: Clear the card
+  type: pay_down
+  targetValue: 2000
+  timeWindow: fixed
+  recurrence: one_off
+  createdAt: 2026-08-01
+  endDate: 2026-08-31
+  filters:
+    accountId: acc-card
+
+# Balance owed at creation — frozen as the baseline, so progress measures how much
+# of it gets paid off.
+accounts:
+  - { accountId: acc-card, balance: 5000 }
+
+# Replay past the end date so the terminal transition fires.
+replay:
+  from: 2026-08-01
+  to: 2026-09-02
+
+steps:
+  # A payment brings the balance down to $4400 owed: $600 paid off. Early in the
+  # window this clears the pace line ($2000 × 6/31 ≈ $387), so on track.
+  - date: 2026-08-06
+    setBalances: { acc-card: 4400 }
+    expect: { currentValue: 600, percentComplete: 30, isOnTrack: true }
+
+  # A new charge pushes the balance back up to $4700 owed: paid-off falls to $300.
+  # A balance goal measures the level, so a fresh charge sets progress back — now
+  # behind pace ($2000 × 16/31 ≈ $1032).
+  - date: 2026-08-16
+    setBalances: { acc-card: 4700 }
+    expect: { currentValue: 300, percentComplete: 15, isOnTrack: false }
+
+  # A big payment drops the balance to $2800 owed: $2200 paid off, past the $2000
+  # target. Still active on the final stretch of the window.
+  - date: 2026-08-30
+    setBalances: { acc-card: 2800 }
+    expect: { currentValue: 2200, percentComplete: 110, isOnTrack: true, status: active }
+
+  # First run past the end date: $2200 paid off (>= $2000), so the goal resolves to
+  # completed and notifies once.
+  - date: 2026-09-01
+    expect: { currentValue: 2200, notified: true, status: completed }
+
+  # Now terminal, so it's no longer evaluated — no new snapshot this day.
+  - date: 2026-09-02
+    expect: { status: completed }
+
+finalExpect:
+  status: completed

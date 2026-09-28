@@ -17,6 +17,7 @@ const (
 	GoalTypeIncomeTarget         GoalType = "income_target"
 	GoalTypeSavingsTarget        GoalType = "savings_target"
 	GoalTypeSavingsContributions GoalType = "savings_contributions"
+	GoalTypePayDown              GoalType = "pay_down"
 )
 
 // GoalTimeWindow is the period a goal is measured over.
