@@ -12,11 +12,18 @@ import (
 	"github.com/GregMSThompson/finance-backend/internal/errs"
 	"github.com/GregMSThompson/finance-backend/internal/models"
 	"github.com/GregMSThompson/finance-backend/internal/taxonomy"
+	"github.com/GregMSThompson/finance-backend/pkg/clock"
 	"github.com/GregMSThompson/finance-backend/pkg/helpers"
 )
 
+// daysPerMonthApprox converts a day span to a fractional month count. It's an
+// average (365.25 / 12) used only to turn "how much history do we have" into
+// months for the average-monthly-spend denominator, not for any exact date math.
+const daysPerMonthApprox = 30.4375
+
 type transactionAnalyticsStore interface {
 	Query(ctx context.Context, uid string, q dto.TransactionQuery, handle func(*models.Transaction) error) error
+	EarliestDate(ctx context.Context, uid string) (date string, found bool, err error)
 }
 
 type analyticsService struct {
@@ -142,6 +149,54 @@ func (s *analyticsService) sumInflowCategory(ctx context.Context, uid, category 
 		return 0, "", err
 	}
 	return -signed, currency, nil
+}
+
+// GetAverageMonthlySpend returns average monthly spend over the available history
+// within the last lookbackMonths, as of the context clock. It bounds the window at
+// the earliest transaction so the average divides by the months of data actually
+// present, not the full lookback — a user with two months of history gets
+// spend ÷ 2, not ÷ lookback. With no transactions it returns a zero result with
+// MonthsOfData 0, letting the caller decide whether there's enough history to use.
+func (s *analyticsService) GetAverageMonthlySpend(ctx context.Context, uid string, lookbackMonths int) (dto.AnalyticsAverageMonthlySpendResult, error) {
+	now := clock.Now(ctx)
+	windowStart := now.AddDate(0, -lookbackMonths, 0)
+
+	earliestStr, ok, err := s.txs.EarliestDate(ctx, uid)
+	if err != nil {
+		return dto.AnalyticsAverageMonthlySpendResult{}, err
+	}
+	if !ok {
+		return dto.AnalyticsAverageMonthlySpendResult{}, nil // no history
+	}
+	earliest, err := helpers.ParseDate(earliestStr)
+	if err != nil {
+		return dto.AnalyticsAverageMonthlySpendResult{}, err
+	}
+	if earliest.After(windowStart) {
+		windowStart = earliest
+	}
+
+	spend, err := s.GetSpendTotal(ctx, uid, dto.AnalyticsSpendTotalArgs{
+		Pending:  helpers.Ptr(false),
+		DateFrom: helpers.Ptr(helpers.FormatDate(windowStart)),
+		DateTo:   helpers.Ptr(helpers.FormatDate(now)),
+	})
+	if err != nil {
+		return dto.AnalyticsAverageMonthlySpendResult{}, err
+	}
+
+	monthsOfData := now.Sub(windowStart).Hours() / 24 / daysPerMonthApprox
+	if monthsOfData <= 0 {
+		return dto.AnalyticsAverageMonthlySpendResult{}, nil
+	}
+
+	return dto.AnalyticsAverageMonthlySpendResult{
+		AverageMinor: int64(math.Round(float64(spend.TotalMinor) / monthsOfData)),
+		MonthsOfData: monthsOfData,
+		Currency:     spend.Currency,
+		From:         helpers.FormatDate(windowStart),
+		To:           helpers.FormatDate(now),
+	}, nil
 }
 
 func (s *analyticsService) GetSpendBreakdown(ctx context.Context, uid string, args dto.AnalyticsSpendBreakdownArgs) (dto.AnalyticsSpendBreakdownResult, error) {

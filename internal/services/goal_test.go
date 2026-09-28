@@ -190,6 +190,17 @@ func validPayDownDef() dto.GoalDefinition {
 	}
 }
 
+func validEmergencyFundDef() dto.GoalDefinition {
+	return dto.GoalDefinition{
+		Type:             models.GoalTypeEmergencyFund,
+		Name:             "3 months buffer",
+		MonthsOfExpenses: helpers.Ptr(3.0),
+		TimeWindow:       models.GoalWindowUntilReached,
+		Recurrence:       models.GoalRecurrenceOneOff,
+		Filters:          models.GoalFilters{AccountID: "acc-savings"},
+	}
+}
+
 func seedGoal(store *fakeGoalStore) *models.Goal {
 	g := &models.Goal{
 		GoalID:           "g1",
@@ -584,6 +595,61 @@ func TestGoalCreate_PayDownRejectsCategoryAndMerchant(t *testing.T) {
 			def.Filters = tc.filters
 			if _, err := svc.Create(context.Background(), "uid1", "s", def); !isValidationError(err) {
 				t.Fatalf("expected ValidationError for %s filter, got %v", tc.name, err)
+			}
+		})
+	}
+}
+
+func TestGoalCreate_EmergencyFundDerivesAndFreezesTarget(t *testing.T) {
+	goals := newFakeGoalStore()
+	// Average monthly spend $2,000 over 3 months of data → 3-month target = $6,000.
+	analytics := &fakeEvalAnalytics{avgSpendResult: dto.AnalyticsAverageMonthlySpendResult{AverageMinor: 200000, MonthsOfData: 3}}
+	svc := NewGoalService(goals, &fakeGoalSnapshotStore{}, &fakeJobs{}, &fakeTransactionsLister{}, analytics, &fakeGoalAccounts{})
+
+	g, err := svc.Create(context.Background(), "uid1", "s", validEmergencyFundDef())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if g.TargetValueMinor != 600000 {
+		t.Fatalf("expected derived target 600000 (200000 × 3), got %d", g.TargetValueMinor)
+	}
+	if analytics.avgSpendCalls != 1 {
+		t.Fatalf("expected one average-monthly-spend query, got %d", analytics.avgSpendCalls)
+	}
+}
+
+func TestGoalCreate_EmergencyFundRejectsThinHistory(t *testing.T) {
+	// Only half a month of data — not enough to estimate expenses from.
+	analytics := &fakeEvalAnalytics{avgSpendResult: dto.AnalyticsAverageMonthlySpendResult{AverageMinor: 200000, MonthsOfData: 0.5}}
+	svc := NewGoalService(newFakeGoalStore(), &fakeGoalSnapshotStore{}, &fakeJobs{}, &fakeTransactionsLister{}, analytics, &fakeGoalAccounts{})
+
+	if _, err := svc.Create(context.Background(), "uid1", "s", validEmergencyFundDef()); !isValidationError(err) {
+		t.Fatalf("expected ValidationError for thin history, got %v", err)
+	}
+}
+
+func TestGoalCreate_EmergencyFundValidationRules(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		mutate func(*dto.GoalDefinition)
+	}{
+		{"missing monthsOfExpenses", func(d *dto.GoalDefinition) { d.MonthsOfExpenses = nil }},
+		{"explicit target", func(d *dto.GoalDefinition) { d.TargetValueMinor = 500000 }},
+		{"missing account", func(d *dto.GoalDefinition) { d.Filters = models.GoalFilters{} }},
+		{"category filter", func(d *dto.GoalDefinition) { d.Filters.PFCPrimary = "FOOD_AND_DRINK" }},
+		{"wrong window", func(d *dto.GoalDefinition) { d.TimeWindow = models.GoalWindowMonthly }},
+		{"recurring", func(d *dto.GoalDefinition) {
+			d.Recurrence = models.GoalRecurrenceRecurring
+			d.TimeWindow = models.GoalWindowMonthly
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			analytics := &fakeEvalAnalytics{avgSpendResult: dto.AnalyticsAverageMonthlySpendResult{AverageMinor: 200000, MonthsOfData: 3}}
+			svc := NewGoalService(newFakeGoalStore(), &fakeGoalSnapshotStore{}, &fakeJobs{}, &fakeTransactionsLister{}, analytics, &fakeGoalAccounts{})
+			def := validEmergencyFundDef()
+			tc.mutate(&def)
+			if _, err := svc.Create(context.Background(), "uid1", "s", def); !isValidationError(err) {
+				t.Fatalf("expected ValidationError for %s, got %v", tc.name, err)
 			}
 		})
 	}

@@ -40,6 +40,7 @@ type scenarioGoal struct {
 	Type             string          `yaml:"type"`
 	TargetValue      float64         `yaml:"targetValue"`
 	ReductionPercent *float64        `yaml:"reductionPercent"`
+	MonthsOfExpenses *float64        `yaml:"monthsOfExpenses"`
 	TimeWindow       string          `yaml:"timeWindow"`
 	Recurrence       string          `yaml:"recurrence"`
 	CreatedAt        string          `yaml:"createdAt"`
@@ -108,6 +109,7 @@ func (sc *scenario) buildGoalDefinition() (dto.GoalDefinition, error) {
 		Type:             models.GoalType(sc.Goal.Type),
 		Name:             sc.Goal.Name,
 		ReductionPercent: sc.Goal.ReductionPercent,
+		MonthsOfExpenses: sc.Goal.MonthsOfExpenses,
 		TimeWindow:       models.GoalTimeWindow(sc.Goal.TimeWindow),
 		EndDate:          sc.Goal.EndDate,
 		Recurrence:       models.GoalRecurrence(sc.Goal.Recurrence),
@@ -120,10 +122,12 @@ func (sc *scenario) buildGoalDefinition() (dto.GoalDefinition, error) {
 			ProgressPercent: sc.Goal.AlertThresholds.ProgressPercent,
 		},
 	}
-	// Every type except reduction carries an explicit target; reduction derives
-	// its own from the baseline at creation. Scenario YAML uses major units for
-	// readability, so convert to the minor units the model stores.
-	if def.Type != models.GoalTypeReduction {
+	// Most types carry an explicit target; reduction and emergency_fund instead
+	// derive their target at creation (from a prior-period baseline / average spend),
+	// so they take no YAML target. Scenario YAML uses major units for readability,
+	// so convert to the minor units the model stores.
+	derivesTarget := def.Type == models.GoalTypeReduction || def.Type == models.GoalTypeEmergencyFund
+	if !derivesTarget {
 		targetMinor, err := helpers.ToMinorUnits(sc.Goal.TargetValue, helpers.CurrencyUSD)
 		if err != nil {
 			return dto.GoalDefinition{}, fmt.Errorf("goal.targetValue: %w", err)

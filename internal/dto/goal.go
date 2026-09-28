@@ -24,6 +24,10 @@ type GoalDefinition struct {
 	// baseline period) and ignored otherwise. The concrete TargetValueMinor is
 	// derived from the measured baseline at creation, so callers leave it zero.
 	ReductionPercent *float64 `json:"reductionPercent,omitempty"`
+	// MonthsOfExpenses is required for emergency_fund goals (how many months of
+	// expenses to save) and ignored otherwise. The concrete TargetValueMinor is
+	// derived from average monthly spend at creation, so callers leave it zero.
+	MonthsOfExpenses *float64 `json:"monthsOfExpenses,omitempty"`
 }
 
 // GoalUpdate is a partial update to an existing goal — nil fields are left

@@ -56,6 +56,19 @@ type AnalyticsContributionsTotalResult struct {
 	To         string `json:"to,omitempty"`
 }
 
+// AnalyticsAverageMonthlySpendResult reports average monthly spend over the
+// available history within the requested lookback. MonthsOfData is how many months
+// of actual history the average is based on (bounded by the lookback and the
+// earliest transaction), so callers can reject a figure derived from too little
+// history. AverageMinor is 0 when there is no history (MonthsOfData 0).
+type AnalyticsAverageMonthlySpendResult struct {
+	AverageMinor int64   `json:"averageMinor"`
+	MonthsOfData float64 `json:"monthsOfData"`
+	Currency     string  `json:"currency"`
+	From         string  `json:"from,omitempty"`
+	To           string  `json:"to,omitempty"`
+}
+
 type AnalyticsSpendBreakdownArgs struct {
 	Pending    *bool
 	PFCPrimary *string

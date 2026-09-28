@@ -1,0 +1,56 @@
+name: emergency-fund-completes
+userId: sim-emergency-fund-user
+
+# An emergency fund: save 3 months of expenses. The dollar target is DERIVED at
+# creation from average monthly spend over the last 3 months (the baseline
+# transactions below total ~$3,000 across May–Jul, so the frozen target is
+# ~$2,977 — roughly 3 × $1,000/mo). It's a balance goal on the savings account,
+# measured as the ABSOLUTE balance (an existing buffer counts), and uses the
+# until_reached window: no deadline, it completes the moment the balance reaches
+# the target and never fails. Balances are replayed with setBalances.
+goal:
+  goalId: g-emergency-fund
+  name: Emergency fund
+  type: emergency_fund
+  monthsOfExpenses: 3
+  timeWindow: until_reached
+  recurrence: one_off
+  createdAt: 2026-08-01
+  filters:
+    accountId: acc-savings
+
+# ~$1,000/month of spend over the 3 months before creation, so average monthly
+# spend ≈ $1,000 and the derived 3-month target ≈ $3,000. The earliest of these
+# also sets how much history is available (well over the 1-month minimum).
+baseline:
+  - { name: Groceries, amount: 1000, pfcPrimary: FOOD_AND_DRINK, date: 2026-05-01 }
+  - { name: Sundries, amount: 1000, pfcPrimary: GENERAL_MERCHANDISE, date: 2026-06-01 }
+  - { name: Utilities, amount: 1000, pfcPrimary: RENT_AND_UTILITIES, date: 2026-07-01 }
+
+# A small existing buffer in the savings account at creation.
+accounts:
+  - { accountId: acc-savings, balance: 500 }
+
+replay:
+  from: 2026-08-01
+  to: 2026-08-21
+
+steps:
+  # Balance climbs to $2,000 — real progress but still under the ~$3,000 target, so
+  # the goal stays active. No deadline, so it's reported on track regardless.
+  - date: 2026-08-05
+    setBalances: { acc-savings: 2000 }
+    expect: { currentValue: 2000, isOnTrack: true, status: active }
+
+  # Balance reaches $3,500, clearing the derived target: the goal completes the
+  # same day (no waiting for a window to close) and notifies once.
+  - date: 2026-08-20
+    setBalances: { acc-savings: 3500 }
+    expect: { currentValue: 3500, notified: true, status: completed }
+
+  # Now terminal, so it's no longer evaluated — no new snapshot this day.
+  - date: 2026-08-21
+    expect: { status: completed }
+
+finalExpect:
+  status: completed

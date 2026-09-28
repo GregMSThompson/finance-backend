@@ -69,6 +69,7 @@ func (s *goalService) Create(ctx context.Context, uid, sessionID string, def dto
 		Filters:          def.Filters,
 		AlertThresholds:  def.AlertThresholds,
 		ReductionPercent: def.ReductionPercent,
+		MonthsOfExpenses: def.MonthsOfExpenses,
 		Status:           models.GoalStatusActive,
 		ConversationID:   sessionID,
 	}
@@ -394,6 +395,31 @@ func validateGoal(g *models.Goal) error {
 		if g.Filters.PFCPrimary != "" || g.Filters.Merchant != "" {
 			return errs.NewValidationError("a pay down goal can only be scoped by accountId, not category or merchant")
 		}
+	case models.GoalTypeEmergencyFund:
+		if g.MonthsOfExpenses == nil || *g.MonthsOfExpenses <= 0 {
+			return errs.NewValidationError("monthsOfExpenses must be greater than 0 for an emergency fund goal")
+		}
+		if g.ReductionPercent != nil {
+			return errs.NewValidationError("reductionPercent applies only to reduction goals")
+		}
+		// The target is derived from spend at creation, so callers don't set one.
+		if g.TargetValueMinor != 0 {
+			return errs.NewValidationError("targetValue is derived for an emergency fund goal; provide monthsOfExpenses instead")
+		}
+		// Open-ended, event-driven completion — it runs until the target is reached,
+		// so it must use the until_reached window (and therefore one-off).
+		if g.TimeWindow != models.GoalWindowUntilReached {
+			return errs.NewValidationError("an emergency fund goal must use the until_reached window")
+		}
+		// The balance is read from the account holding the fund, so it's required.
+		if g.Filters.AccountID == "" {
+			return errs.NewValidationError("an emergency fund goal must be scoped to an accountId")
+		}
+		// It tracks an account balance, not spend, so category and merchant filters
+		// don't apply.
+		if g.Filters.PFCPrimary != "" || g.Filters.Merchant != "" {
+			return errs.NewValidationError("an emergency fund goal can only be scoped by accountId, not category or merchant")
+		}
 	default:
 		return errs.NewValidationError(fmt.Sprintf("unsupported goal type: %s", g.Type))
 	}
@@ -423,6 +449,14 @@ func validateGoal(g *models.Goal) error {
 	case models.GoalWindowWeekly, models.GoalWindowMonthly:
 		if g.EndDate != "" {
 			return errs.NewValidationError("weekly and monthly windows must not set an endDate")
+		}
+	case models.GoalWindowUntilReached:
+		// Open-ended: no deadline, so no endDate. It runs once until reached.
+		if g.EndDate != "" {
+			return errs.NewValidationError("an until_reached window must not set an endDate")
+		}
+		if g.Recurrence != models.GoalRecurrenceOneOff {
+			return errs.NewValidationError("an until_reached window must be one-off")
 		}
 	default:
 		return errs.NewValidationError(fmt.Sprintf("invalid timeWindow: %s", g.TimeWindow))

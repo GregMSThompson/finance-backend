@@ -16,6 +16,15 @@ import (
 	"github.com/GregMSThompson/finance-backend/pkg/logger"
 )
 
+// emergencyFundLookbackMonths is the smoothing window over which an emergency
+// fund derives average monthly spend at creation. emergencyFundMinMonthsData is
+// the minimum history required to trust that average — below it, creation is
+// rejected rather than freezing a target from too little data.
+const (
+	emergencyFundLookbackMonths = 3
+	emergencyFundMinMonthsData  = 1.0
+)
+
 type goalEvaluatorUserStore interface {
 	List(ctx context.Context) ([]*models.User, error)
 }
@@ -36,6 +45,7 @@ type goalStrategyAnalytics interface {
 	GetSpendTotal(ctx context.Context, uid string, args dto.AnalyticsSpendTotalArgs) (dto.AnalyticsSpendTotalResult, error)
 	GetIncomeTotal(ctx context.Context, uid string, args dto.AnalyticsIncomeTotalArgs) (dto.AnalyticsIncomeTotalResult, error)
 	GetContributionsTotal(ctx context.Context, uid string, args dto.AnalyticsContributionsTotalArgs) (dto.AnalyticsContributionsTotalResult, error)
+	GetAverageMonthlySpend(ctx context.Context, uid string, lookbackMonths int) (dto.AnalyticsAverageMonthlySpendResult, error)
 }
 
 // goalStrategyAccounts is the balance measurement a balance-family strategy needs
@@ -177,6 +187,19 @@ type payDownStrategy struct {
 	balanceBaselineStrategy
 }
 
+// emergencyFundStrategy measures the current balance of a designated account
+// against a target derived at creation as (average monthly spend × months of
+// expenses). Unlike the balance-baseline goals it measures the absolute balance,
+// not a delta from creation — you want credit for savings you already had — so it
+// doesn't use balanceBaselineStrategy. It needs both analytics (to derive the
+// target from spend) and accounts (to read the balance). It pairs with the
+// until_reached window: no deadline, completes when the balance reaches the target.
+type emergencyFundStrategy struct {
+	atLeastStrategy
+	analytics goalStrategyAnalytics
+	accounts  goalStrategyAccounts
+}
+
 func NewGoalEvaluatorService(
 	users goalEvaluatorUserStore,
 	goals goalEvaluatorGoalStore,
@@ -314,6 +337,29 @@ func (s *goalEvaluatorService) evaluateGoal(ctx context.Context, uid string, goa
 	}
 
 	eval := &goalEvaluation{snapshot: snap}
+
+	// until_reached goals complete the moment the target is reached, on any run, and
+	// never fail — there's no deadline to miss. This is checked before the
+	// window-close path below, which doesn't apply (the window never closes).
+	if goal.TimeWindow == models.GoalWindowUntilReached {
+		if prog.succeeded {
+			eval.newStatus = models.GoalStatusCompleted
+			body, err := strat.TerminalText(goal, snap, eval.newStatus)
+			if err != nil {
+				return nil, err
+			}
+			snap.AIInsight = body
+			snap.NotificationSent = true
+			eval.notification = buildGoalNotification(goal, body, now)
+			return eval, nil
+		}
+		notification, err := s.maybeNotify(ctx, uid, goal, snap, start, strat)
+		if err != nil {
+			return nil, err
+		}
+		eval.notification = notification
+		return eval, nil
+	}
 
 	// Terminal transition: a one-off whose window has closed resolves for good.
 	// Recurring goals reset each period and never terminate here. The final
@@ -547,6 +593,7 @@ func newGoalStrategies(analytics goalStrategyAnalytics, accounts goalStrategyAcc
 		models.GoalTypeSavingsTarget:        savingsTargetStrategy{balanceBaselineStrategy: bb},
 		models.GoalTypeSavingsContributions: savingsContributionsStrategy{analytics: analytics},
 		models.GoalTypePayDown:              payDownStrategy{balanceBaselineStrategy: bb},
+		models.GoalTypeEmergencyFund:        emergencyFundStrategy{analytics: analytics, accounts: accounts},
 	}
 }
 
@@ -751,4 +798,44 @@ func (s payDownStrategy) Measure(ctx context.Context, uid string, g *models.Goal
 		return 0, fmt.Errorf("pay down balance: %w", err)
 	}
 	return helpers.Value(g.BaselineValueMinor) - owed, nil
+}
+
+// Initialize derives and freezes the target: average monthly spend (all accounts,
+// over the recent lookback) × the requested months of expenses. It rejects
+// creation when there's too little transaction history to estimate spend, since a
+// target frozen from a few days of data would be meaningless. The spend baseline
+// is deliberately whole-finances (unscoped) — expenses come from spending
+// accounts, not the emergency-fund account the balance is later read from.
+func (s emergencyFundStrategy) Initialize(ctx context.Context, uid string, g *models.Goal) error {
+	avg, err := s.analytics.GetAverageMonthlySpend(ctx, uid, emergencyFundLookbackMonths)
+	if err != nil {
+		return fmt.Errorf("emergency fund baseline spend: %w", err)
+	}
+	if avg.MonthsOfData < emergencyFundMinMonthsData {
+		return errs.NewValidationError("not enough transaction history yet to estimate your monthly expenses for an emergency fund")
+	}
+	g.TargetValueMinor = int64(math.Round(float64(avg.AverageMinor) * *g.MonthsOfExpenses))
+	return nil
+}
+
+// Measure returns the current balance of the scoped account — the absolute amount
+// saved, not a delta from creation, so an existing buffer counts toward the goal.
+func (s emergencyFundStrategy) Measure(ctx context.Context, uid string, g *models.Goal, w goalWindow) (int64, error) {
+	balance, err := s.accounts.GetTotalBalance(ctx, uid, helpers.OptString(g.Filters.AccountID))
+	if err != nil {
+		return 0, fmt.Errorf("emergency fund balance: %w", err)
+	}
+	return balance, nil
+}
+
+// Score reports progress toward the target with no pace judgment: an until_reached
+// goal has no deadline, so "behind schedule" is meaningless and isOnTrack is always
+// true. succeeded drives the complete-when-reached transition in the evaluator.
+func (s emergencyFundStrategy) Score(g *models.Goal, w goalWindow, current int64) goalProgress {
+	target := g.TargetValueMinor
+	return goalProgress{
+		percent:   goalPercentComplete(current, target),
+		isOnTrack: true,
+		succeeded: current >= target,
+	}
 }

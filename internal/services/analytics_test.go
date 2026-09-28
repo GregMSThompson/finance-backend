@@ -3,12 +3,15 @@ package services
 import (
 	"context"
 	"errors"
+	"math"
 	"testing"
+	"time"
 
 	"github.com/GregMSThompson/finance-backend/internal/dto"
 	"github.com/GregMSThompson/finance-backend/internal/errs"
 	"github.com/GregMSThompson/finance-backend/internal/models"
 	"github.com/GregMSThompson/finance-backend/internal/taxonomy"
+	"github.com/GregMSThompson/finance-backend/pkg/clock"
 	"github.com/GregMSThompson/finance-backend/pkg/helpers"
 )
 
@@ -28,6 +31,25 @@ func (f *fakeAnalyticsStore) Query(ctx context.Context, uid string, q dto.Transa
 		}
 	}
 	return f.err
+}
+
+// EarliestDate returns the oldest transaction date, ignoring rows without a date.
+// found is false when there are no dated transactions. Dates are YYYY-MM-DD, so
+// lexical comparison is chronological.
+func (f *fakeAnalyticsStore) EarliestDate(ctx context.Context, uid string) (string, bool, error) {
+	earliest := ""
+	for _, tx := range f.txs {
+		if tx.Date == "" {
+			continue
+		}
+		if earliest == "" || tx.Date < earliest {
+			earliest = tx.Date
+		}
+	}
+	if earliest == "" {
+		return "", false, nil
+	}
+	return earliest, true, nil
 }
 
 func TestAnalyticsSpendTotal(t *testing.T) {
@@ -205,6 +227,12 @@ func (f *funcAnalyticsStore) Query(_ context.Context, _ string, q dto.Transactio
 		}
 	}
 	return nil
+}
+
+// EarliestDate isn't exercised by the period-comparison tests that use this fake;
+// it exists only to satisfy the store interface.
+func (f *funcAnalyticsStore) EarliestDate(_ context.Context, _ string) (string, bool, error) {
+	return "", false, nil
 }
 
 func TestGetPeriodComparisonBasicTotal(t *testing.T) {
@@ -1121,6 +1149,69 @@ func TestGetContributionsTotalNormalizesSignAndScopes(t *testing.T) {
 	if helpers.Value(store.lastQuery.AccountID) != "acc-savings" {
 		t.Fatalf("expected the query scoped to acc-savings, got %v", store.lastQuery.AccountID)
 	}
+}
+
+func TestGetAverageMonthlySpend(t *testing.T) {
+	now := time.Date(2026, time.August, 31, 12, 0, 0, 0, time.UTC)
+	ctx := clock.WithClock(context.Background(), func() time.Time { return now })
+
+	t.Run("bounds window at the lookback when history is long", func(t *testing.T) {
+		store := &fakeAnalyticsStore{txs: []*models.Transaction{
+			// Earliest tx predates the 3-month lookback, so the window starts at the
+			// lookback edge (2026-05-31), not here. Income so it doesn't add to spend.
+			{Date: "2026-01-01", AmountMinor: -900000, Currency: "USD", PFCPrimary: "INCOME"},
+			{Date: "2026-07-01", AmountMinor: 300000, Currency: "USD", PFCPrimary: "FOOD_AND_DRINK"},
+		}}
+		svc := NewAnalyticsService(store)
+
+		got, err := svc.GetAverageMonthlySpend(ctx, "user", 3)
+		if err != nil {
+			t.Fatalf("GetAverageMonthlySpend error: %v", err)
+		}
+		if got.From != "2026-05-31" {
+			t.Fatalf("expected window bounded to the lookback start 2026-05-31, got %q", got.From)
+		}
+		// ~3 months of data (92 days / 30.4375 ≈ 3.02).
+		if got.MonthsOfData < 2.9 || got.MonthsOfData > 3.1 {
+			t.Fatalf("expected ~3 months of data, got %v", got.MonthsOfData)
+		}
+		// avg = total spend ÷ months of data.
+		want := int64(math.Round(300000 / got.MonthsOfData))
+		if got.AverageMinor != want {
+			t.Fatalf("average = %d, want %d (300000 ÷ %v)", got.AverageMinor, want, got.MonthsOfData)
+		}
+	})
+
+	t.Run("bounds window at the earliest tx when history is short", func(t *testing.T) {
+		store := &fakeAnalyticsStore{txs: []*models.Transaction{
+			{Date: "2026-08-20", AmountMinor: 50000, Currency: "USD", PFCPrimary: "FOOD_AND_DRINK"},
+		}}
+		svc := NewAnalyticsService(store)
+
+		got, err := svc.GetAverageMonthlySpend(ctx, "user", 3)
+		if err != nil {
+			t.Fatalf("GetAverageMonthlySpend error: %v", err)
+		}
+		if got.From != "2026-08-20" {
+			t.Fatalf("expected window bounded to the earliest tx 2026-08-20, got %q", got.From)
+		}
+		// Only ~11 days of history — well under a month and nowhere near the 3-month
+		// lookback, so the caller can reject it as too thin to estimate from.
+		if got.MonthsOfData >= 1.0 {
+			t.Fatalf("expected under a month of data, got %v", got.MonthsOfData)
+		}
+	})
+
+	t.Run("no history returns a zero result", func(t *testing.T) {
+		svc := NewAnalyticsService(&fakeAnalyticsStore{})
+		got, err := svc.GetAverageMonthlySpend(ctx, "user", 3)
+		if err != nil {
+			t.Fatalf("GetAverageMonthlySpend error: %v", err)
+		}
+		if got.MonthsOfData != 0 || got.AverageMinor != 0 {
+			t.Fatalf("expected zero result for no history, got %+v", got)
+		}
+	})
 }
 
 func TestGetSpendBreakdownExcludesIncomeAndTransfers(t *testing.T) {

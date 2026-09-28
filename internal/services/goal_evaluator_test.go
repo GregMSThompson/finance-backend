@@ -34,6 +34,10 @@ type fakeEvalAnalytics struct {
 	contribCalls  []dto.AnalyticsContributionsTotalArgs
 	contribResult dto.AnalyticsContributionsTotalResult
 	contribErr    error
+
+	avgSpendCalls  int
+	avgSpendResult dto.AnalyticsAverageMonthlySpendResult
+	avgSpendErr    error
 }
 
 func (f *fakeEvalAnalytics) GetSpendTotal(_ context.Context, _ string, args dto.AnalyticsSpendTotalArgs) (dto.AnalyticsSpendTotalResult, error) {
@@ -52,6 +56,11 @@ func (f *fakeEvalAnalytics) GetIncomeTotal(_ context.Context, _ string, args dto
 func (f *fakeEvalAnalytics) GetContributionsTotal(_ context.Context, _ string, args dto.AnalyticsContributionsTotalArgs) (dto.AnalyticsContributionsTotalResult, error) {
 	f.contribCalls = append(f.contribCalls, args)
 	return f.contribResult, f.contribErr
+}
+
+func (f *fakeEvalAnalytics) GetAverageMonthlySpend(_ context.Context, _ string, _ int) (dto.AnalyticsAverageMonthlySpendResult, error) {
+	f.avgSpendCalls++
+	return f.avgSpendResult, f.avgSpendErr
 }
 
 // fakeGoalAccounts stubs the balance dependency for goal tests. calls records the
@@ -735,6 +744,77 @@ func TestGoalEvaluator_PayDownMeasuresDebtReducedScoped(t *testing.T) {
 	if len(accounts.calls) != 1 || accounts.calls[0] == nil || *accounts.calls[0] != "acc-card" {
 		t.Fatalf("expected the balance read scoped to acc-card, got %v", accounts.calls)
 	}
+}
+
+func TestGoalEvaluator_EmergencyFundUntilReached(t *testing.T) {
+	// Target is pre-frozen ($6,000); the evaluator only reads the balance. It's an
+	// until_reached goal, so it completes when the balance reaches the target and
+	// stays active (never fails) below it. Measures the absolute balance, scoped to
+	// the fund account, and never queries spend/income.
+	mkGoal := func() *models.Goal {
+		return &models.Goal{
+			GoalID:           "g1",
+			Type:             models.GoalTypeEmergencyFund,
+			Name:             "Emergency fund",
+			TargetValueMinor: 600000,
+			Currency:         helpers.CurrencyUSD,
+			TimeWindow:       models.GoalWindowUntilReached,
+			Recurrence:       models.GoalRecurrenceOneOff,
+			CreatedAt:        time.Date(2026, time.August, 1, 0, 0, 0, 0, time.UTC),
+			Status:           models.GoalStatusActive,
+			Filters:          models.GoalFilters{AccountID: "acc-savings"},
+		}
+	}
+
+	t.Run("below target stays active", func(t *testing.T) {
+		goals := &fakeGoalStore{goals: map[string]*models.Goal{"g1": mkGoal()}}
+		snaps := &fakeGoalSnapshotStore{}
+		analytics := &fakeEvalAnalytics{}
+		accounts := &fakeGoalAccounts{balance: 300000} // half way
+		svc := NewGoalEvaluatorService(&fakeEvalUserStore{users: []*models.User{{UID: "u1"}}}, goals, snaps, analytics, accounts, &fakeNotificationStore{}, &fakeTasksClient{})
+
+		if err := svc.Run(evalContext()); err != nil {
+			t.Fatalf("Run error: %v", err)
+		}
+		s := snaps.created[0]
+		if s.CurrentValueMinor != 300000 || s.PercentComplete != 50 {
+			t.Fatalf("expected 300000 at 50%%, got current=%d pct=%v", s.CurrentValueMinor, s.PercentComplete)
+		}
+		if !s.IsOnTrack {
+			t.Fatal("expected on track: no deadline means never behind")
+		}
+		if goals.goals["g1"].Status != models.GoalStatusActive {
+			t.Fatalf("expected still active below target, got %s", goals.goals["g1"].Status)
+		}
+		if len(analytics.calls) != 0 || len(analytics.incomeCalls) != 0 {
+			t.Fatalf("a balance goal must not query spend/income, got spend=%d income=%d", len(analytics.calls), len(analytics.incomeCalls))
+		}
+		if len(accounts.calls) != 1 || accounts.calls[0] == nil || *accounts.calls[0] != "acc-savings" {
+			t.Fatalf("expected balance read scoped to acc-savings, got %v", accounts.calls)
+		}
+	})
+
+	t.Run("reaching target completes and notifies", func(t *testing.T) {
+		goals := &fakeGoalStore{goals: map[string]*models.Goal{"g1": mkGoal()}}
+		snaps := &fakeGoalSnapshotStore{}
+		notifs := &fakeNotificationStore{}
+		tasks := &fakeTasksClient{}
+		accounts := &fakeGoalAccounts{balance: 600000} // reached
+		svc := NewGoalEvaluatorService(&fakeEvalUserStore{users: []*models.User{{UID: "u1"}}}, goals, snaps, &fakeEvalAnalytics{}, accounts, notifs, tasks)
+
+		if err := svc.Run(evalContext()); err != nil {
+			t.Fatalf("Run error: %v", err)
+		}
+		if goals.goals["g1"].Status != models.GoalStatusCompleted {
+			t.Fatalf("expected completed on reaching target, got %s", goals.goals["g1"].Status)
+		}
+		if len(notifs.created) != 1 {
+			t.Fatalf("expected one terminal notification, got %d", len(notifs.created))
+		}
+		if !snaps.created[0].NotificationSent {
+			t.Fatal("expected the snapshot to record the terminal notification")
+		}
+	})
 }
 
 func TestGoalEvaluator_OneOffNotYetEndedDoesNotTerminate(t *testing.T) {

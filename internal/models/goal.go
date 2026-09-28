@@ -18,15 +18,17 @@ const (
 	GoalTypeSavingsTarget        GoalType = "savings_target"
 	GoalTypeSavingsContributions GoalType = "savings_contributions"
 	GoalTypePayDown              GoalType = "pay_down"
+	GoalTypeEmergencyFund        GoalType = "emergency_fund"
 )
 
 // GoalTimeWindow is the period a goal is measured over.
 type GoalTimeWindow string
 
 const (
-	GoalWindowWeekly  GoalTimeWindow = "weekly"
-	GoalWindowMonthly GoalTimeWindow = "monthly"
-	GoalWindowFixed   GoalTimeWindow = "fixed" // bounded by EndDate
+	GoalWindowWeekly       GoalTimeWindow = "weekly"
+	GoalWindowMonthly      GoalTimeWindow = "monthly"
+	GoalWindowFixed        GoalTimeWindow = "fixed" // bounded by EndDate
+	GoalWindowUntilReached GoalTimeWindow = "until_reached"
 )
 
 // GoalRecurrence is whether a goal resets each period or runs once to an end date.
@@ -75,6 +77,11 @@ type Goal struct {
 	// frozen target. To retarget against a newer period, update or recreate the
 	// goal.
 	ReductionPercent *float64 `firestore:"reductionPercent,omitempty" json:"reductionPercent,omitempty"`
+	// MonthsOfExpenses is set only for emergency_fund goals: how many months of
+	// expenses to save. The concrete TargetValueMinor is derived at creation from
+	// the user's average monthly spend × this many months, then frozen — it does
+	// not move as spending changes. To retarget, update or recreate the goal.
+	MonthsOfExpenses *float64 `firestore:"monthsOfExpenses,omitempty" json:"monthsOfExpenses,omitempty"`
 	// ConversationID links the goal to the chat session that created it, for the
 	// "view original conversation" affordance.
 	ConversationID string    `firestore:"conversationId,omitempty" json:"conversationId,omitempty"`
@@ -130,6 +137,11 @@ func (g *Goal) ResolveWindow(now time.Time) (start, end time.Time, err error) {
 			return time.Time{}, time.Time{}, fmt.Errorf("goal %s: invalid endDate %q: %w", g.GoalID, g.EndDate, err)
 		}
 		return helpers.DateOf(g.CreatedAt), end, nil
+	case GoalWindowUntilReached:
+		// No deadline: the window spans creation to today. Completion is driven by
+		// reaching the target, not by the window closing, and pace isn't scored, so
+		// the end is just "today" rather than a fixed date.
+		return helpers.DateOf(g.CreatedAt), helpers.DateOf(now), nil
 	default:
 		return time.Time{}, time.Time{}, fmt.Errorf("goal %s: cannot resolve window for timeWindow %q", g.GoalID, g.TimeWindow)
 	}

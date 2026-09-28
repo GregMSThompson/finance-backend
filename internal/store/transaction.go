@@ -62,6 +62,25 @@ func (s *transactionStore) Query(ctx context.Context, uid string, q dto.Transact
 	return nil
 }
 
+// EarliestDate returns the date (YYYY-MM-DD) of the user's oldest transaction.
+// found is false when the user has no transactions. It reads a single row ordered
+// by date ascending rather than scanning the collection.
+func (s *transactionStore) EarliestDate(ctx context.Context, uid string) (date string, found bool, err error) {
+	iter := s.txCollection(uid).OrderBy("date", firestore.Asc).Limit(1).Documents(ctx)
+	doc, err := iter.Next()
+	if err == iterator.Done {
+		return "", false, nil
+	}
+	if err != nil {
+		return "", false, errs.NewDatabaseError("read", "failed to read earliest transaction", err)
+	}
+	var tx models.Transaction
+	if err := doc.DataTo(&tx); err != nil {
+		return "", false, errs.NewDatabaseError("read", "failed to decode earliest transaction", err)
+	}
+	return tx.Date, true, nil
+}
+
 func (s *transactionStore) query(ctx context.Context, uid string, q dto.TransactionQuery) (<-chan *models.Transaction, <-chan error) {
 	out := make(chan *models.Transaction, 10)
 	errCh := make(chan error, 1)

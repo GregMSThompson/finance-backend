@@ -820,6 +820,39 @@ func TestCreateGoalToolDecodesPayDown(t *testing.T) {
 	}
 }
 
+func TestCreateGoalToolDecodesEmergencyFund(t *testing.T) {
+	goals := &fakeGoalsService{createResp: &models.Goal{GoalID: "g6"}}
+	svc := NewAIService(&fakeVertexClient{}, &fakeAnalyticsClient{}, &fakeTransactionsLister{}, &fakeAIAccounts{}, goals, &fakeAIStore{})
+
+	_, err := svc.executeTool(helpers.TestCtx(), "user", "s", dto.VertexToolCall{
+		Name: "create_goal",
+		Args: map[string]any{
+			"name":             "Emergency fund",
+			"type":             "emergency_fund",
+			"monthsOfExpenses": 3.0,
+			"timeWindow":       "until_reached",
+			"recurrence":       "one_off",
+			"filters":          map[string]any{"accountId": "acc-savings"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("executeTool error: %v", err)
+	}
+	if goals.createDef.Type != models.GoalTypeEmergencyFund {
+		t.Fatalf("expected emergency_fund type, got %q", goals.createDef.Type)
+	}
+	if goals.createDef.MonthsOfExpenses == nil || *goals.createDef.MonthsOfExpenses != 3 {
+		t.Fatalf("expected monthsOfExpenses 3, got %v", goals.createDef.MonthsOfExpenses)
+	}
+	// No dollar target from the tool — it's derived at creation.
+	if goals.createDef.TargetValueMinor != 0 {
+		t.Fatalf("expected no target from the tool, got %d", goals.createDef.TargetValueMinor)
+	}
+	if goals.createDef.TimeWindow != models.GoalWindowUntilReached {
+		t.Fatalf("expected until_reached window, got %q", goals.createDef.TimeWindow)
+	}
+}
+
 func TestCreateGoalToolReflectsValidationError(t *testing.T) {
 	goals := &fakeGoalsService{createErr: errs.NewValidationError("targetValue must be greater than 0")}
 	vertex := &fakeVertexClient{
