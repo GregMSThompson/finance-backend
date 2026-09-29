@@ -151,6 +151,37 @@ func (s *analyticsService) sumInflowCategory(ctx context.Context, uid, category 
 	return -signed, currency, nil
 }
 
+// GetTransactionCount returns how many transactions match the given scope over the
+// window — the measurement behind a frequency-limit goal ("no more than N takeout
+// orders a week"). Unlike the spend/inflow totals it applies no category-role
+// filter: it counts exactly what the caller's filters match, so a merchant- or
+// category-scoped count includes whatever falls in that scope. Pending is left to
+// the caller (goals pass posted-only).
+func (s *analyticsService) GetTransactionCount(ctx context.Context, uid string, args dto.AnalyticsCountArgs) (dto.AnalyticsCountResult, error) {
+	result := dto.AnalyticsCountResult{
+		From: helpers.Value(args.DateFrom),
+		To:   helpers.Value(args.DateTo),
+	}
+
+	var count int64
+	if err := s.txs.Query(ctx, uid, dto.TransactionQuery{
+		Pending:      args.Pending,
+		PFCPrimaries: helpers.PrimarySlice(args.PFCPrimary),
+		AccountID:    args.AccountID,
+		Merchant:     args.Merchant,
+		DateFrom:     args.DateFrom,
+		DateTo:       args.DateTo,
+	}, func(tx *models.Transaction) error {
+		count++
+		return nil
+	}); err != nil {
+		return result, err
+	}
+
+	result.Count = count
+	return result, nil
+}
+
 // GetAverageMonthlySpend returns average monthly spend over the available history
 // within the last lookbackMonths, as of the context clock. It bounds the window at
 // the earliest transaction so the average divides by the months of data actually

@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -38,6 +39,10 @@ type fakeEvalAnalytics struct {
 	avgSpendCalls  int
 	avgSpendResult dto.AnalyticsAverageMonthlySpendResult
 	avgSpendErr    error
+
+	countCalls  []dto.AnalyticsCountArgs
+	countResult dto.AnalyticsCountResult
+	countErr    error
 }
 
 func (f *fakeEvalAnalytics) GetSpendTotal(_ context.Context, _ string, args dto.AnalyticsSpendTotalArgs) (dto.AnalyticsSpendTotalResult, error) {
@@ -61,6 +66,11 @@ func (f *fakeEvalAnalytics) GetContributionsTotal(_ context.Context, _ string, a
 func (f *fakeEvalAnalytics) GetAverageMonthlySpend(_ context.Context, _ string, _ int) (dto.AnalyticsAverageMonthlySpendResult, error) {
 	f.avgSpendCalls++
 	return f.avgSpendResult, f.avgSpendErr
+}
+
+func (f *fakeEvalAnalytics) GetTransactionCount(_ context.Context, _ string, args dto.AnalyticsCountArgs) (dto.AnalyticsCountResult, error) {
+	f.countCalls = append(f.countCalls, args)
+	return f.countResult, f.countErr
 }
 
 // fakeGoalAccounts stubs the balance dependency for goal tests. calls records the
@@ -743,6 +753,89 @@ func TestGoalEvaluator_PayDownMeasuresDebtReducedScoped(t *testing.T) {
 	}
 	if len(accounts.calls) != 1 || accounts.calls[0] == nil || *accounts.calls[0] != "acc-card" {
 		t.Fatalf("expected the balance read scoped to acc-card, got %v", accounts.calls)
+	}
+}
+
+func TestGoalEvaluator_FrequencyLimitCountsAndRoutesToCountFields(t *testing.T) {
+	// A recurring monthly frequency limit: no more than 4 takeout orders. Three so far
+	// = 75% of the limit. The measurement is a count, so it must land in the *Count
+	// snapshot fields (leaving the money fields zero) and never query spend/income.
+	g := &models.Goal{
+		GoalID:      "g1",
+		Type:        models.GoalTypeFrequencyLimit,
+		Name:        "Takeout limit",
+		TargetCount: 4,
+		Currency:    helpers.CurrencyUSD,
+		TimeWindow:  models.GoalWindowMonthly,
+		Recurrence:  models.GoalRecurrenceRecurring,
+		Status:      models.GoalStatusActive,
+		Filters:     models.GoalFilters{PFCPrimary: "FOOD_AND_DRINK"},
+	}
+
+	users := &fakeEvalUserStore{users: []*models.User{{UID: "u1"}}}
+	goals := &fakeGoalStore{goals: map[string]*models.Goal{"g1": g}}
+	snaps := &fakeGoalSnapshotStore{}
+	analytics := &fakeEvalAnalytics{countResult: dto.AnalyticsCountResult{Count: 3}}
+
+	if err := newEvaluator(users, goals, snaps, analytics).Run(evalContext()); err != nil {
+		t.Fatalf("Run error: %v", err)
+	}
+	s := snaps.created[0]
+	if s.CurrentCount != 3 || s.TargetCount != 4 || s.PercentComplete != 75 {
+		t.Fatalf("expected 3 of 4 at 75%%, got current=%d target=%d pct=%v", s.CurrentCount, s.TargetCount, s.PercentComplete)
+	}
+	// The count must not leak into the money fields.
+	if s.CurrentValueMinor != 0 || s.TargetValueMinor != 0 {
+		t.Fatalf("count leaked into money fields: currentMinor=%d targetMinor=%d", s.CurrentValueMinor, s.TargetValueMinor)
+	}
+	// Like a spending limit, pace matters: using 3 of 4 by mid-month is ahead of the
+	// allowance's pace (4 × ~48% elapsed ≈ 1.9), so it's not on track to stay under.
+	if s.IsOnTrack {
+		t.Fatal("expected not on track: 3 of 4 by mid-month paces to exceed the limit")
+	}
+	// It measures via the count query, scoped to the category, and never spend/income.
+	if len(analytics.countCalls) != 1 {
+		t.Fatalf("expected one count query, got %d", len(analytics.countCalls))
+	}
+	if helpers.Value(analytics.countCalls[0].PFCPrimary) != "FOOD_AND_DRINK" {
+		t.Fatalf("expected the count query scoped to FOOD_AND_DRINK, got %v", analytics.countCalls[0].PFCPrimary)
+	}
+	if len(analytics.calls) != 0 || len(analytics.incomeCalls) != 0 {
+		t.Fatalf("a frequency goal must not query spend/income, got spend=%d income=%d", len(analytics.calls), len(analytics.incomeCalls))
+	}
+}
+
+func TestGoalEvaluator_FrequencyLimitOneOffOverLimitFails(t *testing.T) {
+	// A one-off fixed-window frequency limit that has closed with 5 of 4 used fails,
+	// with count-worded terminal text.
+	g := &models.Goal{
+		GoalID:      "g1",
+		Type:        models.GoalTypeFrequencyLimit,
+		Name:        "Takeout limit",
+		TargetCount: 4,
+		Currency:    helpers.CurrencyUSD,
+		TimeWindow:  models.GoalWindowFixed,
+		Recurrence:  models.GoalRecurrenceOneOff,
+		EndDate:     "2026-08-10",
+		CreatedAt:   time.Date(2026, time.August, 1, 0, 0, 0, 0, time.UTC),
+		Status:      models.GoalStatusActive,
+		Filters:     models.GoalFilters{Merchant: "ATM"},
+	}
+
+	users := &fakeEvalUserStore{users: []*models.User{{UID: "u1"}}}
+	goals := &fakeGoalStore{goals: map[string]*models.Goal{"g1": g}}
+	snaps := &fakeGoalSnapshotStore{}
+	analytics := &fakeEvalAnalytics{countResult: dto.AnalyticsCountResult{Count: 5}}
+
+	if err := newEvaluator(users, goals, snaps, analytics).Run(evalContext()); err != nil {
+		t.Fatalf("Run error: %v", err)
+	}
+	if goals.goals["g1"].Status != models.GoalStatusFailed {
+		t.Fatalf("expected failed status, got %s", goals.goals["g1"].Status)
+	}
+	s := snaps.created[0]
+	if !strings.Contains(s.AIInsight, "5 of 4") {
+		t.Fatalf("expected count-worded terminal text mentioning 5 of 4, got %q", s.AIInsight)
 	}
 }
 

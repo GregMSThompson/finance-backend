@@ -60,6 +60,7 @@ func (s *goalService) Create(ctx context.Context, uid, sessionID string, def dto
 		Type:             def.Type,
 		Name:             def.Name,
 		TargetValueMinor: def.TargetValueMinor,
+		TargetCount:      def.TargetCount,
 		// USD-only today; this is the single place a goal's currency is pinned.
 		// Multi-currency will source it from the definition/user prefs.
 		Currency:         helpers.CurrencyUSD,
@@ -183,11 +184,18 @@ func (s *goalService) GetProgress(ctx context.Context, uid, goalID string) (dto.
 	}
 
 	prog := dto.GoalProgress{
-		GoalID:           g.GoalID,
-		Name:             g.Name,
-		Status:           g.Status,
-		TargetValueMinor: g.TargetValueMinor,
-		Currency:         g.Currency,
+		GoalID:   g.GoalID,
+		Name:     g.Name,
+		Status:   g.Status,
+		Currency: g.Currency,
+	}
+	// Count-measured goals (frequency_limit) report through the *Count fields so the
+	// client never renders a count as currency; money goals use the *Minor fields.
+	isCount := s.goalIsCount(g.Type)
+	if isCount {
+		prog.TargetCount = g.TargetCount
+	} else {
+		prog.TargetValueMinor = g.TargetValueMinor
 	}
 
 	snap, err := s.snapshots.Latest(ctx, uid, goalID)
@@ -195,18 +203,38 @@ func (s *goalService) GetProgress(ctx context.Context, uid, goalID string) (dto.
 		return dto.GoalProgress{}, err
 	}
 	if snap == nil {
-		prog.AmountRemainingMinor = g.TargetValueMinor
+		if isCount {
+			prog.CountRemaining = g.TargetCount
+		} else {
+			prog.AmountRemainingMinor = g.TargetValueMinor
+		}
 		prog.IsOnTrack = true
 		return prog, nil
 	}
 
-	prog.CurrentValueMinor = snap.CurrentValueMinor
-	prog.AmountRemainingMinor = g.TargetValueMinor - snap.CurrentValueMinor
+	if isCount {
+		prog.CurrentCount = snap.CurrentCount
+		prog.CountRemaining = g.TargetCount - snap.CurrentCount
+	} else {
+		prog.CurrentValueMinor = snap.CurrentValueMinor
+		prog.AmountRemainingMinor = g.TargetValueMinor - snap.CurrentValueMinor
+	}
 	prog.PercentComplete = snap.PercentComplete
 	prog.IsOnTrack = snap.IsOnTrack
 	prog.AIInsight = snap.AIInsight
 	prog.AsOf = snap.CreatedAt
 	return prog, nil
+}
+
+// goalIsCount reports whether a goal type is measured in counts rather than money,
+// so progress is surfaced through the *Count fields. It reads the strategy's Unit()
+// so the two stay in lockstep; an unknown type falls back to money.
+func (s *goalService) goalIsCount(t models.GoalType) bool {
+	strat, err := strategyFor(s.strategies, t)
+	if err != nil {
+		return false
+	}
+	return strat.Unit() == unitCount
 }
 
 // ListGoalTransactions returns the transactions counting toward a goal in its
@@ -261,6 +289,9 @@ func applyGoalUpdate(g *models.Goal, upd dto.GoalUpdate) {
 	}
 	if upd.TargetValueMinor != nil {
 		g.TargetValueMinor = *upd.TargetValueMinor
+	}
+	if upd.TargetCount != nil {
+		g.TargetCount = *upd.TargetCount
 	}
 	if upd.TimeWindow != nil {
 		g.TimeWindow = *upd.TimeWindow
@@ -420,8 +451,38 @@ func validateGoal(g *models.Goal) error {
 		if g.Filters.PFCPrimary != "" || g.Filters.Merchant != "" {
 			return errs.NewValidationError("an emergency fund goal can only be scoped by accountId, not category or merchant")
 		}
+	case models.GoalTypeFrequencyLimit:
+		// The target is a count of transactions, carried in TargetCount, not the money
+		// TargetValueMinor — see the field notes on models.Goal.
+		if g.TargetCount <= 0 {
+			return errs.NewValidationError("targetCount must be greater than 0 for a frequency limit goal")
+		}
+		if g.TargetValueMinor != 0 {
+			return errs.NewValidationError("a frequency limit goal's target is a count (targetCount), not a money amount")
+		}
+		if g.ReductionPercent != nil {
+			return errs.NewValidationError("reductionPercent applies only to reduction goals")
+		}
+		// A frequency limit counts occurrences of something, so it needs at least one of
+		// category or merchant to define what an occurrence is; accountId is an optional
+		// further scope. Without either, it would count every transaction.
+		if g.Filters.PFCPrimary == "" && g.Filters.Merchant == "" {
+			return errs.NewValidationError("a frequency limit goal must be scoped by category or merchant")
+		}
+		// It's a per-period ceiling, so it needs a window that closes to reset against.
+		// until_reached is open-ended and has no ceiling to fail, so it's rejected here
+		// (the generic window rules below otherwise allow it for one-off goals).
+		if g.TimeWindow == models.GoalWindowUntilReached {
+			return errs.NewValidationError("a frequency limit goal cannot use the until_reached window")
+		}
 	default:
 		return errs.NewValidationError(fmt.Sprintf("unsupported goal type: %s", g.Type))
+	}
+
+	// A count target belongs only to count-measured goals; every other type carries a
+	// money target. Guard here so a stray targetCount can't ride along on a money goal.
+	if g.Type != models.GoalTypeFrequencyLimit && g.TargetCount != 0 {
+		return errs.NewValidationError("targetCount applies only to frequency limit goals")
 	}
 	if strings.TrimSpace(g.Name) == "" {
 		return errs.NewValidationError("name is required")

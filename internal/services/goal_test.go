@@ -201,6 +201,17 @@ func validEmergencyFundDef() dto.GoalDefinition {
 	}
 }
 
+func validFrequencyLimitDef() dto.GoalDefinition {
+	return dto.GoalDefinition{
+		Type:        models.GoalTypeFrequencyLimit,
+		Name:        "Takeout limit",
+		TargetCount: 4,
+		TimeWindow:  models.GoalWindowMonthly,
+		Recurrence:  models.GoalRecurrenceRecurring,
+		Filters:     models.GoalFilters{PFCPrimary: "FOOD_AND_DRINK"},
+	}
+}
+
 func seedGoal(store *fakeGoalStore) *models.Goal {
 	g := &models.Goal{
 		GoalID:           "g1",
@@ -652,6 +663,58 @@ func TestGoalCreate_EmergencyFundValidationRules(t *testing.T) {
 				t.Fatalf("expected ValidationError for %s, got %v", tc.name, err)
 			}
 		})
+	}
+}
+
+func TestGoalCreate_FrequencyLimitValid(t *testing.T) {
+	goals := newFakeGoalStore()
+	svc := NewGoalService(goals, &fakeGoalSnapshotStore{}, &fakeJobs{}, &fakeTransactionsLister{}, &fakeEvalAnalytics{}, &fakeGoalAccounts{})
+
+	g, err := svc.Create(context.Background(), "uid1", "s", validFrequencyLimitDef())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if g.TargetCount != 4 {
+		t.Fatalf("expected targetCount 4, got %d", g.TargetCount)
+	}
+	// The count target must not bleed into the money field.
+	if g.TargetValueMinor != 0 {
+		t.Fatalf("expected zero money target for a count goal, got %d", g.TargetValueMinor)
+	}
+}
+
+func TestGoalCreate_FrequencyLimitValidationRules(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		mutate func(*dto.GoalDefinition)
+	}{
+		{"zero count", func(d *dto.GoalDefinition) { d.TargetCount = 0 }},
+		{"money target set", func(d *dto.GoalDefinition) { d.TargetValueMinor = 5000 }},
+		{"no category or merchant", func(d *dto.GoalDefinition) { d.Filters = models.GoalFilters{} }},
+		{"until_reached window", func(d *dto.GoalDefinition) {
+			d.TimeWindow = models.GoalWindowUntilReached
+			d.Recurrence = models.GoalRecurrenceOneOff
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			svc := NewGoalService(newFakeGoalStore(), &fakeGoalSnapshotStore{}, &fakeJobs{}, &fakeTransactionsLister{}, &fakeEvalAnalytics{}, &fakeGoalAccounts{})
+			def := validFrequencyLimitDef()
+			tc.mutate(&def)
+			if _, err := svc.Create(context.Background(), "uid1", "s", def); !isValidationError(err) {
+				t.Fatalf("expected ValidationError for %s, got %v", tc.name, err)
+			}
+		})
+	}
+}
+
+func TestGoalCreate_MoneyGoalRejectsTargetCount(t *testing.T) {
+	// The count field belongs only to frequency goals; a stray count on a money goal
+	// is rejected so the two units can't be conflated.
+	svc := NewGoalService(newFakeGoalStore(), &fakeGoalSnapshotStore{}, &fakeJobs{}, &fakeTransactionsLister{}, &fakeEvalAnalytics{}, &fakeGoalAccounts{})
+	def := validGoalDef()
+	def.TargetCount = 3
+	if _, err := svc.Create(context.Background(), "uid1", "s", def); !isValidationError(err) {
+		t.Fatalf("expected ValidationError for targetCount on a money goal, got %v", err)
 	}
 }
 

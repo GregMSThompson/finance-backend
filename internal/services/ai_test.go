@@ -695,6 +695,37 @@ func TestCreateGoalToolDecodesReductionDefinition(t *testing.T) {
 	}
 }
 
+func TestCreateGoalToolDecodesFrequencyLimitDefinition(t *testing.T) {
+	goals := &fakeGoalsService{createResp: &models.Goal{GoalID: "g-freq", Name: "Takeout limit"}}
+	svc := NewAIService(&fakeVertexClient{}, &fakeAnalyticsClient{}, &fakeTransactionsLister{}, &fakeAIAccounts{}, goals, &fakeAIStore{})
+
+	_, err := svc.executeTool(helpers.TestCtx(), "user", "s", dto.VertexToolCall{
+		Name: "create_goal",
+		Args: map[string]any{
+			"name":        "Takeout limit",
+			"type":        "frequency_limit",
+			"targetCount": 4,
+			"timeWindow":  "monthly",
+			"recurrence":  "recurring",
+			"filters":     map[string]any{"pfcPrimary": "FOOD_AND_DRINK"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("executeTool error: %v", err)
+	}
+	if goals.createDef.Type != models.GoalTypeFrequencyLimit {
+		t.Fatalf("expected frequency_limit type, got %q", goals.createDef.Type)
+	}
+	// The count decodes into TargetCount and must not touch the money target — no
+	// dollar conversion runs on it.
+	if goals.createDef.TargetCount != 4 {
+		t.Fatalf("expected targetCount 4, got %d", goals.createDef.TargetCount)
+	}
+	if goals.createDef.TargetValueMinor != 0 {
+		t.Fatalf("expected no money target for a count goal, got %d", goals.createDef.TargetValueMinor)
+	}
+}
+
 func TestCreateGoalToolDecodesAtLeastTypes(t *testing.T) {
 	cases := []struct {
 		typ  string

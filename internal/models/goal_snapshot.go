@@ -13,9 +13,17 @@ type GoalSnapshot struct {
 	CreatedAt         time.Time `firestore:"createdAt" json:"createdAt"`
 	CurrentValueMinor int64     `firestore:"currentValueMinor" json:"currentValueMinor"` // integer minor units (e.g. cents)
 	TargetValueMinor  int64     `firestore:"targetValueMinor" json:"targetValueMinor"`   // integer minor units (e.g. cents)
-	Currency          string    `firestore:"currency" json:"currency"`
-	PercentComplete   float64   `firestore:"percentComplete" json:"percentComplete"`
-	IsOnTrack         bool      `firestore:"isOnTrack" json:"isOnTrack"`
+	// CurrentCount / TargetCount carry the measurement for count-measured goals
+	// (frequency_limit) instead of the *Minor money fields. Exactly one unit pair is
+	// populated per snapshot, decided by the goal's strategy Unit(): money goals fill
+	// the *Minor pair (Count zero), frequency goals fill the *Count pair (Minor zero).
+	// Keeping counts out of the *Minor fields keeps them clear of the money-conversion
+	// layers (AI major/minor rewrite, UI currency formatting).
+	CurrentCount    int64   `firestore:"currentCount,omitempty" json:"currentCount,omitempty"`
+	TargetCount     int64   `firestore:"targetCount,omitempty" json:"targetCount,omitempty"`
+	Currency        string  `firestore:"currency" json:"currency"`
+	PercentComplete float64 `firestore:"percentComplete" json:"percentComplete"`
+	IsOnTrack       bool    `firestore:"isOnTrack" json:"isOnTrack"`
 	// AIInsight is the batch-generated 1-2 sentence insight, set only when a
 	// notification-worthy event occurred. Same text used for the push body.
 	AIInsight        string `firestore:"aiInsight,omitempty" json:"aiInsight,omitempty"`

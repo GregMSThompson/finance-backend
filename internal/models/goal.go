@@ -19,6 +19,7 @@ const (
 	GoalTypeSavingsContributions GoalType = "savings_contributions"
 	GoalTypePayDown              GoalType = "pay_down"
 	GoalTypeEmergencyFund        GoalType = "emergency_fund"
+	GoalTypeFrequencyLimit       GoalType = "frequency_limit"
 )
 
 // GoalTimeWindow is the period a goal is measured over.
@@ -52,12 +53,19 @@ const (
 // Goal is a user's goal definition (the structured primitive) stored under
 // users/{uid}/goals. The owning uid is carried by the path, not a field.
 type Goal struct {
-	GoalID           string         `firestore:"goalId" json:"goalId"`
-	Type             GoalType       `firestore:"type" json:"type"`
-	Name             string         `firestore:"name" json:"name"`
-	TargetValueMinor int64          `firestore:"targetValueMinor" json:"targetValueMinor"` // integer minor units (e.g. cents)
-	Currency         string         `firestore:"currency" json:"currency"`
-	TimeWindow       GoalTimeWindow `firestore:"timeWindow" json:"timeWindow"`
+	GoalID           string   `firestore:"goalId" json:"goalId"`
+	Type             GoalType `firestore:"type" json:"type"`
+	Name             string   `firestore:"name" json:"name"`
+	TargetValueMinor int64    `firestore:"targetValueMinor" json:"targetValueMinor"` // integer minor units (e.g. cents)
+	// TargetCount is the target for count-measured goals (frequency_limit): a plain
+	// count of matching transactions, not money. It is the count-unit counterpart to
+	// TargetValueMinor — validation guarantees exactly one of the two is set, so a
+	// goal's target is always unambiguous. Kept separate (rather than reusing
+	// TargetValueMinor) so a count never flows through the money-conversion layers
+	// (the AI major/minor rewrite, the UI's currency formatting).
+	TargetCount int64          `firestore:"targetCount,omitempty" json:"targetCount,omitempty"`
+	Currency    string         `firestore:"currency" json:"currency"`
+	TimeWindow  GoalTimeWindow `firestore:"timeWindow" json:"timeWindow"`
 	// EndDate (YYYY-MM-DD) bounds a fixed window or a one-off goal. Empty for
 	// recurring weekly/monthly goals.
 	EndDate         string              `firestore:"endDate,omitempty" json:"endDate,omitempty"`

@@ -46,6 +46,7 @@ type goalStrategyAnalytics interface {
 	GetIncomeTotal(ctx context.Context, uid string, args dto.AnalyticsIncomeTotalArgs) (dto.AnalyticsIncomeTotalResult, error)
 	GetContributionsTotal(ctx context.Context, uid string, args dto.AnalyticsContributionsTotalArgs) (dto.AnalyticsContributionsTotalResult, error)
 	GetAverageMonthlySpend(ctx context.Context, uid string, lookbackMonths int) (dto.AnalyticsAverageMonthlySpendResult, error)
+	GetTransactionCount(ctx context.Context, uid string, args dto.AnalyticsCountArgs) (dto.AnalyticsCountResult, error)
 }
 
 // goalStrategyAccounts is the balance measurement a balance-family strategy needs
@@ -54,6 +55,17 @@ type goalStrategyAnalytics interface {
 type goalStrategyAccounts interface {
 	GetTotalBalance(ctx context.Context, uid string, accountID *string) (int64, error)
 }
+
+// goalMeasureUnit is the unit a strategy's Measure/Target values are expressed in.
+// It tells the evaluator which snapshot field pair to write — money into the *Minor
+// fields, counts into the *Count fields — so a count never lands in a currency
+// field. Almost every goal is money; only frequency_limit is a count.
+type goalMeasureUnit int
+
+const (
+	unitMoney goalMeasureUnit = iota
+	unitCount
+)
 
 // goalStrategy encapsulates the type-specific parts of a goal: capturing any
 // baseline at creation, measuring current progress in a window, resolving the
@@ -66,6 +78,9 @@ type goalStrategy interface {
 	Measure(ctx context.Context, uid string, g *models.Goal, w goalWindow) (int64, error)
 	Target(g *models.Goal) int64
 	Score(g *models.Goal, w goalWindow, current int64) goalProgress
+	// Unit reports whether Measure/Target are money (minor units) or a raw count,
+	// so the evaluator routes the values into the matching snapshot fields.
+	Unit() goalMeasureUnit
 	ProgressText(g *models.Goal, snap *models.GoalSnapshot, crossedOver bool) (string, error)
 	TerminalText(g *models.Goal, snap *models.GoalSnapshot, status models.GoalStatus) (string, error)
 }
@@ -200,6 +215,17 @@ type emergencyFundStrategy struct {
 	accounts  goalStrategyAccounts
 }
 
+// frequencyLimitStrategy counts matching transactions in the window against a
+// ceiling: no more than N occurrences (e.g. takeout orders, ATM withdrawals). It's
+// a spending limit whose measurement is a count, not money, so it embeds
+// spendingLimitStrategy for the identical downward scoring (on track while the count
+// stays within its share of the window elapsed, met while at or under target) and
+// overrides only what differs: the measurement, the unit, and the count-worded text.
+// Its target lives in TargetCount, which the shared scoring reads via goalTargetValue.
+type frequencyLimitStrategy struct {
+	spendingLimitStrategy
+}
+
 func NewGoalEvaluatorService(
 	users goalEvaluatorUserStore,
 	goals goalEvaluatorGoalStore,
@@ -326,14 +352,21 @@ func (s *goalEvaluatorService) evaluateGoal(ctx context.Context, uid string, goa
 	prog := strat.Score(goal, w, current)
 
 	snap := &models.GoalSnapshot{
-		SnapshotID:        uuid.NewString(),
-		GoalID:            goal.GoalID,
-		CreatedAt:         now,
-		CurrentValueMinor: current,
-		TargetValueMinor:  strat.Target(goal),
-		Currency:          goal.Currency,
-		PercentComplete:   prog.percent,
-		IsOnTrack:         prog.isOnTrack,
+		SnapshotID:      uuid.NewString(),
+		GoalID:          goal.GoalID,
+		CreatedAt:       now,
+		Currency:        goal.Currency,
+		PercentComplete: prog.percent,
+		IsOnTrack:       prog.isOnTrack,
+	}
+	// Route the measurement into the field pair matching its unit, so a count never
+	// lands in a currency field. Exactly one pair is populated per snapshot.
+	if strat.Unit() == unitCount {
+		snap.CurrentCount = current
+		snap.TargetCount = strat.Target(goal)
+	} else {
+		snap.CurrentValueMinor = current
+		snap.TargetValueMinor = strat.Target(goal)
 	}
 
 	eval := &goalEvaluation{snapshot: snap}
@@ -580,87 +613,13 @@ func goalPercentComplete(current, target int64) float64 {
 	return float64(current) / float64(target) * 100
 }
 
-// --- Goal strategies -------------------------------------------------------
-
-func newGoalStrategies(analytics goalStrategyAnalytics, accounts goalStrategyAccounts) map[models.GoalType]goalStrategy {
-	sl := spendingLimitStrategy{analytics: analytics}
-	bb := balanceBaselineStrategy{accounts: accounts}
-	return map[models.GoalType]goalStrategy{
-		models.GoalTypeSpendingLimit:        sl,
-		models.GoalTypeReduction:            reductionStrategy{spendingLimitStrategy: sl},
-		models.GoalTypeNetSavings:           netSavingsStrategy{analytics: analytics},
-		models.GoalTypeIncomeTarget:         incomeTargetStrategy{analytics: analytics},
-		models.GoalTypeSavingsTarget:        savingsTargetStrategy{balanceBaselineStrategy: bb},
-		models.GoalTypeSavingsContributions: savingsContributionsStrategy{analytics: analytics},
-		models.GoalTypePayDown:              payDownStrategy{balanceBaselineStrategy: bb},
-		models.GoalTypeEmergencyFund:        emergencyFundStrategy{analytics: analytics, accounts: accounts},
-	}
-}
-
-// strategyFor resolves a goal type to its strategy, rejecting unsupported types
-// the same way validation does.
-func strategyFor(strategies map[models.GoalType]goalStrategy, t models.GoalType) (goalStrategy, error) {
-	strat, ok := strategies[t]
-	if !ok {
-		return nil, errs.NewValidationError(fmt.Sprintf("unsupported goal type: %s", t))
-	}
-	return strat, nil
-}
-
-func (s spendingLimitStrategy) Initialize(ctx context.Context, uid string, g *models.Goal) error {
-	return nil // a literal target needs no baseline
-}
-
-func (s spendingLimitStrategy) Measure(ctx context.Context, uid string, g *models.Goal, w goalWindow) (int64, error) {
-	args := dto.AnalyticsSpendTotalArgs{
-		Pending:  helpers.Ptr(false),
-		DateFrom: helpers.Ptr(helpers.FormatDate(w.start)),
-		DateTo:   helpers.Ptr(helpers.FormatDate(w.queryTo)),
-	}
-	applyGoalFilters(&args, g.Filters)
-	result, err := s.analytics.GetSpendTotal(ctx, uid, args)
-	if err != nil {
-		return 0, fmt.Errorf("spend total: %w", err)
-	}
-	return result.TotalMinor, nil
-}
-
-func (s spendingLimitStrategy) Target(g *models.Goal) int64 {
-	return g.TargetValueMinor
-}
-
-func (s spendingLimitStrategy) Score(g *models.Goal, w goalWindow, current int64) goalProgress {
-	target := g.TargetValueMinor
-	elapsed := goalElapsedFraction(w.start, w.queryTo, w.end)
-	return goalProgress{
-		percent:   goalPercentComplete(current, target),
-		isOnTrack: float64(current) <= float64(target)*elapsed,
-		succeeded: current <= target,
-	}
-}
-
-func (s reductionStrategy) Initialize(ctx context.Context, uid string, g *models.Goal) error {
-	if g.ReductionPercent == nil {
-		return errs.NewValidationError("reductionPercent is required for a reduction goal")
-	}
-	start, end, err := priorComparableWindow(g)
-	if err != nil {
-		return err
-	}
-	args := dto.AnalyticsSpendTotalArgs{
-		Pending:  helpers.Ptr(false),
-		DateFrom: helpers.Ptr(helpers.FormatDate(start)),
-		DateTo:   helpers.Ptr(helpers.FormatDate(end)),
-	}
-	applyGoalFilters(&args, g.Filters)
-	result, err := s.analytics.GetSpendTotal(ctx, uid, args)
-	if err != nil {
-		return fmt.Errorf("reduction baseline spend total: %w", err)
-	}
-	baseline := result.TotalMinor
-	g.BaselineValueMinor = &baseline
-	g.TargetValueMinor = int64(math.Round(float64(baseline) * (100 - *g.ReductionPercent) / 100))
-	return nil
+// goalTargetValue returns a goal's target magnitude in its own unit — minor units
+// for money goals, a raw count for frequency goals. Validation guarantees exactly
+// one of the two target fields is set, so the sum selects whichever applies and the
+// shared scoring works for either without knowing the unit. The unit itself is
+// reported by the strategy's Unit(); this is only the magnitude.
+func goalTargetValue(g *models.Goal) int64 {
+	return g.TargetValueMinor + g.TargetCount
 }
 
 // priorComparableWindow returns the last complete period of the goal's shape
@@ -695,16 +654,104 @@ func applyGoalFilters(args *dto.AnalyticsSpendTotalArgs, f models.GoalFilters) {
 	args.AccountID = helpers.OptString(f.AccountID)
 }
 
+// --- Goal strategies -------------------------------------------------------
+
+func newGoalStrategies(analytics goalStrategyAnalytics, accounts goalStrategyAccounts) map[models.GoalType]goalStrategy {
+	sl := spendingLimitStrategy{analytics: analytics}
+	bb := balanceBaselineStrategy{accounts: accounts}
+	return map[models.GoalType]goalStrategy{
+		models.GoalTypeSpendingLimit:        sl,
+		models.GoalTypeReduction:            reductionStrategy{spendingLimitStrategy: sl},
+		models.GoalTypeNetSavings:           netSavingsStrategy{analytics: analytics},
+		models.GoalTypeIncomeTarget:         incomeTargetStrategy{analytics: analytics},
+		models.GoalTypeSavingsTarget:        savingsTargetStrategy{balanceBaselineStrategy: bb},
+		models.GoalTypeSavingsContributions: savingsContributionsStrategy{analytics: analytics},
+		models.GoalTypePayDown:              payDownStrategy{balanceBaselineStrategy: bb},
+		models.GoalTypeEmergencyFund:        emergencyFundStrategy{analytics: analytics, accounts: accounts},
+		models.GoalTypeFrequencyLimit:       frequencyLimitStrategy{spendingLimitStrategy: sl},
+	}
+}
+
+// strategyFor resolves a goal type to its strategy, rejecting unsupported types
+// the same way validation does.
+func strategyFor(strategies map[models.GoalType]goalStrategy, t models.GoalType) (goalStrategy, error) {
+	strat, ok := strategies[t]
+	if !ok {
+		return nil, errs.NewValidationError(fmt.Sprintf("unsupported goal type: %s", t))
+	}
+	return strat, nil
+}
+
+func (s spendingLimitStrategy) Initialize(ctx context.Context, uid string, g *models.Goal) error {
+	return nil // a literal target needs no baseline
+}
+
+func (s spendingLimitStrategy) Measure(ctx context.Context, uid string, g *models.Goal, w goalWindow) (int64, error) {
+	args := dto.AnalyticsSpendTotalArgs{
+		Pending:  helpers.Ptr(false),
+		DateFrom: helpers.Ptr(helpers.FormatDate(w.start)),
+		DateTo:   helpers.Ptr(helpers.FormatDate(w.queryTo)),
+	}
+	applyGoalFilters(&args, g.Filters)
+	result, err := s.analytics.GetSpendTotal(ctx, uid, args)
+	if err != nil {
+		return 0, fmt.Errorf("spend total: %w", err)
+	}
+	return result.TotalMinor, nil
+}
+
+func (s spendingLimitStrategy) Target(g *models.Goal) int64 {
+	return goalTargetValue(g)
+}
+
+func (spendingLimitStrategy) Unit() goalMeasureUnit { return unitMoney }
+
+func (s spendingLimitStrategy) Score(g *models.Goal, w goalWindow, current int64) goalProgress {
+	target := goalTargetValue(g)
+	elapsed := goalElapsedFraction(w.start, w.queryTo, w.end)
+	return goalProgress{
+		percent:   goalPercentComplete(current, target),
+		isOnTrack: float64(current) <= float64(target)*elapsed,
+		succeeded: current <= target,
+	}
+}
+
+func (s reductionStrategy) Initialize(ctx context.Context, uid string, g *models.Goal) error {
+	if g.ReductionPercent == nil {
+		return errs.NewValidationError("reductionPercent is required for a reduction goal")
+	}
+	start, end, err := priorComparableWindow(g)
+	if err != nil {
+		return err
+	}
+	args := dto.AnalyticsSpendTotalArgs{
+		Pending:  helpers.Ptr(false),
+		DateFrom: helpers.Ptr(helpers.FormatDate(start)),
+		DateTo:   helpers.Ptr(helpers.FormatDate(end)),
+	}
+	applyGoalFilters(&args, g.Filters)
+	result, err := s.analytics.GetSpendTotal(ctx, uid, args)
+	if err != nil {
+		return fmt.Errorf("reduction baseline spend total: %w", err)
+	}
+	baseline := result.TotalMinor
+	g.BaselineValueMinor = &baseline
+	g.TargetValueMinor = int64(math.Round(float64(baseline) * (100 - *g.ReductionPercent) / 100))
+	return nil
+}
+
 func (atLeastStrategy) Initialize(ctx context.Context, uid string, g *models.Goal) error {
 	return nil // a literal target needs no baseline
 }
 
 func (atLeastStrategy) Target(g *models.Goal) int64 {
-	return g.TargetValueMinor
+	return goalTargetValue(g)
 }
 
+func (atLeastStrategy) Unit() goalMeasureUnit { return unitMoney }
+
 func (atLeastStrategy) Score(g *models.Goal, w goalWindow, current int64) goalProgress {
-	target := g.TargetValueMinor
+	target := goalTargetValue(g)
 	elapsed := goalElapsedFraction(w.start, w.queryTo, w.end)
 	return goalProgress{
 		percent:   goalPercentComplete(current, target),
@@ -838,4 +885,48 @@ func (s emergencyFundStrategy) Score(g *models.Goal, w goalWindow, current int64
 		isOnTrack: true,
 		succeeded: current >= target,
 	}
+}
+
+func (frequencyLimitStrategy) Unit() goalMeasureUnit { return unitCount }
+
+// Measure counts matching transactions over the window (posted only). Filters map
+// straight through: category and/or merchant define an occurrence, accountId scopes
+// it. Validation guarantees at least one of category/merchant is set.
+func (s frequencyLimitStrategy) Measure(ctx context.Context, uid string, g *models.Goal, w goalWindow) (int64, error) {
+	result, err := s.analytics.GetTransactionCount(ctx, uid, dto.AnalyticsCountArgs{
+		Pending:    helpers.Ptr(false),
+		PFCPrimary: helpers.OptString(g.Filters.PFCPrimary),
+		Merchant:   helpers.OptString(g.Filters.Merchant),
+		AccountID:  helpers.OptString(g.Filters.AccountID),
+		DateFrom:   helpers.Ptr(helpers.FormatDate(w.start)),
+		DateTo:     helpers.Ptr(helpers.FormatDate(w.queryTo)),
+	})
+	if err != nil {
+		return 0, fmt.Errorf("transaction count: %w", err)
+	}
+	return result.Count, nil
+}
+
+// ProgressText renders a frequency limit's threshold-crossing body in counts (not
+// currency) — crossedOver true when the count has just passed the threshold (a
+// warning), false when it has dropped back under (recovery, after a period reset).
+func (frequencyLimitStrategy) ProgressText(g *models.Goal, snap *models.GoalSnapshot, crossedOver bool) (string, error) {
+	if crossedOver {
+		return fmt.Sprintf("You've used %s of your %s limit — %d of %d.",
+			helpers.FormatPercent(snap.PercentComplete),
+			g.Name, snap.CurrentCount, snap.TargetCount), nil
+	}
+	return fmt.Sprintf("Your %s count is back within limit — %d of %d.",
+		g.Name, snap.CurrentCount, snap.TargetCount), nil
+}
+
+// TerminalText renders a frequency limit's completed/failed outcome in counts:
+// success means the count stayed at or under the limit for the period.
+func (frequencyLimitStrategy) TerminalText(g *models.Goal, snap *models.GoalSnapshot, status models.GoalStatus) (string, error) {
+	if status == models.GoalStatusCompleted {
+		return fmt.Sprintf("You completed your %s goal — %d of your %d limit.",
+			g.Name, snap.CurrentCount, snap.TargetCount), nil
+	}
+	return fmt.Sprintf("Your %s goal ended over the limit — %d of %d.",
+		g.Name, snap.CurrentCount, snap.TargetCount), nil
 }

@@ -1,0 +1,50 @@
+name: oneoff-frequency-limit-fails
+userId: sim-frequency-limit-fail-user
+
+# A one-off frequency limit that goes OVER the ceiling and fails: no more than 3
+# takeout orders (FOOD_AND_DRINK) over a 10-day window, but 4 land. Like the
+# completing scenario the measurement is a COUNT (currentCount), and pace works like
+# a spending limit. This one also exercises the progress-threshold notification: an
+# alert at 100% fires the moment the count crosses the limit, and the closed window
+# resolves the one-off as failed with count-worded terminal text.
+goal:
+  goalId: g-frequency-limit-fail
+  name: Takeout limit
+  type: frequency_limit
+  targetCount: 3
+  timeWindow: fixed
+  recurrence: one_off
+  createdAt: 2026-08-01
+  endDate: 2026-08-10
+  filters:
+    pfcPrimary: FOOD_AND_DRINK
+  alertThresholds:
+    progressPercent: 100
+
+replay:
+  from: 2026-08-01
+  to: 2026-08-11
+
+steps:
+  # Two orders early: count 2. Pace line is 3 × 3/10 = 0.9, so already ahead of pace
+  # (not on track) but still under the ceiling, so no alert yet.
+  - date: 2026-08-03
+    add:
+      - { name: Uber Eats, amount: 2400, pfcPrimary: FOOD_AND_DRINK, accountId: acc-checking }
+      - { name: Deliveroo, amount: 3100, pfcPrimary: FOOD_AND_DRINK, accountId: acc-checking }
+    expect: { currentCount: 2, percentComplete: 66.67, isOnTrack: false, notified: false }
+
+  # Two more orders push the count to 4 — over the limit of 3 (133%). This crosses the
+  # 100% threshold, so the progress notification fires this day.
+  - date: 2026-08-06
+    add:
+      - { name: Pizza night, amount: 2800, pfcPrimary: FOOD_AND_DRINK, accountId: acc-checking }
+      - { name: Sushi, amount: 4200, pfcPrimary: FOOD_AND_DRINK, accountId: acc-checking }
+    expect: { currentCount: 4, percentComplete: 133.33, isOnTrack: false, notified: true }
+
+  # The day after the window closes: 4 of 3 went over, so the one-off fails.
+  - date: 2026-08-11
+    expect: { currentCount: 4, status: failed }
+
+finalExpect:
+  status: failed

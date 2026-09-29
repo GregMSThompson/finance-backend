@@ -39,6 +39,7 @@ type scenarioGoal struct {
 	Name             string          `yaml:"name"`
 	Type             string          `yaml:"type"`
 	TargetValue      float64         `yaml:"targetValue"`
+	TargetCount      int64           `yaml:"targetCount"`
 	ReductionPercent *float64        `yaml:"reductionPercent"`
 	MonthsOfExpenses *float64        `yaml:"monthsOfExpenses"`
 	TimeWindow       string          `yaml:"timeWindow"`
@@ -88,8 +89,12 @@ type scenarioTx struct {
 }
 
 // stepExpect holds optional assertions for a day. Nil fields are not asserted.
+// CurrentValue asserts a money goal's measurement (major units); CurrentCount
+// asserts a count goal's (frequency_limit). A scenario sets whichever matches its
+// goal's unit.
 type stepExpect struct {
 	CurrentValue    *float64 `yaml:"currentValue"`
+	CurrentCount    *int64   `yaml:"currentCount"`
 	PercentComplete *float64 `yaml:"percentComplete"`
 	IsOnTrack       *bool    `yaml:"isOnTrack"`
 	Notified        *bool    `yaml:"notified"`
@@ -108,6 +113,7 @@ func (sc *scenario) buildGoalDefinition() (dto.GoalDefinition, error) {
 	def := dto.GoalDefinition{
 		Type:             models.GoalType(sc.Goal.Type),
 		Name:             sc.Goal.Name,
+		TargetCount:      sc.Goal.TargetCount,
 		ReductionPercent: sc.Goal.ReductionPercent,
 		MonthsOfExpenses: sc.Goal.MonthsOfExpenses,
 		TimeWindow:       models.GoalTimeWindow(sc.Goal.TimeWindow),
@@ -122,12 +128,15 @@ func (sc *scenario) buildGoalDefinition() (dto.GoalDefinition, error) {
 			ProgressPercent: sc.Goal.AlertThresholds.ProgressPercent,
 		},
 	}
-	// Most types carry an explicit target; reduction and emergency_fund instead
-	// derive their target at creation (from a prior-period baseline / average spend),
-	// so they take no YAML target. Scenario YAML uses major units for readability,
-	// so convert to the minor units the model stores.
-	derivesTarget := def.Type == models.GoalTypeReduction || def.Type == models.GoalTypeEmergencyFund
-	if !derivesTarget {
+	// Most types carry an explicit money target (converted below). Two groups don't:
+	// reduction and emergency_fund derive their target at creation (from a prior-period
+	// baseline / average spend); frequency_limit's target is a count (TargetCount),
+	// not money. Only the money-target types read TargetValue. Scenario YAML uses major
+	// units for readability, so convert to the minor units the model stores.
+	usesMoneyTarget := def.Type != models.GoalTypeReduction &&
+		def.Type != models.GoalTypeEmergencyFund &&
+		def.Type != models.GoalTypeFrequencyLimit
+	if usesMoneyTarget {
 		targetMinor, err := helpers.ToMinorUnits(sc.Goal.TargetValue, helpers.CurrencyUSD)
 		if err != nil {
 			return dto.GoalDefinition{}, fmt.Errorf("goal.targetValue: %w", err)

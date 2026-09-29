@@ -12,14 +12,18 @@ import (
 // units: the AI tool layer decodes the LLM's major-unit target and converts it
 // here, so the goal service works purely in minor units.
 type GoalDefinition struct {
-	Type             models.GoalType            `json:"type"`
-	Name             string                     `json:"name"`
-	TargetValueMinor int64                      `json:"targetValueMinor"`
-	TimeWindow       models.GoalTimeWindow      `json:"timeWindow"`
-	EndDate          string                     `json:"endDate,omitempty"`
-	Recurrence       models.GoalRecurrence      `json:"recurrence"`
-	Filters          models.GoalFilters         `json:"filters,omitempty"`
-	AlertThresholds  models.GoalAlertThresholds `json:"alertThresholds,omitempty"`
+	Type             models.GoalType `json:"type"`
+	Name             string          `json:"name"`
+	TargetValueMinor int64           `json:"targetValueMinor"`
+	// TargetCount is the target for count-measured goals (frequency_limit): a raw
+	// count of matching transactions, not money, so it bypasses the AI major/minor
+	// conversion. Exactly one of TargetValueMinor / TargetCount is set per goal.
+	TargetCount     int64                      `json:"targetCount,omitempty"`
+	TimeWindow      models.GoalTimeWindow      `json:"timeWindow"`
+	EndDate         string                     `json:"endDate,omitempty"`
+	Recurrence      models.GoalRecurrence      `json:"recurrence"`
+	Filters         models.GoalFilters         `json:"filters,omitempty"`
+	AlertThresholds models.GoalAlertThresholds `json:"alertThresholds,omitempty"`
 	// ReductionPercent is required for reduction goals (percent less than the
 	// baseline period) and ignored otherwise. The concrete TargetValueMinor is
 	// derived from the measured baseline at creation, so callers leave it zero.
@@ -35,14 +39,17 @@ type GoalDefinition struct {
 // and the REST PATCH endpoint (pause/resume, notification toggles), hence the
 // pointer fields.
 type GoalUpdate struct {
-	Name             *string                     `json:"name,omitempty"`
-	TargetValueMinor *int64                      `json:"targetValueMinor,omitempty"`
-	TimeWindow       *models.GoalTimeWindow      `json:"timeWindow,omitempty"`
-	EndDate          *string                     `json:"endDate,omitempty"`
-	Recurrence       *models.GoalRecurrence      `json:"recurrence,omitempty"`
-	Filters          *models.GoalFilters         `json:"filters,omitempty"`
-	AlertThresholds  *models.GoalAlertThresholds `json:"alertThresholds,omitempty"`
-	Status           *models.GoalStatus          `json:"status,omitempty"`
+	Name             *string `json:"name,omitempty"`
+	TargetValueMinor *int64  `json:"targetValueMinor,omitempty"`
+	// TargetCount retargets a count-measured goal (frequency_limit). Like the create
+	// path, a count never flows through the money-conversion layer.
+	TargetCount     *int64                      `json:"targetCount,omitempty"`
+	TimeWindow      *models.GoalTimeWindow      `json:"timeWindow,omitempty"`
+	EndDate         *string                     `json:"endDate,omitempty"`
+	Recurrence      *models.GoalRecurrence      `json:"recurrence,omitempty"`
+	Filters         *models.GoalFilters         `json:"filters,omitempty"`
+	AlertThresholds *models.GoalAlertThresholds `json:"alertThresholds,omitempty"`
+	Status          *models.GoalStatus          `json:"status,omitempty"`
 	// ReductionPercent retargets a reduction goal. Changing it — or the filters
 	// or window it derives from — re-measures the baseline and recomputes the
 	// frozen target; it does not apply to other goal types.
@@ -78,6 +85,13 @@ type GoalProgress struct {
 	CurrentValueMinor    int64             `json:"currentValueMinor"`
 	TargetValueMinor     int64             `json:"targetValueMinor"`
 	AmountRemainingMinor int64             `json:"amountRemainingMinor"`
+	// CurrentCount / TargetCount / CountRemaining carry progress for count-measured
+	// goals (frequency_limit) instead of the *Minor money fields, so the client never
+	// renders a count as currency. Exactly one unit family is populated, matching the
+	// goal type.
+	CurrentCount   int64 `json:"currentCount,omitempty"`
+	TargetCount    int64 `json:"targetCount,omitempty"`
+	CountRemaining int64 `json:"countRemaining,omitempty"`
 	// Currency is the ISO code the *Minor values are denominated in, so the client
 	// knows the minor-unit exponent.
 	Currency        string  `json:"currency"`

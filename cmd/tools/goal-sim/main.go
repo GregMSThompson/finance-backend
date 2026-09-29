@@ -228,7 +228,12 @@ func printDay(date string, snap *models.GoalSnapshot, evaluated bool) {
 		fmt.Printf("%-12s %10s %8s %8s %8s  (not evaluated)\n", date, "—", "—", "—", "—")
 		return
 	}
-	// Goals are USD-only, so the conversion can't fail; display in major units.
+	// Count goals (frequency_limit) report through the *Count fields; show the raw
+	// count. Money goals are USD-only, so the conversion can't fail; show major units.
+	if snap.TargetCount != 0 {
+		fmt.Printf("%-12s %10d %7.1f%% %8v %8v\n", date, snap.CurrentCount, snap.PercentComplete, snap.IsOnTrack, snap.NotificationSent)
+		return
+	}
 	current, _ := helpers.ToMajorUnits(snap.CurrentValueMinor, helpers.CurrencyUSD)
 	fmt.Printf("%-12s %10.2f %7.1f%% %8v %8v\n", date, current, snap.PercentComplete, snap.IsOnTrack, snap.NotificationSent)
 }
@@ -246,7 +251,7 @@ func assertStep(ctx context.Context, goals goalGetter, uid, goalID, date string,
 	// stale prior snapshot would assert the wrong day's values. Status comes from
 	// the goal doc, so it's checked regardless (e.g. asserting a terminal status
 	// on a day the goal is no longer evaluated).
-	wantsSnapshotFields := exp.CurrentValue != nil || exp.PercentComplete != nil || exp.IsOnTrack != nil || exp.Notified != nil
+	wantsSnapshotFields := exp.CurrentValue != nil || exp.CurrentCount != nil || exp.PercentComplete != nil || exp.IsOnTrack != nil || exp.Notified != nil
 	switch {
 	case wantsSnapshotFields && !evaluated:
 		fail("expected snapshot fields but the goal was not evaluated this day (terminal or paused?)")
@@ -257,6 +262,9 @@ func assertStep(ctx context.Context, goals goalGetter, uid, goalID, date string,
 			if !approxEqual(current, *exp.CurrentValue) {
 				fail("currentValue = %.2f, want %.2f", current, *exp.CurrentValue)
 			}
+		}
+		if exp.CurrentCount != nil && snap.CurrentCount != *exp.CurrentCount {
+			fail("currentCount = %d, want %d", snap.CurrentCount, *exp.CurrentCount)
 		}
 		if exp.PercentComplete != nil && !approxEqual(snap.PercentComplete, *exp.PercentComplete) {
 			fail("percentComplete = %.2f, want %.2f", snap.PercentComplete, *exp.PercentComplete)

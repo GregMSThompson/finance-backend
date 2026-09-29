@@ -1,0 +1,55 @@
+name: oneoff-frequency-limit-completes
+userId: sim-frequency-limit-user
+
+# A one-off frequency limit: no more than 3 takeout orders (FOOD_AND_DRINK) over a
+# 10-day window. The measurement is a COUNT of matching transactions, not money, so
+# progress is reported through the *Count snapshot fields (currentCount here), and
+# the amount on each transaction is irrelevant — only how many match the scope.
+# Pace works like a spending limit: on track while the running count stays within its
+# share of the window elapsed (3 × dayFraction). Staying at or under 3 by close
+# completes the goal; going over would fail it.
+goal:
+  goalId: g-frequency-limit
+  name: Takeout limit
+  type: frequency_limit
+  targetCount: 3
+  timeWindow: fixed
+  recurrence: one_off
+  createdAt: 2026-08-01
+  endDate: 2026-08-10
+  filters:
+    pfcPrimary: FOOD_AND_DRINK
+
+replay:
+  from: 2026-08-01
+  to: 2026-08-11
+
+steps:
+  # First takeout order: count 1. Pace line is 3 × 5/10 = 1.5, so 1 is on track.
+  - date: 2026-08-05
+    add:
+      - { name: Uber Eats, amount: 2400, pfcPrimary: FOOD_AND_DRINK, accountId: acc-checking }
+    expect: { currentCount: 1, percentComplete: 33.33, isOnTrack: true }
+
+  # Second order, plus a grocery run that must NOT count (wrong category). Count stays
+  # 2, on track against the pace line 3 × 8/10 = 2.4.
+  - date: 2026-08-08
+    add:
+      - { name: Deliveroo, amount: 3100, pfcPrimary: FOOD_AND_DRINK, accountId: acc-checking }
+      - { name: Supermarket, amount: 8000, pfcPrimary: GENERAL_MERCHANDISE, accountId: acc-checking }
+    expect: { currentCount: 2, percentComplete: 66.67, isOnTrack: true }
+
+  # Third order on the final day: count 3, exactly at the limit (100%). The window
+  # hasn't closed yet (today == endDate), so the goal is still active.
+  - date: 2026-08-10
+    add:
+      - { name: Pizza night, amount: 2800, pfcPrimary: FOOD_AND_DRINK, accountId: acc-checking }
+    expect: { currentCount: 3, percentComplete: 100, isOnTrack: true, status: active }
+
+  # The day after the window closes: 3 of 3 stayed within the limit, so the one-off
+  # completes.
+  - date: 2026-08-11
+    expect: { currentCount: 3, status: completed }
+
+finalExpect:
+  status: completed

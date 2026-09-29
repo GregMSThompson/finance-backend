@@ -1151,6 +1151,48 @@ func TestGetContributionsTotalNormalizesSignAndScopes(t *testing.T) {
 	}
 }
 
+func TestGetTransactionCount(t *testing.T) {
+	// The fake store yields every row it holds; GetTransactionCount applies no
+	// category-role filter, so all rows count — including an income/transfer row that
+	// a spend total would drop. This is deliberate: a frequency limit counts exactly
+	// what its scope matches.
+	store := &fakeAnalyticsStore{
+		txs: []*models.Transaction{
+			{AmountMinor: 1200, Currency: "USD", PFCPrimary: "FOOD_AND_DRINK"},
+			{AmountMinor: 3400, Currency: "USD", PFCPrimary: "FOOD_AND_DRINK"},
+			{AmountMinor: -5000, Currency: "USD", PFCPrimary: "TRANSFER_IN"},
+		},
+	}
+	svc := NewAnalyticsService(store)
+
+	got, err := svc.GetTransactionCount(context.Background(), "user", dto.AnalyticsCountArgs{
+		PFCPrimary: helpers.Ptr("FOOD_AND_DRINK"),
+		Merchant:   helpers.Ptr("Uber Eats"),
+		AccountID:  helpers.Ptr("acc-1"),
+		DateFrom:   helpers.Ptr("2026-01-01"),
+		DateTo:     helpers.Ptr("2026-01-31"),
+	})
+	if err != nil {
+		t.Fatalf("GetTransactionCount error: %v", err)
+	}
+	if got.Count != 3 {
+		t.Fatalf("expected count 3 (no category-role filtering), got %d", got.Count)
+	}
+	if got.From != "2026-01-01" || got.To != "2026-01-31" {
+		t.Fatalf("window echo mismatch: %+v", got)
+	}
+	// The scope must reach the store query verbatim.
+	if len(store.lastQuery.PFCPrimaries) != 1 || store.lastQuery.PFCPrimaries[0] != "FOOD_AND_DRINK" {
+		t.Fatalf("expected the query filtered to FOOD_AND_DRINK, got %v", store.lastQuery.PFCPrimaries)
+	}
+	if helpers.Value(store.lastQuery.Merchant) != "Uber Eats" {
+		t.Fatalf("expected merchant scope Uber Eats, got %v", store.lastQuery.Merchant)
+	}
+	if helpers.Value(store.lastQuery.AccountID) != "acc-1" {
+		t.Fatalf("expected account scope acc-1, got %v", store.lastQuery.AccountID)
+	}
+}
+
 func TestGetAverageMonthlySpend(t *testing.T) {
 	now := time.Date(2026, time.August, 31, 12, 0, 0, 0, time.UTC)
 	ctx := clock.WithClock(context.Background(), func() time.Time { return now })

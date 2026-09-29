@@ -69,6 +69,27 @@ type AnalyticsAverageMonthlySpendResult struct {
 	To           string  `json:"to,omitempty"`
 }
 
+// AnalyticsCountArgs selects transactions to count. Category and merchant are the
+// two ways to define "an occurrence" (e.g. takeout orders by category, ATM
+// withdrawals by merchant); they combine (AND) when both are set. It carries no
+// currency because the result is a count, not money.
+type AnalyticsCountArgs struct {
+	Pending    *bool
+	PFCPrimary *string
+	AccountID  *string
+	Merchant   *string
+	DateFrom   *string
+	DateTo     *string
+}
+
+// AnalyticsCountResult is the number of matching transactions over the window. It
+// has no Minor money fields so it passes through the AI major/minor layer untouched.
+type AnalyticsCountResult struct {
+	Count int64  `json:"count"`
+	From  string `json:"from,omitempty"`
+	To    string `json:"to,omitempty"`
+}
+
 type AnalyticsSpendBreakdownArgs struct {
 	Pending    *bool
 	PFCPrimary *string
